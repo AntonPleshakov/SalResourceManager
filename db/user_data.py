@@ -9,8 +9,9 @@ from resources.user_data import EDITABLE_FIELDS, UserData
 
 
 class UserDataDB:
-    def __init__(self, manager: WorksheetManager):
+    def __init__(self, manager: WorksheetManager, spreadsheet_url: str = ""):
         self._manager = manager
+        self._spreadsheet_url = spreadsheet_url
         self._users: Dict[int, UserData] = {}
         self.fetch()
 
@@ -23,7 +24,7 @@ class UserDataDB:
         else:
             manager = spreadsheet.add_worksheet(worksheet_name)
             manager.set_header([UserData().params_views()])
-        return cls(manager)
+        return cls(manager, spreadsheet.get_url())
 
     def fetch(self) -> None:
         logger.info("DB: fetch user resources and technologies")
@@ -33,6 +34,9 @@ class UserDataDB:
 
     def get_user(self, user_id: int) -> Optional[UserData]:
         return self._users.get(user_id)
+
+    def get_url(self) -> str:
+        return self._spreadsheet_url
 
     def get_or_create(self, user_id: int, username: str) -> UserData:
         user = self.get_user(user_id)

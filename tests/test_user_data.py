@@ -85,6 +85,14 @@ def test_database_loads_existing_users():
     assert loaded.pets.value == 12
 
 
+def test_database_returns_resource_table_url():
+    database = UserDataDB(
+        FakeWorksheetManager(), "https://docs.google.com/spreadsheets/d/example"
+    )
+
+    assert database.get_url() == "https://docs.google.com/spreadsheets/d/example"
+
+
 def test_database_saves_multiple_fields_in_one_update():
     existing = UserData(user_id=42, username="tester")
     manager = FakeWorksheetManager([existing.to_row()])
