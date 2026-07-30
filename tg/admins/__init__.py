@@ -34,6 +34,7 @@ def register_handlers(bot: TeleBot):
         func=empty_filter,
         button="admins",
         is_private=True,
+        is_admin=True,
         pass_bot=True,
     )
     bot.register_callback_query_handler(
@@ -41,6 +42,7 @@ def register_handlers(bot: TeleBot):
         func=empty_filter,
         button="admins/admins_list",
         is_private=True,
+        is_admin=True,
         pass_bot=True,
     )
     add_admin.register_handlers(bot)

@@ -1,0 +1,282 @@
+from typing import Sequence, Union
+
+from telebot import TeleBot
+from telebot.handler_backends import State, StatesGroup
+from telebot.types import CallbackQuery, InlineKeyboardMarkup, Message
+
+from db.user_data import get_user_data_db
+from resources.user_data import (
+    EDITABLE_FIELDS,
+    RESOURCE_FIELDS,
+    TECHNOLOGY_FIELDS,
+    ResourceField,
+    parse_non_negative_int,
+)
+from tg.utils import Button, empty_filter, get_ids, get_username
+
+
+class EditUserDataStates(StatesGroup):
+    value = State()
+    fill_values = State()
+
+
+SECTION_FIELDS = {
+    "resources": RESOURCE_FIELDS,
+    "technologies": TECHNOLOGY_FIELDS,
+}
+
+
+def _section_menu(
+    message: Union[Message, CallbackQuery],
+    bot: TeleBot,
+    title: str,
+    section: str,
+    fields: Sequence[ResourceField],
+    notice: str = "",
+) -> None:
+    user_id, chat_id, message_id = get_ids(message)
+    bot.delete_state(user_id)
+    user = get_user_data_db().get_or_create(user_id, get_username(message))
+
+    values = "\n".join(
+        f"{field.title}: <b>{user.get_value(field.name)}</b>" for field in fields
+    )
+    text = f"<b>{title}</b>\n\n{values}\n\nВыберите показатель для изменения."
+    if notice:
+        text = f"{notice}\n\n{text}"
+
+    keyboard = InlineKeyboardMarkup(row_width=1)
+    keyboard.add(
+        Button(
+            f"Заполнить все: {title.lower()}",
+            f"user_data/fill/{section}",
+        ).inline()
+    )
+    for field in fields:
+        keyboard.add(
+            Button(field.title, f"user_data/edit/{field.name}").inline()
+        )
+    keyboard.add(Button("Назад в меню", "home").inline())
+
+    if isinstance(message, CallbackQuery):
+        bot.edit_message_text(text, chat_id, message_id, reply_markup=keyboard)
+    else:
+        bot.send_message(chat_id, text, reply_markup=keyboard)
+
+
+def resources_menu(
+    message: Union[Message, CallbackQuery], bot: TeleBot, notice: str = ""
+) -> None:
+    _section_menu(message, bot, "Ресурсы", "resources", RESOURCE_FIELDS, notice)
+
+
+def technologies_menu(
+    message: Union[Message, CallbackQuery], bot: TeleBot, notice: str = ""
+) -> None:
+    _section_menu(
+        message, bot, "Технологии", "technologies", TECHNOLOGY_FIELDS, notice
+    )
+
+
+def request_value(callback_query: CallbackQuery, bot: TeleBot) -> None:
+    field_name = callback_query.data.rsplit("/", maxsplit=1)[-1]
+    field = EDITABLE_FIELDS.get(field_name)
+    if field is None:
+        bot.answer_callback_query(callback_query.id, "Показатель не найден")
+        return
+
+    section = "resources" if field in RESOURCE_FIELDS else "technologies"
+    user_id, chat_id, message_id = get_ids(callback_query)
+    bot.set_state(user_id, EditUserDataStates.value)
+    bot.add_data(user_id, field_name=field_name, section=section)
+
+    keyboard = InlineKeyboardMarkup(row_width=1)
+    keyboard.add(Button("Отмена", section).inline())
+    bot.edit_message_text(
+        f"Введите новое значение для «{field.title}».\n"
+        "Допустимо целое неотрицательное число.",
+        chat_id,
+        message_id,
+        reply_markup=keyboard,
+    )
+
+
+def _fill_prompt(
+    section: str, fields: Sequence[ResourceField], index: int
+) -> str:
+    field = fields[index]
+    return (
+        f"<b>Заполнение: {section} ({index + 1}/{len(fields)})</b>\n\n"
+        f"Введите значение для «{field.title}».\n"
+        "Допустимо целое неотрицательное число."
+    )
+
+
+def fill_section(callback_query: CallbackQuery, bot: TeleBot) -> None:
+    section = callback_query.data.rsplit("/", maxsplit=1)[-1]
+    fields = SECTION_FIELDS.get(section)
+    if fields is None:
+        bot.answer_callback_query(callback_query.id, "Раздел не найден")
+        return
+
+    user_id, chat_id, message_id = get_ids(callback_query)
+    bot.set_state(user_id, EditUserDataStates.fill_values)
+    bot.add_data(user_id, fill_section=section, fill_index=0, fill_values={})
+
+    keyboard = InlineKeyboardMarkup(row_width=1)
+    keyboard.add(Button("Отмена", section).inline())
+    bot.edit_message_text(
+        _fill_prompt(
+            "ресурсы" if section == "resources" else "технологии",
+            fields,
+            0,
+        ),
+        chat_id,
+        message_id,
+        reply_markup=keyboard,
+    )
+
+
+def save_value(message: Message, bot: TeleBot) -> None:
+    user_id, chat_id, _ = get_ids(message)
+    try:
+        value = parse_non_negative_int(message.text)
+    except ValueError:
+        bot.reply_to(
+            message,
+            "Введите целое неотрицательное число, например: 1500.",
+        )
+        return
+
+    with bot.retrieve_data(user_id) as data:
+        field_name = data.get("field_name")
+        section = data.get("section")
+
+    field = EDITABLE_FIELDS.get(field_name)
+    if field is None or section not in {"resources", "technologies"}:
+        bot.delete_state(user_id)
+        bot.send_message(
+            chat_id,
+            "Не удалось определить редактируемый показатель. "
+            "Откройте раздел заново.",
+        )
+        return
+
+    get_user_data_db().set_value(
+        user_id, get_username(message), field_name, value
+    )
+    notice = f"✅ {field.title}: <b>{value}</b> — сохранено."
+    if section == "resources":
+        resources_menu(message, bot, notice)
+    else:
+        technologies_menu(message, bot, notice)
+
+
+def save_all_values(message: Message, bot: TeleBot) -> None:
+    user_id, chat_id, _ = get_ids(message)
+    try:
+        value = parse_non_negative_int(message.text)
+    except ValueError:
+        bot.reply_to(
+            message,
+            "Введите целое неотрицательное число, например: 1500.",
+        )
+        return
+
+    with bot.retrieve_data(user_id) as data:
+        section = data.get("fill_section")
+        index = data.get("fill_index")
+        values = data.get("fill_values")
+    fields = SECTION_FIELDS.get(section) if isinstance(section, str) else None
+
+    if (
+        not isinstance(section, str)
+        or fields is None
+        or not isinstance(index, int)
+        or not 0 <= index < len(fields)
+        or not isinstance(values, dict)
+    ):
+        bot.delete_state(user_id)
+        bot.send_message(
+            chat_id,
+            "Не удалось продолжить заполнение. Откройте меню заново.",
+        )
+        return
+
+    values[fields[index].name] = value
+    next_index = index + 1
+    if next_index < len(fields):
+        bot.add_data(
+            user_id,
+            fill_section=section,
+            fill_index=next_index,
+            fill_values=values,
+        )
+        keyboard = InlineKeyboardMarkup(row_width=1)
+        keyboard.add(Button("Отмена", section).inline())
+        bot.send_message(
+            chat_id,
+            _fill_prompt(
+                "ресурсы" if section == "resources" else "технологии",
+                fields,
+                next_index,
+            ),
+            reply_markup=keyboard,
+        )
+        return
+
+    get_user_data_db().set_values(user_id, get_username(message), values)
+    bot.delete_state(user_id)
+    bot.send_message(
+        chat_id,
+        "✅ Все значения раздела сохранены.",
+    )
+    if section == "resources":
+        resources_menu(message, bot)
+    else:
+        technologies_menu(message, bot)
+
+
+def register_handlers(bot: TeleBot) -> None:
+    bot.register_callback_query_handler(
+        resources_menu,
+        func=empty_filter,
+        button="resources",
+        is_private=True,
+        pass_bot=True,
+    )
+    bot.register_callback_query_handler(
+        technologies_menu,
+        func=empty_filter,
+        button="technologies",
+        is_private=True,
+        pass_bot=True,
+    )
+    bot.register_callback_query_handler(
+        request_value,
+        func=empty_filter,
+        button=r"user_data/edit/[a-z_]+",
+        is_private=True,
+        pass_bot=True,
+    )
+    bot.register_callback_query_handler(
+        fill_section,
+        func=empty_filter,
+        button=r"user_data/fill/(resources|technologies)",
+        is_private=True,
+        pass_bot=True,
+    )
+    bot.register_message_handler(
+        save_value,
+        content_types=["text"],
+        chat_types=["private"],
+        state=EditUserDataStates.value,
+        pass_bot=True,
+    )
+    bot.register_message_handler(
+        save_all_values,
+        content_types=["text"],
+        chat_types=["private"],
+        state=EditUserDataStates.fill_values,
+        pass_bot=True,
+    )

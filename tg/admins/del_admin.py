@@ -70,6 +70,7 @@ def register_handlers(bot: TeleBot):
         func=empty_filter,
         button="admins/del_admin",
         is_private=True,
+        is_admin=True,
         pass_bot=True,
     )
     bot.register_callback_query_handler(
@@ -78,6 +79,7 @@ def register_handlers(bot: TeleBot):
         state=DelAdminStates.admin_id,
         button=r"\d+",
         is_private=True,
+        is_admin=True,
         pass_bot=True,
     )
     bot.register_callback_query_handler(
@@ -86,5 +88,6 @@ def register_handlers(bot: TeleBot):
         state=DelAdminStates.confirmed,
         button=r"approved/\d+",
         is_private=True,
+        is_admin=True,
         pass_bot=True,
     )

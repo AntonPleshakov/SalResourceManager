@@ -76,6 +76,7 @@ def register_handlers(bot: TeleBot):
         func=empty_filter,
         button="admins/add_admins",
         is_private=True,
+        is_admin=True,
         pass_bot=True,
     )
     bot.register_message_handler(
@@ -83,6 +84,7 @@ def register_handlers(bot: TeleBot):
         content_types=["users_shared"],
         chat_types=["private"],
         state=AddAdminStates.share_users,
+        is_admin=True,
         pass_bot=True,
     )
     bot.register_callback_query_handler(
@@ -91,5 +93,6 @@ def register_handlers(bot: TeleBot):
         button="approved",
         state=AddAdminStates.add_admin,
         is_private=True,
+        is_admin=True,
         pass_bot=True,
     )
