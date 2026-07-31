@@ -289,6 +289,17 @@ def test_war_points_calculator_applies_forge_upgrade_rule():
     assert report.total == 7_638
 
 
+def test_war_points_calculator_applies_fixed_technology_rule_per_user():
+    users = [UserData(user_id=1), UserData(user_id=2)]
+
+    report = WarPointsCalculator().calculate(
+        users, {1: (WarActivity.TECHNOLOGIES,)}
+    )
+
+    assert report.points_by_day == {1: 498_600}
+    assert report.total == 498_600
+
+
 def test_war_points_calculator_estimates_skill_points():
     user = UserData(user_id=42, skills=2490, skill_summon_cost=17)
 
