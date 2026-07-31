@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+import re
 from typing import Dict, Tuple
 
 from parameters import Parameters
@@ -33,6 +34,9 @@ TECHNOLOGY_FIELDS: Tuple[ResourceField, ...] = (
 EDITABLE_FIELDS: Dict[str, ResourceField] = {
     field.name: field for field in RESOURCE_FIELDS + TECHNOLOGY_FIELDS
 }
+THOUSAND_INPUT_FIELDS = frozenset(
+    {"mount_keys", "skills", "shells", "hammers"}
+)
 
 
 def parse_non_negative_int(value: str) -> int:
@@ -40,6 +44,17 @@ def parse_non_negative_int(value: str) -> int:
     if not normalized.isdigit():
         raise ValueError("Value must be a non-negative integer")
     return int(normalized)
+
+
+def parse_editable_field_value(field_name: str, value: str) -> int:
+    if field_name not in THOUSAND_INPUT_FIELDS:
+        return parse_non_negative_int(value)
+
+    normalized = value.strip().replace(",", ".")
+    if not re.fullmatch(r"\d+(?:\.\d)?", normalized):
+        raise ValueError("Value must be a non-negative number with one decimal place")
+    whole, _, fraction = normalized.partition(".")
+    return int(whole) * 1_000 + int(fraction or "0") * 100
 
 
 class UserData(Parameters):

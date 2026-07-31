@@ -78,4 +78,16 @@ class AdminsDB(ReconnectableDB):
         self._admins_id_set: Set[int] = {admin.user_id.value for admin in self._admins}
 
 
-admins_db = AdminsDB()
+admins_db: Optional[AdminsDB] = None
+
+
+def initialize_admins_db() -> AdminsDB:
+    global admins_db
+    admins_db = AdminsDB()
+    return admins_db
+
+
+def get_admins_db() -> AdminsDB:
+    if admins_db is None:
+        raise RuntimeError("Admins database has not been initialized")
+    return admins_db

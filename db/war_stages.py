@@ -25,6 +25,7 @@ class WarStagesDB(ReconnectableDB):
         else:
             manager = spreadsheet.add_worksheet(worksheet_name)
             manager.set_header(cls.HEADER)
+            manager.update_values(cls._stages_to_rows(DEFAULT_WAR_STAGES))
         return manager
 
     @classmethod
@@ -53,7 +54,6 @@ class WarStagesDB(ReconnectableDB):
             return stages
 
         self._stages = self._run_with_retry(load_stages)
-        self._persist()
 
     def get_stages(self) -> Dict[int, WarStage]:
         return dict(self._stages)
@@ -71,11 +71,16 @@ class WarStagesDB(ReconnectableDB):
         logger.info("DB: set war day %s activity %s to %s", day, position, activity)
 
     def _persist(self) -> None:
-        values = [
+        self._run_with_retry(
+            lambda: self._manager.update_values(self._stages_to_rows(self._stages))
+        )
+
+    @staticmethod
+    def _stages_to_rows(stages: Dict[int, WarStage]):
+        return [
             [str(day), *(activity.title for activity in activities)]
-            for day, activities in sorted(self._stages.items())
+            for day, activities in sorted(stages.items())
         ]
-        self._run_with_retry(lambda: self._manager.update_values(values))
 
 
 war_stages_db: Optional[WarStagesDB] = None

@@ -4,14 +4,14 @@ from telebot import TeleBot
 from telebot.custom_filters import SimpleCustomFilter, AdvancedCustomFilter, StateFilter
 from telebot.types import CallbackQuery
 
-from db.admins import admins_db
+from db.admins import get_admins_db
 
 
 class IsAdminFilter(SimpleCustomFilter):
     key = "is_admin"
 
     def check(self, message):
-        return admins_db.is_admin(message.from_user.id)
+        return get_admins_db().is_admin(message.from_user.id)
 
 
 class IsCallbackQueryPrivateChatFilter(SimpleCustomFilter):

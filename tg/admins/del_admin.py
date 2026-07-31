@@ -2,7 +2,7 @@ from telebot import TeleBot
 from telebot.handler_backends import State, StatesGroup
 from telebot.types import CallbackQuery, InlineKeyboardMarkup
 
-from db.admins import admins_db
+from db.admins import get_admins_db
 from logger.app_logger import logger
 from tg.navigation import home
 from tg.utils import Button, empty_filter, get_ids, get_user_link
@@ -14,7 +14,7 @@ class DelAdminStates(StatesGroup):
 
 
 def del_admin_options(callback_query: CallbackQuery, bot: TeleBot):
-    current_admins = admins_db.get_admins()[1:]
+    current_admins = get_admins_db().get_admins()[1:]
     keyboard = InlineKeyboardMarkup(row_width=1)
     for admin in current_admins:
         keyboard.add(Button(admin.username.value, str(admin.user_id.value)).inline())
@@ -30,7 +30,7 @@ def del_admin_options(callback_query: CallbackQuery, bot: TeleBot):
 
 
 def del_admin_confirmation(callback_query: CallbackQuery, bot: TeleBot):
-    admin = admins_db.get_admin(int(callback_query.data))
+    admin = get_admins_db().get_admin(int(callback_query.data))
     if admin is None:
         bot.answer_callback_query(callback_query.id, "Администратор не найден")
         home(callback_query, bot)
@@ -50,13 +50,13 @@ def del_admin_confirmation(callback_query: CallbackQuery, bot: TeleBot):
 
 def del_admin_approved(callback_query: CallbackQuery, bot: TeleBot):
     admin_id = int(callback_query.data.split("/")[-1])
-    admin = admins_db.get_admin(admin_id)
+    admin = get_admins_db().get_admin(admin_id)
     if admin is None:
         bot.answer_callback_query(callback_query.id, "Администратор не найден")
         home(callback_query, bot)
         return
     logger.info("Removing admin %s", admin_id)
-    admins_db.del_admin(admin_id)
+    get_admins_db().del_admin(admin_id)
     user_id, _, _ = get_ids(callback_query)
     bot.delete_state(user_id)
     bot.answer_callback_query(callback_query.id, "Права администратора отозваны")

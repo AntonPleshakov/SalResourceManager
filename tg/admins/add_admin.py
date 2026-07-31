@@ -9,7 +9,7 @@ from telebot.types import (
     ReplyKeyboardMarkup,
 )
 
-from db.admins import Admin, admins_db
+from db.admins import Admin, get_admins_db
 from logger.app_logger import logger
 from tg.navigation import home
 from tg.utils import Button, empty_filter, get_ids, get_user_link, get_username
@@ -61,7 +61,7 @@ def add_admins_approved(callback_query: CallbackQuery, bot: TeleBot):
         new_admins = data.pop("new_admins")
     bot.delete_state(user_id)
     for admin in new_admins:
-        admins_db.add_admin(admin)
+        get_admins_db().add_admin(admin)
         bot.send_message(
             admin.user_id.value,
             "Вам выданы права администратора. Отправьте боту сообщение, чтобы открыть меню.",

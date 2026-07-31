@@ -4,7 +4,7 @@ from telebot.types import CallbackQuery, InlineKeyboardMarkup
 from db.user_data import get_user_data_db
 from db.war_stages import get_war_stages_db
 from resources.war import WarActivity, WarPointsCalculator
-from tg.utils import Button, empty_filter, get_ids
+from tg.utils import Button, empty_filter, format_points, get_ids
 
 
 def _edit_message(
@@ -28,11 +28,11 @@ def _war_points_text() -> str:
     lines = ["<b>Максимальные очки войны</b>", ""]
     for day, points in report.points_by_day.items():
         activities = ", ".join(activity.title for activity in stages[day])
-        lines.append(f"День {day}: <b>{points}</b> — {activities}")
+        lines.append(f"День {day}: <b>{format_points(points)}</b> — {activities}")
     lines.extend(
         [
             "",
-            f"Итого: <b>{report.total}</b>",
+            f"Итого: <b>{format_points(report.total)}</b>",
         ]
     )
     return "\n".join(lines)

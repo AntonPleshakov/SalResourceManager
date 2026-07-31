@@ -67,7 +67,7 @@ class WorksheetManager:
 
     def add_row(self, row: List[str]):
         nmd_logger.info(
-            f"GAPI: ({self._ws.spreadsheet.title}/{self._ws.title}) add row: {row}"
+            f"GAPI: ({self._ws.spreadsheet.title}/{self._ws.title}) add row with {len(row)} cells"
         )
         row_index = len(self.cache())
         row = self._validate_row(row)
@@ -95,7 +95,7 @@ class WorksheetManager:
         start_range: Optional[tuple] = None,
     ):
         nmd_logger.info(
-            f"GAPI: ({self._ws.spreadsheet.title}/{self._ws.title}) update values with start range {start_range} to {values}"
+            f"GAPI: ({self._ws.spreadsheet.title}/{self._ws.title}) update {len(values)} rows from {start_range}"
         )
         if not start_range:
             start_range = (self._header_range[0] + 1, 1)

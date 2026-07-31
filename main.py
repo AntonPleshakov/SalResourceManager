@@ -7,6 +7,7 @@ from telebot.types import CallbackQuery, Message
 
 import tg.manager
 from config.config import getconf
+from db.admins import initialize_admins_db
 from db.user_data import initialize_user_data_db
 from db.war_stages import initialize_war_stages_db
 from logger.app_logger import logger
@@ -51,6 +52,7 @@ def permission_denied_message(message: Union[Message, CallbackQuery]):
 
 if __name__ == "__main__":
     logger.info("Sal Resources Manager started")
+    initialize_admins_db()
     initialize_user_data_db()
     initialize_war_stages_db()
     add_custom_filters(bot)

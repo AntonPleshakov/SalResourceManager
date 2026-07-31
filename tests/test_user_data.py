@@ -9,7 +9,12 @@ reset_config(str(Path(__file__).parents[1] / "config" / "config_template.ini"))
 
 from db.user_data import UserDataDB
 from db.war_stages import WarStagesDB
-from resources.user_data import EDITABLE_FIELDS, UserData, parse_non_negative_int
+from resources.user_data import (
+    EDITABLE_FIELDS,
+    UserData,
+    parse_editable_field_value,
+    parse_non_negative_int,
+)
 from resources.war import (
     DEFAULT_WAR_STAGES,
     WarActivity,
@@ -20,6 +25,7 @@ from resources.war_rules.forging import (
     forge_weapon_chances,
     weapon_points,
 )
+from tg.utils import format_points
 
 
 class FakeWorksheetManager:
@@ -241,6 +247,9 @@ def test_admins_db_reconnects_before_retrying_add(monkeypatch):
     )
     monkeypatch.delitem(sys.modules, "db.admins", raising=False)
     admins_module = importlib.import_module("db.admins")
+
+    assert admins_module.admins_db is None
+
     broken_manager = FakeWorksheetManager()
     database = admins_module.AdminsDB(broken_manager)
     broken_manager.add_error = ConnectionError()
@@ -266,6 +275,15 @@ def test_war_stages_are_initialized_and_can_be_changed():
 
     assert database.get_stages()[1][0] == WarActivity.PETS
     assert manager.rows[0] == ["1", "Питомцы", "Подземелья", "Навыки"]
+
+
+def test_war_stages_fetch_does_not_write():
+    manager = FakeWorksheetManager()
+    database = WarStagesDB(manager)
+
+    database.fetch()
+
+    assert manager.update_calls == 0
 
 
 def test_forge_chance_matrix_has_35_levels_and_ten_weapon_levels():
@@ -374,3 +392,25 @@ def test_parse_non_negative_int_rejects_invalid_values():
         except ValueError:
             continue
         raise AssertionError(f"{value!r} must be rejected")
+
+
+def test_parse_thousand_based_resource_value():
+    assert parse_editable_field_value("hammers", "1.5") == 1_500
+    assert parse_editable_field_value("shells", "1,5") == 1_500
+    assert parse_editable_field_value("mount_keys", "1") == 1_000
+    assert parse_editable_field_value("gems", "1 500") == 1_500
+
+
+def test_parse_thousand_based_resource_value_rejects_extra_precision():
+    for value in ("", "-1", "1.55", "1 500"):
+        try:
+            parse_editable_field_value("skills", value)
+        except ValueError:
+            continue
+        raise AssertionError(f"{value!r} must be rejected")
+
+
+def test_format_points_rounds_and_adds_suffixes():
+    assert format_points(Decimal("999.995")) == "1.00к"
+    assert format_points(Decimal("1234.567")) == "1.23к"
+    assert format_points(Decimal("1234567.89")) == "1.23м"

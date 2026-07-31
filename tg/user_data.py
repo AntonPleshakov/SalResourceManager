@@ -10,7 +10,8 @@ from resources.user_data import (
     RESOURCE_FIELDS,
     TECHNOLOGY_FIELDS,
     ResourceField,
-    parse_non_negative_int,
+    THOUSAND_INPUT_FIELDS,
+    parse_editable_field_value,
 )
 from tg.utils import Button, empty_filter, get_ids, get_username
 
@@ -64,6 +65,12 @@ def _section_menu(
         bot.send_message(chat_id, text, reply_markup=keyboard)
 
 
+def _value_input_hint(field: ResourceField) -> str:
+    if field.name in THOUSAND_INPUT_FIELDS:
+        return "Введите число в тысячах с одним знаком после запятой, например: 1.5."
+    return "Допустимо целое неотрицательное число."
+
+
 def resources_menu(
     message: Union[Message, CallbackQuery], bot: TeleBot, notice: str = ""
 ) -> None:
@@ -94,7 +101,7 @@ def request_value(callback_query: CallbackQuery, bot: TeleBot) -> None:
     keyboard.add(Button("Отмена", section).inline())
     bot.edit_message_text(
         f"Введите новое значение для «{field.title}».\n"
-        "Допустимо целое неотрицательное число.",
+        f"{_value_input_hint(field)}",
         chat_id,
         message_id,
         reply_markup=keyboard,
@@ -108,7 +115,7 @@ def _fill_prompt(
     return (
         f"<b>Заполнение: {section} ({index + 1}/{len(fields)})</b>\n\n"
         f"Введите значение для «{field.title}».\n"
-        "Допустимо целое неотрицательное число."
+        f"{_value_input_hint(field)}"
     )
 
 
@@ -139,15 +146,6 @@ def fill_section(callback_query: CallbackQuery, bot: TeleBot) -> None:
 
 def save_value(message: Message, bot: TeleBot) -> None:
     user_id, chat_id, _ = get_ids(message)
-    try:
-        value = parse_non_negative_int(message.text)
-    except ValueError:
-        bot.reply_to(
-            message,
-            "Введите целое неотрицательное число, например: 1500.",
-        )
-        return
-
     with bot.retrieve_data(user_id) as data:
         field_name = data.get("field_name")
         section = data.get("section")
@@ -162,9 +160,19 @@ def save_value(message: Message, bot: TeleBot) -> None:
         )
         return
 
-    get_user_data_db().set_value(
-        user_id, get_username(message), field_name, value
-    )
+    try:
+        value = parse_editable_field_value(field_name, message.text)
+    except ValueError:
+        bot.reply_to(message, _value_input_hint(field))
+        return
+
+    try:
+        get_user_data_db().set_value(
+            user_id, get_username(message), field_name, value
+        )
+    except ValueError as error:
+        bot.reply_to(message, f"Значение для «{field.title}» не подходит: {error}")
+        return
     notice = f"✅ {field.title}: <b>{value}</b> — сохранено."
     if section == "resources":
         resources_menu(message, bot, notice)
@@ -174,15 +182,6 @@ def save_value(message: Message, bot: TeleBot) -> None:
 
 def save_all_values(message: Message, bot: TeleBot) -> None:
     user_id, chat_id, _ = get_ids(message)
-    try:
-        value = parse_non_negative_int(message.text)
-    except ValueError:
-        bot.reply_to(
-            message,
-            "Введите целое неотрицательное число, например: 1500.",
-        )
-        return
-
     with bot.retrieve_data(user_id) as data:
         section = data.get("fill_section")
         index = data.get("fill_index")
@@ -203,7 +202,14 @@ def save_all_values(message: Message, bot: TeleBot) -> None:
         )
         return
 
-    values[fields[index].name] = value
+    field = fields[index]
+    try:
+        value = parse_editable_field_value(field.name, message.text)
+    except ValueError:
+        bot.reply_to(message, _value_input_hint(field))
+        return
+
+    values[field.name] = value
     next_index = index + 1
     if next_index < len(fields):
         bot.add_data(
@@ -225,7 +231,11 @@ def save_all_values(message: Message, bot: TeleBot) -> None:
         )
         return
 
-    get_user_data_db().set_values(user_id, get_username(message), values)
+    try:
+        get_user_data_db().set_values(user_id, get_username(message), values)
+    except ValueError as error:
+        bot.reply_to(message, f"Значение не подходит: {error}")
+        return
     bot.delete_state(user_id)
     bot.send_message(
         chat_id,

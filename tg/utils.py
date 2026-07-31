@@ -1,8 +1,9 @@
+from decimal import Decimal, ROUND_HALF_UP
 from typing import Tuple, Union
 
 from telebot.types import CallbackQuery, InlineKeyboardButton, KeyboardButton, Message
 
-from db.admins import admins_db
+from db.admins import get_admins_db
 
 
 def get_user_link(user_id: int, name: str) -> str:
@@ -12,7 +13,7 @@ def get_user_link(user_id: int, name: str) -> str:
 def get_permissions_denied_message(user_id: int) -> str:
     admins = [
         get_user_link(admin.user_id.value, admin.username.value)
-        for admin in admins_db.get_admins()
+        for admin in get_admins_db().get_admins()
     ]
     return (
         "У вас нет прав администратора.\n"
@@ -30,6 +31,22 @@ def get_ids(message: Union[Message, CallbackQuery]) -> Tuple[int, int, int]:
 def get_username(message: Union[Message, CallbackQuery]) -> str:
     user = message.from_user
     return user.username or user.first_name
+
+
+def format_points(value: Decimal) -> str:
+    rounded_value = value.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    suffix = ""
+    divisor = Decimal("1")
+    if abs(rounded_value) >= Decimal("1000000"):
+        suffix = "м"
+        divisor = Decimal("1000000")
+    elif abs(rounded_value) >= Decimal("1000"):
+        suffix = "к"
+        divisor = Decimal("1000")
+    rounded = (rounded_value / divisor).quantize(
+        Decimal("0.01"), rounding=ROUND_HALF_UP
+    )
+    return f"{rounded:.2f}{suffix}"
 
 
 class Button:

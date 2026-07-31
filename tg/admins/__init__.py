@@ -1,7 +1,7 @@
 from telebot import TeleBot
 from telebot.types import CallbackQuery, InlineKeyboardMarkup
 
-from db.admins import admins_db
+from db.admins import get_admins_db
 from tg.admins import add_admin, del_admin, war
 from tg.utils import Button, empty_filter, get_ids, get_user_link
 
@@ -19,7 +19,7 @@ def admins_main_menu(callback_query: CallbackQuery, bot: TeleBot):
 
 
 def admins_list(callback_query: CallbackQuery, bot: TeleBot):
-    admins = admins_db.get_admins()
+    admins = get_admins_db().get_admins()
     text = "Список администраторов:\n" + "\n".join(
         get_user_link(admin.user_id.value, admin.username.value) for admin in admins
     )
