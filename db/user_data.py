@@ -86,15 +86,7 @@ class UserDataDB(ReconnectableDB):
     def set_values(
         self, user_id: int, username: str, values: Dict[str, int]
     ) -> UserData:
-        if not values:
-            raise ValueError("At least one resource value is required")
-        for field_name, value in values.items():
-            if field_name not in EDITABLE_FIELDS:
-                raise ValueError(f"Unknown resource field: {field_name}")
-            if not isinstance(value, int) or value < 0:
-                raise ValueError("Resource value must be a non-negative integer")
-            if field_name == "forge_level" and not 1 <= value <= 35:
-                raise ValueError("Forge level must be between 1 and 35")
+        self._validate_values(values)
 
         user = self.get_user(user_id)
         if user is None:
@@ -112,6 +104,20 @@ class UserDataDB(ReconnectableDB):
         self._persist_all()
         logger.info("DB: set user %s fields %s", user_id, list(values))
         return user
+
+    @staticmethod
+    def _validate_values(values: Dict[str, int]) -> None:
+        if not values:
+            raise ValueError("At least one resource value is required")
+        for field_name, value in values.items():
+            if field_name not in EDITABLE_FIELDS:
+                raise ValueError(f"Unknown resource field: {field_name}")
+            if not isinstance(value, int) or value < 0:
+                raise ValueError("Resource value must be a non-negative integer")
+            if field_name == "forge_level" and not 1 <= value <= 35:
+                raise ValueError("Forge level must be between 1 and 35")
+            if field_name == "skill_summon_cost" and not 0 <= value <= 25:
+                raise ValueError("Skill summon cost reduction must be between 0 and 25")
 
     def _persist_all(self) -> None:
         self._run_with_retry(

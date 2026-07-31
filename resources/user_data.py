@@ -14,7 +14,7 @@ class ResourceField:
 
 RESOURCE_FIELDS: Tuple[ResourceField, ...] = (
     ResourceField("mount_keys", "Ключи маунтов"),
-    ResourceField("skills", "Навыки"),
+    ResourceField("skills", "Билетики навыков"),
     ResourceField("shells", "Скорлупа"),
     ResourceField("hammers", "Молотки"),
     ResourceField("gems", "Гемы"),
@@ -24,7 +24,7 @@ RESOURCE_FIELDS: Tuple[ResourceField, ...] = (
 
 TECHNOLOGY_FIELDS: Tuple[ResourceField, ...] = (
     ResourceField("forge_level", "Уровень кузницы"),
-    ResourceField("skill_summon_cost", "Стоимость призыва навыков"),
+    ResourceField("skill_summon_cost", "Снижение стоимости призыва навыков (%)"),
     ResourceField("extra_egg_chance", "Доп. шанс на яйцо"),
     ResourceField("mount_summon_cost", "Стоимость призыва маунта"),
     ResourceField("extra_mount_chance", "Шанс на доп. маунта"),
@@ -63,7 +63,7 @@ class UserData(Parameters):
         self.user_id = IntParam("Telegram ID", user_id)
         self.username = StrParam("Пользователь", username)
         self.mount_keys = IntParam("Ключи маунтов", mount_keys)
-        self.skills = IntParam("Навыки", skills)
+        self.skills = IntParam("Билетики навыков", skills)
         self.shells = IntParam("Скорлупа", shells)
         self.hammers = IntParam("Молотки", hammers)
         self.gems = IntParam("Гемы", gems)
@@ -73,7 +73,7 @@ class UserData(Parameters):
         )
         self.forge_level = IntParam("Уровень кузницы", forge_level)
         self.skill_summon_cost = IntParam(
-            "Стоимость призыва навыков", skill_summon_cost
+            "Снижение стоимости призыва навыков (%)", skill_summon_cost
         )
         self.extra_egg_chance = IntParam(
             "Доп. шанс на яйцо", extra_egg_chance

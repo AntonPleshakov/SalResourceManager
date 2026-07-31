@@ -1,5 +1,6 @@
 import importlib
 import sys
+from decimal import Decimal
 from pathlib import Path
 
 from config.config import reset_config
@@ -13,6 +14,8 @@ from resources.war import (
     DEFAULT_WAR_STAGES,
     WarActivity,
     WarPointsCalculator,
+)
+from resources.war_rules.forging import (
     FORGE_WEAPON_CHANCES,
     forge_weapon_chances,
     weapon_points,
@@ -141,6 +144,17 @@ def test_database_rejects_unknown_forge_level():
         raise AssertionError("Forge level above 35 must be rejected")
 
 
+def test_database_rejects_excessive_skill_summon_cost_reduction():
+    database = UserDataDB(FakeWorksheetManager())
+
+    try:
+        database.set_value(42, "tester", "skill_summon_cost", 26)
+    except ValueError as error:
+        assert str(error) == "Skill summon cost reduction must be between 0 and 25"
+    else:
+        raise AssertionError("Skill summon cost reduction above 25 must be rejected")
+
+
 def test_user_data_reconnects_after_failed_read(monkeypatch):
     broken_manager = FakeWorksheetManager()
     broken_database = UserDataDB(broken_manager)
@@ -251,6 +265,28 @@ def test_war_points_calculator_applies_fixed_forging_rule():
 
     assert report.points_by_day == {1: 6}
     assert report.total == 6
+
+
+def test_war_points_calculator_applies_fixed_dungeon_rule_per_user():
+    users = [UserData(user_id=1), UserData(user_id=2)]
+
+    report = WarPointsCalculator().calculate(
+        users, {1: (WarActivity.DUNGEONS,)}
+    )
+
+    assert report.points_by_day == {1: 67_200}
+    assert report.total == 67_200
+
+
+def test_war_points_calculator_estimates_skill_points():
+    user = UserData(user_id=42, skills=2490, skill_summon_cost=17)
+
+    report = WarPointsCalculator().calculate(
+        [user], {1: (WarActivity.SKILLS,)}
+    )
+
+    assert report.points_by_day == {1: Decimal("562256.550")}
+    assert report.total == Decimal("562256.550")
 
 
 def test_parse_non_negative_int():
