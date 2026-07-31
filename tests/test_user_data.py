@@ -278,6 +278,17 @@ def test_war_points_calculator_applies_fixed_dungeon_rule_per_user():
     assert report.total == 67_200
 
 
+def test_war_points_calculator_applies_forge_upgrade_rule():
+    users = [UserData(user_id=1, forge_level=5), UserData(user_id=2, forge_level=35)]
+
+    report = WarPointsCalculator().calculate(
+        users, {1: (WarActivity.FORGE,)}
+    )
+
+    assert report.points_by_day == {1: 7_638}
+    assert report.total == 7_638
+
+
 def test_war_points_calculator_estimates_skill_points():
     user = UserData(user_id=42, skills=2490, skill_summon_cost=17)
 

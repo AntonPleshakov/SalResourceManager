@@ -5,6 +5,7 @@ from typing import Callable, Dict, Iterable, Mapping, Tuple
 
 from resources.user_data import UserData
 from resources.war_rules.dungeons import calculate_dungeon_points
+from resources.war_rules.forge import calculate_forge_points
 from resources.war_rules.forging import calculate_forging_points
 from resources.war_rules.skills import calculate_skill_points
 
@@ -70,6 +71,7 @@ class WarPointsCalculator:
             WarActivity.FORGING: calculate_forging_points,
             WarActivity.DUNGEONS: calculate_dungeon_points,
             WarActivity.SKILLS: calculate_skill_points,
+            WarActivity.FORGE: calculate_forge_points,
         }
 
     def calculate(
