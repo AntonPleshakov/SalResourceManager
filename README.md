@@ -17,8 +17,9 @@
    ```
 4. Place the Google service account key at the project root as `gapi_service_file.json`.
 5. Configure the admin sheet in Google Sheets with `Username` and `ID` columns.
-6. Set `RESOURCES_GTABLE_KEY`. The bot creates the configured `Resources`
-   worksheet and its columns automatically if it does not exist.
+6. Set `GAME_DATA_GTABLE_KEY` to the spreadsheet named «Игровые данные». The
+   bot creates the configured `User data` and `War stages` worksheets
+   automatically if they do not exist.
 
 ## Run
 

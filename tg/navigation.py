@@ -12,7 +12,8 @@ def home(message: Union[Message, CallbackQuery], bot: TeleBot):
     keyboard = InlineKeyboardMarkup(row_width=1)
     keyboard.add(Button("Ресурсы", "resources").inline())
     keyboard.add(Button("Технологии", "technologies").inline())
-    keyboard.add(InlineKeyboardButton("Таблица ресурсов", url=get_user_data_db().get_url()))
+    keyboard.add(Button("Война", "war").inline())
+    keyboard.add(InlineKeyboardButton("Игровые данные", url=get_user_data_db().get_url()))
     user_id, chat_id, message_id = get_ids(message)
     if admins_db.is_admin(user_id):
         keyboard.add(Button("Администраторы", "admins").inline())

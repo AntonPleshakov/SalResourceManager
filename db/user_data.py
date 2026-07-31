@@ -1,14 +1,14 @@
-from functools import lru_cache
-from typing import Dict, Optional
+from typing import Dict, List, Optional, Tuple
 
 from config.config import getconf
 from db.gapi.gsheets_manager import GSheetsManager
 from db.gapi.worksheet_manager import WorksheetManager
+from db.retry import ReconnectableDB
 from logger.app_logger import logger
 from resources.user_data import EDITABLE_FIELDS, UserData
 
 
-class UserDataDB:
+class UserDataDB(ReconnectableDB):
     def __init__(self, manager: WorksheetManager, spreadsheet_url: str = ""):
         self._manager = manager
         self._spreadsheet_url = spreadsheet_url
@@ -16,24 +16,38 @@ class UserDataDB:
         self.fetch()
 
     @classmethod
-    def connect(cls) -> "UserDataDB":
-        spreadsheet = GSheetsManager().open(getconf("RESOURCES_GTABLE_KEY"))
-        worksheet_name = getconf("RESOURCES_PAGE_NAME")
+    def _open_manager(cls) -> Tuple[WorksheetManager, str]:
+        spreadsheet = GSheetsManager().open(getconf("GAME_DATA_GTABLE_KEY"))
+        worksheet_name = getconf("USER_DATA_PAGE_NAME")
         if spreadsheet.is_worksheet_exist(worksheet_name):
             manager = spreadsheet.get_worksheet(worksheet_name)
         else:
             manager = spreadsheet.add_worksheet(worksheet_name)
             manager.set_header([UserData().params_views()])
-        return cls(manager, spreadsheet.get_url())
+        return manager, spreadsheet.get_url()
+
+    @classmethod
+    def connect(cls) -> "UserDataDB":
+        manager, spreadsheet_url = cls._open_manager()
+        return cls(manager, spreadsheet_url)
+
+    def _reconnect(self) -> None:
+        self._manager, self._spreadsheet_url = self._open_manager()
 
     def fetch(self) -> None:
         logger.info("DB: fetch user resources and technologies")
-        self._manager.fetch()
-        users = (UserData.from_row(row) for row in self._manager.get_all_values())
+        def load_users():
+            self._manager.fetch()
+            return [UserData.from_row(row) for row in self._manager.get_all_values()]
+
+        users = self._run_with_retry(load_users)
         self._users = {user.user_id.value: user for user in users}
 
     def get_user(self, user_id: int) -> Optional[UserData]:
         return self._users.get(user_id)
+
+    def get_users(self) -> List[UserData]:
+        return list(self._users.values())
 
     def get_url(self) -> str:
         return self._spreadsheet_url
@@ -48,9 +62,17 @@ class UserDataDB:
 
         logger.info("DB: add resource data for user %s", user_id)
         user = UserData(user_id=user_id, username=username)
-        self._manager.add_row(user.to_row())
+        if not self._add_user(user):
+            return self._users[user_id]
         self._users[user_id] = user
         return user
+
+    def _add_user(self, user: UserData) -> bool:
+        def user_is_missing() -> bool:
+            self.fetch()
+            return user.user_id.value not in self._users
+
+        return self._add_row_with_retry(user.to_row(), user_is_missing)
 
     def set_value(
         self, user_id: int, username: str, field_name: str, value: int
@@ -77,7 +99,8 @@ class UserDataDB:
             user = UserData(user_id=user_id, username=username)
             for field_name, value in values.items():
                 user.set_value(field_name, value)
-            self._manager.add_row(user.to_row())
+            if not self._add_user(user):
+                return self._users[user_id]
             self._users[user_id] = user
             return user
 
@@ -89,11 +112,23 @@ class UserDataDB:
         return user
 
     def _persist_all(self) -> None:
-        self._manager.update_values(
-            [user.to_row() for user in self._users.values()]
+        self._run_with_retry(
+            lambda: self._manager.update_values(
+                [user.to_row() for user in self._users.values()]
+            )
         )
 
 
-@lru_cache(maxsize=1)
+user_data_db: Optional[UserDataDB] = None
+
+
+def initialize_user_data_db() -> UserDataDB:
+    global user_data_db
+    user_data_db = UserDataDB.connect()
+    return user_data_db
+
+
 def get_user_data_db() -> UserDataDB:
-    return UserDataDB.connect()
+    if user_data_db is None:
+        raise RuntimeError("User data database has not been initialized")
+    return user_data_db

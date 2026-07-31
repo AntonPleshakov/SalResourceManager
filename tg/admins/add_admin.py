@@ -64,7 +64,7 @@ def add_admins_approved(callback_query: CallbackQuery, bot: TeleBot):
         admins_db.add_admin(admin)
         bot.send_message(
             admin.user_id.value,
-            "Вам выданы права администратора. Откройте меню командой /start.",
+            "Вам выданы права администратора. Отправьте боту сообщение, чтобы открыть меню.",
         )
     bot.answer_callback_query(callback_query.id, "Администраторы добавлены")
     home(callback_query, bot)

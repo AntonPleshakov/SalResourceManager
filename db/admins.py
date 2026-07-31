@@ -7,6 +7,7 @@ from parameters.int_param import IntParam
 from parameters.str_param import StrParam
 from .gapi.gsheets_manager import GSheetsManager
 from .gapi.worksheet_manager import WorksheetManager
+from .retry import ReconnectableDB
 
 
 class Admin(Parameters):
@@ -15,21 +16,30 @@ class Admin(Parameters):
         self.user_id: IntParam = IntParam("ID", user_id)
 
 
-class AdminsDB:
-    def __init__(self):
-        ss_name = getconf("ADMINS_GTABLE_KEY")
-        ws_name = getconf("ADMINS_PAGE_NAME")
-
-        self._manager: WorksheetManager = (
-            GSheetsManager().open(ss_name).get_worksheet(ws_name)
-        )
+class AdminsDB(ReconnectableDB):
+    def __init__(self, manager: WorksheetManager = None):
+        self._manager = manager or self._open_manager()
         self._admins: List[Admin] = []
         self._admins_id_set: Set[int] = set()
         self.fetch_admins()
 
+    @staticmethod
+    def _open_manager() -> WorksheetManager:
+        ss_name = getconf("ADMINS_GTABLE_KEY")
+        ws_name = getconf("ADMINS_PAGE_NAME")
+        return GSheetsManager().open(ss_name).get_worksheet(ws_name)
+
+    def _reconnect(self) -> None:
+        self._manager = self._open_manager()
+
     def add_admin(self, new_admin: Admin):
         nmd_logger.info(f"DB: add admin {new_admin.username}")
-        self._manager.add_row(new_admin.to_row())
+        def admin_is_missing() -> bool:
+            self.fetch_admins()
+            return self.get_admin(new_admin.user_id.value) is None
+
+        if not self._add_row_with_retry(new_admin.to_row(), admin_is_missing):
+            return
         self._admins.append(new_admin)
         self._admins_id_set.add(new_admin.user_id.value)
 
@@ -52,15 +62,19 @@ class AdminsDB:
         new_admins = [
             admin.to_row() for admin in admins if admin.user_id.value != user_id
         ]
-        self._manager.update_values(new_admins)
+        self._run_with_retry(lambda: self._manager.update_values(new_admins))
         self._admins = [admin for admin in admins if admin.user_id.value != user_id]
         self._admins_id_set = {admin.user_id.value for admin in self._admins}
 
     def fetch_admins(self):
         nmd_logger.info("DB: fetch admins")
-        self._manager.fetch()
-        admins_matrix = self._manager.get_all_values()
-        self._admins: List[Admin] = [Admin.from_row(row) for row in admins_matrix]
+        def load_admins() -> List[Admin]:
+            self._manager.fetch()
+            return [
+                Admin.from_row(row) for row in self._manager.get_all_values()
+            ]
+
+        self._admins = self._run_with_retry(load_admins) or []
         self._admins_id_set: Set[int] = {admin.user_id.value for admin in self._admins}
 
 
