@@ -9,7 +9,14 @@ reset_config(str(Path(__file__).parents[1] / "config" / "config_template.ini"))
 from db.user_data import UserDataDB
 from db.war_stages import WarStagesDB
 from resources.user_data import EDITABLE_FIELDS, UserData, parse_non_negative_int
-from resources.war import DEFAULT_WAR_STAGES, WarActivity, WarPointsCalculator
+from resources.war import (
+    DEFAULT_WAR_STAGES,
+    WarActivity,
+    WarPointsCalculator,
+    FORGE_WEAPON_CHANCES,
+    forge_weapon_chances,
+    weapon_points,
+)
 
 
 class FakeWorksheetManager:
@@ -67,6 +74,7 @@ def test_user_data_round_trip():
         "gems",
         "pets",
         "unmerged_mounts",
+        "forge_level",
         "skill_summon_cost",
         "extra_egg_chance",
         "mount_summon_cost",
@@ -120,6 +128,17 @@ def test_database_saves_multiple_fields_in_one_update():
     assert updated.gems.value == 1500
     assert updated.pets.value == 3
     assert updated.extra_mount_chance.value == 10
+
+
+def test_database_rejects_unknown_forge_level():
+    database = UserDataDB(FakeWorksheetManager())
+
+    try:
+        database.set_value(42, "tester", "forge_level", 36)
+    except ValueError as error:
+        assert str(error) == "Forge level must be between 1 and 35"
+    else:
+        raise AssertionError("Forge level above 35 must be rejected")
 
 
 def test_user_data_reconnects_after_failed_read(monkeypatch):
@@ -213,14 +232,25 @@ def test_war_stages_are_initialized_and_can_be_changed():
     assert manager.rows[0] == ["1", "Питомцы", "Подземелья", "Навыки"]
 
 
-def test_war_points_calculator_is_ready_for_future_scoring_rules():
-    user = UserData(user_id=42, username="tester", gems=100)
-    calculator = WarPointsCalculator({WarActivity.FORGING: lambda _: 25})
+def test_forge_chance_matrix_has_35_levels_and_ten_weapon_levels():
+    assert len(FORGE_WEAPON_CHANCES) == 35
+    assert all(len(chances) == 10 for chances in FORGE_WEAPON_CHANCES)
+    assert forge_weapon_chances(1) == [100] + [0] * 9
+    assert forge_weapon_chances(35) == [0, 0, 0, 0, 0, 0, 0, 60, 36, 4]
 
-    report = calculator.calculate([user], DEFAULT_WAR_STAGES)
 
-    assert report.points_by_day == {1: 25, 2: 0, 3: 25, 4: 0, 5: 25}
-    assert report.total == 75
+def test_war_points_calculator_applies_fixed_forging_rule():
+    user = UserData(user_id=42, forge_level=1, hammers=3)
+
+    assert weapon_points(2) == 2
+    assert weapon_points(3) == 4
+    assert weapon_points(9) == 5
+    report = WarPointsCalculator().calculate(
+        [user], {1: (WarActivity.FORGING,)}
+    )
+
+    assert report.points_by_day == {1: 6}
+    assert report.total == 6
 
 
 def test_parse_non_negative_int():

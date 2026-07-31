@@ -23,6 +23,7 @@ RESOURCE_FIELDS: Tuple[ResourceField, ...] = (
 )
 
 TECHNOLOGY_FIELDS: Tuple[ResourceField, ...] = (
+    ResourceField("forge_level", "Уровень кузницы"),
     ResourceField("skill_summon_cost", "Стоимость призыва навыков"),
     ResourceField("extra_egg_chance", "Доп. шанс на яйцо"),
     ResourceField("mount_summon_cost", "Стоимость призыва маунта"),
@@ -53,6 +54,7 @@ class UserData(Parameters):
         gems: int = 0,
         pets: int = 0,
         unmerged_mounts: int = 0,
+        forge_level: int = 1,
         skill_summon_cost: int = 0,
         extra_egg_chance: int = 0,
         mount_summon_cost: int = 0,
@@ -69,6 +71,7 @@ class UserData(Parameters):
         self.unmerged_mounts = IntParam(
             "Необъединённые маунты", unmerged_mounts
         )
+        self.forge_level = IntParam("Уровень кузницы", forge_level)
         self.skill_summon_cost = IntParam(
             "Стоимость призыва навыков", skill_summon_cost
         )

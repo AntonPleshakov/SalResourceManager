@@ -1,6 +1,6 @@
 # Sal Resources Manager
 
-## Quick setup
+## Setup
 
 1. Create a virtual environment:
    ```bash
@@ -11,21 +11,17 @@
    ```bash
    python -m pip install -r requirements.txt
    ```
-3. Copy configuration template and fill in values:
+3. Copy the configuration template and fill it in:
    ```bash
    copy config\config_template.ini config\config.ini
    ```
-4. Place the Google service account key at the project root as `gapi_service_file.json`.
-5. Configure the admin sheet in Google Sheets with `Username` and `ID` columns.
-6. Set `GAME_DATA_GTABLE_KEY` to the spreadsheet named «Игровые данные». The
-   bot creates the configured `User data` and `War stages` worksheets
-   automatically if they do not exist.
+4. Place the Google service account key at the project root as
+   `gapi_service_file.json`.
 
 ## Run
 
 ```bash
-MODE=Debug python main.py
+MODE=Release python main.py
 ```
 
-After the first message to the bot, all navigation and data editing are done
-through inline buttons.
+Available modes: `Release`, `Debug` (default), and `Test`.

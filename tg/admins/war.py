@@ -30,7 +30,10 @@ def _war_points_text() -> str:
         activities = ", ".join(activity.title for activity in stages[day])
         lines.append(f"День {day}: <b>{points}</b> — {activities}")
     lines.extend(
-        ["", f"Итого: <b>{report.total}</b>", "", "Правила начисления ещё не настроены."]
+        [
+            "",
+            f"Итого: <b>{report.total}</b>",
+        ]
     )
     return "\n".join(lines)
 

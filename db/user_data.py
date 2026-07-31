@@ -93,6 +93,8 @@ class UserDataDB(ReconnectableDB):
                 raise ValueError(f"Unknown resource field: {field_name}")
             if not isinstance(value, int) or value < 0:
                 raise ValueError("Resource value must be a non-negative integer")
+            if field_name == "forge_level" and not 1 <= value <= 35:
+                raise ValueError("Forge level must be between 1 and 35")
 
         user = self.get_user(user_id)
         if user is None:
