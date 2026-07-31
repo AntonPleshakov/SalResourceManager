@@ -8,6 +8,7 @@ from resources.war_rules.dungeons import calculate_dungeon_points
 from resources.war_rules.forge import calculate_forge_points
 from resources.war_rules.forging import calculate_forging_points
 from resources.war_rules.mounts import calculate_mount_points
+from resources.war_rules.pets import calculate_pet_points
 from resources.war_rules.skills import calculate_skill_points
 from resources.war_rules.technologies import calculate_technology_points
 
@@ -53,10 +54,6 @@ DEFAULT_WAR_STAGES: Dict[int, WarStage] = {
 
 ActivityRule = Callable[[UserData], Decimal]
 
-# Each row is a forge level (1–35); columns are weapon levels
-# Primitive, Medieval, Early-Modern, Modern, Space, Interstellar, Multiverse,
-# Quantum, Underworld, Divine. Values are percentages from the game table.
-
 
 @dataclass(frozen=True)
 class WarPointsReport:
@@ -76,6 +73,7 @@ class WarPointsCalculator:
             WarActivity.FORGE: calculate_forge_points,
             WarActivity.TECHNOLOGIES: calculate_technology_points,
             WarActivity.MOUNTS: calculate_mount_points,
+            WarActivity.PETS: calculate_pet_points,
         }
 
     def calculate(

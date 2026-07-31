@@ -339,6 +339,17 @@ def test_war_points_calculator_applies_mount_rule():
     assert report.total == 124_200
 
 
+def test_war_points_calculator_applies_pet_rule():
+    user = UserData(user_id=1, shells=100, extra_egg_chance=50, pets=2)
+
+    report = WarPointsCalculator().calculate(
+        [user], {1: (WarActivity.PETS,)}
+    )
+
+    assert report.points_by_day == {1: Decimal("468675.0")}
+    assert report.total == Decimal("468675.0")
+
+
 def test_war_points_calculator_estimates_skill_points():
     user = UserData(user_id=42, skills=2490, skill_summon_cost=17)
 
