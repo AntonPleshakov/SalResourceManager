@@ -26,7 +26,7 @@ TECHNOLOGY_FIELDS: Tuple[ResourceField, ...] = (
     ResourceField("forge_level", "Уровень кузницы"),
     ResourceField("skill_summon_cost", "Снижение стоимости призыва навыков (%)"),
     ResourceField("extra_egg_chance", "Доп. шанс на яйцо"),
-    ResourceField("mount_summon_cost", "Стоимость призыва маунта"),
+    ResourceField("mount_summon_cost", "Снижение стоимости призыва маунта (%)"),
     ResourceField("extra_mount_chance", "Шанс на доп. маунта"),
 )
 
@@ -79,7 +79,7 @@ class UserData(Parameters):
             "Доп. шанс на яйцо", extra_egg_chance
         )
         self.mount_summon_cost = IntParam(
-            "Стоимость призыва маунта", mount_summon_cost
+            "Снижение стоимости призыва маунта (%)", mount_summon_cost
         )
         self.extra_mount_chance = IntParam(
             "Шанс на доп. маунта", extra_mount_chance

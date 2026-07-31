@@ -118,6 +118,10 @@ class UserDataDB(ReconnectableDB):
                 raise ValueError("Forge level must be between 1 and 35")
             if field_name == "skill_summon_cost" and not 0 <= value <= 25:
                 raise ValueError("Skill summon cost reduction must be between 0 and 25")
+            if field_name == "mount_summon_cost" and not 0 <= value <= 25:
+                raise ValueError("Mount summon cost reduction must be between 0 and 25")
+            if field_name == "extra_mount_chance" and not 0 <= value <= 50:
+                raise ValueError("Extra mount chance must be between 0 and 50")
 
     def _persist_all(self) -> None:
         self._run_with_retry(

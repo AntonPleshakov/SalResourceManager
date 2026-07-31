@@ -155,6 +155,28 @@ def test_database_rejects_excessive_skill_summon_cost_reduction():
         raise AssertionError("Skill summon cost reduction above 25 must be rejected")
 
 
+def test_database_rejects_excessive_mount_summon_cost_reduction():
+    database = UserDataDB(FakeWorksheetManager())
+
+    try:
+        database.set_value(42, "tester", "mount_summon_cost", 26)
+    except ValueError as error:
+        assert str(error) == "Mount summon cost reduction must be between 0 and 25"
+    else:
+        raise AssertionError("Mount summon cost reduction above 25 must be rejected")
+
+
+def test_database_rejects_excessive_extra_mount_chance():
+    database = UserDataDB(FakeWorksheetManager())
+
+    try:
+        database.set_value(42, "tester", "extra_mount_chance", 51)
+    except ValueError as error:
+        assert str(error) == "Extra mount chance must be between 0 and 50"
+    else:
+        raise AssertionError("Extra mount chance above 50 must be rejected")
+
+
 def test_user_data_reconnects_after_failed_read(monkeypatch):
     broken_manager = FakeWorksheetManager()
     broken_database = UserDataDB(broken_manager)
@@ -298,6 +320,23 @@ def test_war_points_calculator_applies_fixed_technology_rule_per_user():
 
     assert report.points_by_day == {1: 498_600}
     assert report.total == 498_600
+
+
+def test_war_points_calculator_applies_mount_rule():
+    user = UserData(
+        user_id=1,
+        mount_keys=2_075,
+        mount_summon_cost=17,
+        extra_mount_chance=10,
+        unmerged_mounts=5,
+    )
+
+    report = WarPointsCalculator().calculate(
+        [user], {1: (WarActivity.MOUNTS,)}
+    )
+
+    assert report.points_by_day == {1: 124_200}
+    assert report.total == 124_200
 
 
 def test_war_points_calculator_estimates_skill_points():

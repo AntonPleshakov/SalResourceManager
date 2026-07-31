@@ -7,6 +7,7 @@ from resources.user_data import UserData
 from resources.war_rules.dungeons import calculate_dungeon_points
 from resources.war_rules.forge import calculate_forge_points
 from resources.war_rules.forging import calculate_forging_points
+from resources.war_rules.mounts import calculate_mount_points
 from resources.war_rules.skills import calculate_skill_points
 from resources.war_rules.technologies import calculate_technology_points
 
@@ -74,6 +75,7 @@ class WarPointsCalculator:
             WarActivity.SKILLS: calculate_skill_points,
             WarActivity.FORGE: calculate_forge_points,
             WarActivity.TECHNOLOGIES: calculate_technology_points,
+            WarActivity.MOUNTS: calculate_mount_points,
         }
 
     def calculate(
