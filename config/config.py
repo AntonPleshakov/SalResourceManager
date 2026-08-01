@@ -13,8 +13,10 @@ def getconf(option: str) -> str:
     return _config.get(_MODE, option)
 
 
-def getconf_int(option: str) -> int:
-    return _config.getint(_MODE, option)
+def getconf_int(option: str, fallback: int | None = None) -> int:
+    if fallback is None:
+        return _config.getint(_MODE, option)
+    return _config.getint(_MODE, option, fallback=fallback)
 
 
 def reset_config(filepath: str) -> None:

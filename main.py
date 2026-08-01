@@ -6,7 +6,7 @@ from telebot.handler_backends import BaseMiddleware
 from telebot.types import CallbackQuery, Message
 
 import tg.manager
-from config.config import getconf
+from config.config import getconf, getconf_int
 from db.access_group import initialize_access_group_db
 from db.admins import initialize_admins_db
 from db.user_data import initialize_user_data_db
@@ -14,6 +14,7 @@ from db.war_stages import initialize_war_stages_db
 from logger.app_logger import logger
 from tg.access import GroupAccessMiddleware
 from tg.filters import add_custom_filters
+from tg.reminders import ReminderScheduler
 from tg.utils import empty_filter, get_ids, get_permissions_denied_message, get_username
 
 
@@ -72,4 +73,9 @@ if __name__ == "__main__":
     )
     bot.setup_middleware(AlwaysAnswerCallbackQueryMiddleware())
     bot.exception_handler = BotExceptionHandler()
-    bot.infinity_polling()
+    reminder_scheduler = ReminderScheduler(bot, getconf_int("REMINDER_HOUR", 13))
+    reminder_scheduler.start()
+    try:
+        bot.infinity_polling()
+    finally:
+        reminder_scheduler.stop()
