@@ -17,17 +17,25 @@ class Admin(Parameters):
 
 
 class AdminsDB(ReconnectableDB):
+    HEADER = [Admin().params_views()]
+
     def __init__(self, manager: WorksheetManager = None):
         self._manager = manager or self._open_manager()
         self._admins: List[Admin] = []
         self._admins_id_set: Set[int] = set()
-        self.fetch_admins()
+        self.fetch_admins(refresh=False)
 
     @staticmethod
     def _open_manager() -> WorksheetManager:
         ss_name = getconf("ADMINS_GTABLE_KEY")
         ws_name = getconf("ADMINS_PAGE_NAME")
-        return GSheetsManager().open(ss_name).get_worksheet(ws_name)
+        spreadsheet = GSheetsManager().open(ss_name)
+        if spreadsheet.is_worksheet_exist(ws_name):
+            manager = spreadsheet.get_worksheet(ws_name)
+        else:
+            manager = spreadsheet.add_worksheet(ws_name)
+        manager.ensure_header(AdminsDB.HEADER)
+        return manager
 
     def _reconnect(self) -> None:
         self._manager = self._open_manager()
@@ -66,10 +74,11 @@ class AdminsDB(ReconnectableDB):
         self._admins = [admin for admin in admins if admin.user_id.value != user_id]
         self._admins_id_set = {admin.user_id.value for admin in self._admins}
 
-    def fetch_admins(self):
+    def fetch_admins(self, refresh: bool = True):
         nmd_logger.info("DB: fetch admins")
         def load_admins() -> List[Admin]:
-            self._manager.fetch()
+            if refresh:
+                self._manager.fetch()
             return [
                 Admin.from_row(row) for row in self._manager.get_all_values()
             ]

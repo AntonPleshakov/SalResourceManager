@@ -19,6 +19,12 @@
 docker compose up --build -d
 ```
 
+The `Release` configuration is used by default. To run in `Debug` mode:
+
+```bash
+MODE=Debug docker compose up --build -d
+```
+
 View logs:
 
 ```bash

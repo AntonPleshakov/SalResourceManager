@@ -160,6 +160,10 @@ def test_middleware_allows_group_registration_command_before_registration():
 class FakeWorksheetManager:
     def __init__(self, rows=None):
         self.rows = list(rows or [])
+        self.header = None
+
+    def ensure_header(self, header):
+        self.header = header
 
     def fetch(self):
         pass
@@ -210,6 +214,7 @@ def test_access_group_database_creates_settings_worksheet(monkeypatch):
 
     assert database.get_group_id() is None
     assert spreadsheet.added_worksheets == ["Settings"]
+    assert manager.header == [["Setting", "Value"]]
 
 
 class FakeRegistrationBot:

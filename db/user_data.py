@@ -13,7 +13,7 @@ class UserDataDB(ReconnectableDB):
         self._manager = manager
         self._spreadsheet_url = spreadsheet_url
         self._users: Dict[int, UserData] = {}
-        self.fetch()
+        self.fetch(refresh=False)
 
     @classmethod
     def _open_manager(cls) -> Tuple[WorksheetManager, str]:
@@ -23,7 +23,7 @@ class UserDataDB(ReconnectableDB):
             manager = spreadsheet.get_worksheet(worksheet_name)
         else:
             manager = spreadsheet.add_worksheet(worksheet_name)
-            manager.set_header([UserData().params_views()])
+        manager.ensure_header([UserData().params_views()])
         return manager, spreadsheet.get_url()
 
     @classmethod
@@ -34,10 +34,11 @@ class UserDataDB(ReconnectableDB):
     def _reconnect(self) -> None:
         self._manager, self._spreadsheet_url = self._open_manager()
 
-    def fetch(self) -> None:
+    def fetch(self, refresh: bool = True) -> None:
         logger.info("DB: fetch user resources and technologies")
         def load_users():
-            self._manager.fetch()
+            if refresh:
+                self._manager.fetch()
             return [UserData.from_row(row) for row in self._manager.get_all_values()]
 
         users = self._run_with_retry(load_users)

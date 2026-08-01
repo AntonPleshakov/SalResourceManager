@@ -14,7 +14,7 @@ class WarStagesDB(ReconnectableDB):
     def __init__(self, manager: WorksheetManager):
         self._manager = manager
         self._stages: Dict[int, WarStage] = {}
-        self.fetch()
+        self.fetch(refresh=False)
 
     @classmethod
     def _open_manager(cls) -> WorksheetManager:
@@ -24,7 +24,8 @@ class WarStagesDB(ReconnectableDB):
             manager = spreadsheet.get_worksheet(worksheet_name)
         else:
             manager = spreadsheet.add_worksheet(worksheet_name)
-            manager.set_header(cls.HEADER)
+        manager.ensure_header(cls.HEADER)
+        if not manager.get_all_values():
             manager.update_values(cls._stages_to_rows(DEFAULT_WAR_STAGES))
         return manager
 
@@ -35,10 +36,11 @@ class WarStagesDB(ReconnectableDB):
     def _reconnect(self) -> None:
         self._manager = self._open_manager()
 
-    def fetch(self) -> None:
+    def fetch(self, refresh: bool = True) -> None:
         logger.info("DB: fetch war stages")
         def load_stages() -> Dict[int, WarStage]:
-            self._manager.fetch()
+            if refresh:
+                self._manager.fetch()
             stages = dict(DEFAULT_WAR_STAGES)
             for row in self._manager.get_all_values():
                 try:

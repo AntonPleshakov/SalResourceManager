@@ -9,7 +9,7 @@ services:
     mem_limit: 256m
     cpus: 0.50
     environment:
-      MODE: Release
+      MODE: ${MODE:-Release}
       LOG_TO_GDRIVE: "false"
     logging:
       driver: local

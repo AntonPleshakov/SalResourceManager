@@ -9,29 +9,34 @@ from .retry import ReconnectableDB
 
 SETTINGS_WORKSHEET_NAME = "Settings"
 ACCESS_GROUP_ID_KEY = "Access group ID"
+SETTINGS_HEADER = [["Setting", "Value"]]
 
 
 class AccessGroupDB(ReconnectableDB):
     def __init__(self, manager: WorksheetManager = None):
         self._manager = manager or self._open_manager()
         self._group_id: Optional[int] = None
-        self.fetch()
+        self.fetch(refresh=False)
 
     @staticmethod
     def _open_manager() -> WorksheetManager:
         spreadsheet = GSheetsManager().open(getconf("ADMINS_GTABLE_KEY"))
-        if not spreadsheet.is_worksheet_exist(SETTINGS_WORKSHEET_NAME):
-            return spreadsheet.add_worksheet(SETTINGS_WORKSHEET_NAME)
-        return spreadsheet.get_worksheet(SETTINGS_WORKSHEET_NAME)
+        if spreadsheet.is_worksheet_exist(SETTINGS_WORKSHEET_NAME):
+            manager = spreadsheet.get_worksheet(SETTINGS_WORKSHEET_NAME)
+        else:
+            manager = spreadsheet.add_worksheet(SETTINGS_WORKSHEET_NAME)
+        manager.ensure_header(SETTINGS_HEADER)
+        return manager
 
     def _reconnect(self) -> None:
         self._manager = self._open_manager()
 
-    def fetch(self) -> None:
+    def fetch(self, refresh: bool = True) -> None:
         logger.info("DB: fetch access group")
 
         def load_group_id() -> Optional[int]:
-            self._manager.fetch()
+            if refresh:
+                self._manager.fetch()
             for row in self._manager.get_all_values():
                 if len(row) >= 2 and row[0] == ACCESS_GROUP_ID_KEY:
                     return int(row[1])

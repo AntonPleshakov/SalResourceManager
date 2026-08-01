@@ -12,7 +12,6 @@ class WorksheetManager:
         self._ws: Worksheet = worksheet
         self._cache: Optional[Matrix] = None
         self._header_range: Tuple[int, int] = (self._ws.frozen_rows, 0)
-        self.adjust_columns_width()
 
     @staticmethod
     def _validate_row(row: List[str]) -> List[str]:
@@ -33,7 +32,7 @@ class WorksheetManager:
         )
 
     def cache(self) -> Matrix:
-        if not self._cache:
+        if self._cache is None:
             self.fetch()
         return self._cache
 
@@ -60,7 +59,26 @@ class WorksheetManager:
         if len(header) > 0:
             self._header_range = (len(header), len(header[0]))
             self.bold_cells(self._header_range)
-        self.fetch()
+
+    def ensure_header(self, header: Matrix) -> None:
+        """Create or repair a worksheet header without duplicating existing rows."""
+        if not header:
+            return
+
+        values = self.cache()
+        header_rows = len(header)
+        header_columns = max(len(row) for row in header)
+
+        if self._header_range[0] == header_rows and values[:header_rows] == header:
+            return
+
+        if self._header_range[0] == 0 and values[:header_rows] == header:
+            self._ws.frozen_rows = header_rows
+            self._header_range = (header_rows, header_columns)
+            self.bold_cells(self._header_range)
+            return
+
+        self.set_header(header)
 
     def get_all_values(self) -> Matrix:
         return self.cache()[self._header_range[0] :]
@@ -72,8 +90,8 @@ class WorksheetManager:
         row_index = len(self.cache())
         row = self._validate_row(row)
         self._ws.insert_rows(row=row_index, values=row)
-        self.adjust_columns_width()
         self.cache().append(row)
+        self.adjust_columns_width()
 
     def sort_table(
         self,
@@ -103,8 +121,8 @@ class WorksheetManager:
         values = [[]] if not values else values
         values = self._validate_values(values)
         self._ws.update_values(start_range, values, extend=True)
-        self.adjust_columns_width()
         self.fetch()
+        self.adjust_columns_width()
 
     def hide_column(self, column: int):
         self._ws.hide_dimensions(column + 1, dimension="COLUMNS")
