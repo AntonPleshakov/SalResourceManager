@@ -7,10 +7,12 @@ from telebot.types import CallbackQuery, Message
 
 import tg.manager
 from config.config import getconf
+from db.access_group import initialize_access_group_db
 from db.admins import initialize_admins_db
 from db.user_data import initialize_user_data_db
 from db.war_stages import initialize_war_stages_db
 from logger.app_logger import logger
+from tg.access import GroupAccessMiddleware
 from tg.filters import add_custom_filters
 from tg.utils import empty_filter, get_ids, get_permissions_denied_message, get_username
 
@@ -53,9 +55,11 @@ def permission_denied_message(message: Union[Message, CallbackQuery]):
 if __name__ == "__main__":
     logger.info("Sal Resources Manager started")
     initialize_admins_db()
+    access_group_db = initialize_access_group_db()
     initialize_user_data_db()
     initialize_war_stages_db()
     add_custom_filters(bot)
+    bot.setup_middleware(GroupAccessMiddleware(bot, access_group_db))
     tg.manager.register_handlers(bot)
     bot.register_message_handler(
         permission_denied_message, chat_types=["private"], is_admin=False
