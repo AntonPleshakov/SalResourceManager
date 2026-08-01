@@ -1,0 +1,10 @@
+.git
+.gitignore
+.idea
+.pytest_cache
+.venv
+__pycache__
+**/__pycache__
+*.log*
+config/config.ini
+gapi_service_file.json

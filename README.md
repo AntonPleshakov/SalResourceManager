@@ -2,26 +2,31 @@
 
 ## Setup
 
-1. Create a virtual environment:
+1. Install Docker with Docker Compose.
+2. Copy the configuration template:
+
    ```bash
-   python -m venv .venv
-   .venv\Scripts\activate
+   cp config/config_template.ini config/config.ini
    ```
-2. Install dependencies:
-   ```bash
-   python -m pip install -r requirements.txt
-   ```
-3. Copy the configuration template and fill it in:
-   ```bash
-   copy config\config_template.ini config\config.ini
-   ```
-4. Place the Google service account key at the project root as
+
+3. Fill in `config/config.ini`.
+4. Place the Google service account key in the project root as
    `gapi_service_file.json`.
 
 ## Run
 
 ```bash
-MODE=Release python main.py
+docker compose up --build -d
 ```
 
-Available modes: `Release`, `Debug` (default), and `Test`.
+View logs:
+
+```bash
+docker compose logs -f bot
+```
+
+Stop the bot:
+
+```bash
+docker compose down
+```
