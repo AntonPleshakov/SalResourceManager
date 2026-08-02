@@ -105,14 +105,24 @@ def send_reminder(bot: TeleBot, reminder: ScheduledReminder) -> None:
     text = _reminder_text(reminder)
 
     sent = 0
-    for user in get_user_data_db().get_users():
+    users = get_user_data_db().get_users()
+    logger.info(
+        "Sending resource reminder kind=%s war_day=%s recipients=%d",
+        reminder.kind.value,
+        reminder.war_day,
+        len(users),
+    )
+    for user in users:
         user_id = user.user_id.value
         try:
             bot.send_message(user_id, text, reply_markup=keyboard)
             sent += 1
         except Exception as error:
             logger.warning(
-                "Unable to send resource reminder to user %s: %s", user_id, error
+                "Unable to send resource reminder to user_id=%s username=%s: %s",
+                user_id,
+                user.username.value,
+                error,
             )
     logger.info("Resource reminder '%s' sent to %s users", reminder.kind, sent)
 
@@ -132,6 +142,7 @@ class ReminderScheduler:
 
     def start(self) -> None:
         if self._thread is not None and self._thread.is_alive():
+            logger.debug("Resource reminder scheduler is already running")
             return
         self._stop_event.clear()
         self._thread = Thread(
@@ -141,15 +152,27 @@ class ReminderScheduler:
         logger.info("Resource reminder scheduler started at %02d:00", self._hour)
 
     def stop(self) -> None:
+        logger.info("Stopping resource reminder scheduler")
         self._stop_event.set()
         if self._thread is not None:
             self._thread.join(timeout=2)
+            if self._thread.is_alive():
+                logger.warning("Resource reminder scheduler did not stop in time")
+            else:
+                logger.info("Resource reminder scheduler stopped")
 
     def _run(self) -> None:
         while not self._stop_event.is_set():
             reminder = next_reminder(self._clock(), self._hour)
             delay = max((reminder.time - self._clock()).total_seconds(), 0)
+            logger.debug(
+                "Next resource reminder kind=%s scheduled_at=%s delay_seconds=%.0f",
+                reminder.kind.value,
+                reminder.time.isoformat(),
+                delay,
+            )
             if self._stop_event.wait(delay):
+                logger.debug("Resource reminder scheduler received stop signal")
                 return
             try:
                 send_reminder(self._bot, reminder)

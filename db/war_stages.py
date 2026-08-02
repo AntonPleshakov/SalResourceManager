@@ -18,6 +18,7 @@ class WarStagesDB(ReconnectableDB):
 
     @classmethod
     def _open_manager(cls) -> WorksheetManager:
+        logger.debug("DB: opening war stages worksheet")
         spreadsheet = GSheetsManager().open(getconf("GAME_DATA_GTABLE_KEY"))
         worksheet_name = getconf("WAR_STAGES_PAGE_NAME")
         if spreadsheet.is_worksheet_exist(worksheet_name):
@@ -26,14 +27,17 @@ class WarStagesDB(ReconnectableDB):
             manager = spreadsheet.add_worksheet(worksheet_name)
         manager.ensure_header(cls.HEADER)
         if not manager.get_all_values():
+            logger.info("DB: war stages worksheet empty; writing defaults")
             manager.update_values(cls._stages_to_rows(DEFAULT_WAR_STAGES))
         return manager
 
     @classmethod
     def connect(cls) -> "WarStagesDB":
+        logger.info("DB: connecting war stages storage")
         return cls(cls._open_manager())
 
     def _reconnect(self) -> None:
+        logger.info("DB: reconnecting war stages storage")
         self._manager = self._open_manager()
 
     def fetch(self, refresh: bool = True) -> None:
@@ -56,14 +60,19 @@ class WarStagesDB(ReconnectableDB):
             return stages
 
         self._stages = self._run_with_retry(load_stages)
+        logger.info("DB: fetched %d war stages", len(self._stages))
 
     def get_stages(self) -> Dict[int, WarStage]:
         return dict(self._stages)
 
     def set_activity(self, day: int, position: int, activity: WarActivity) -> None:
         if day not in self._stages:
+            logger.warning("DB: rejected activity update for unknown war day=%s", day)
             raise ValueError(f"Unknown war day: {day}")
         if position not in range(3):
+            logger.warning(
+                "DB: rejected activity update for invalid position=%s", position
+            )
             raise ValueError(f"Unknown activity position: {position}")
 
         stage = list(self._stages[day])
@@ -91,10 +100,12 @@ war_stages_db: Optional[WarStagesDB] = None
 def initialize_war_stages_db() -> WarStagesDB:
     global war_stages_db
     war_stages_db = WarStagesDB.connect()
+    logger.debug("DB: war stages singleton initialized")
     return war_stages_db
 
 
 def get_war_stages_db() -> WarStagesDB:
     if war_stages_db is None:
+        logger.error("DB: war stages requested before initialization")
         raise RuntimeError("War stages database has not been initialized")
     return war_stages_db

@@ -5,6 +5,7 @@ from telebot.custom_filters import SimpleCustomFilter, AdvancedCustomFilter, Sta
 from telebot.types import CallbackQuery
 
 from db.admins import get_admins_db
+from logger.app_logger import logger
 
 
 class IsAdminFilter(SimpleCustomFilter):
@@ -30,7 +31,9 @@ class PressedButtonFilter(AdvancedCustomFilter):
 
 
 def add_custom_filters(bot: TeleBot):
+    logger.debug("Registering custom Telegram filters")
     bot.add_custom_filter(IsAdminFilter())
     bot.add_custom_filter(IsCallbackQueryPrivateChatFilter())
     bot.add_custom_filter(PressedButtonFilter())
     bot.add_custom_filter(StateFilter(bot))
+    logger.info("Custom Telegram filters registered")

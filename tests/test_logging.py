@@ -5,7 +5,7 @@ from config.config import reset_config
 
 reset_config(str(Path(__file__).parents[1] / "config" / "config_template.ini"))
 
-from logger.app_logger import _MaxLevelFilter, _gdrive_logging_enabled
+from logger.app_logger import _MaxLevelFilter, _build_logger, _gdrive_logging_enabled
 
 
 def _record(level: int) -> logging.LogRecord:
@@ -30,3 +30,24 @@ def test_gdrive_logging_is_disabled_by_default(monkeypatch):
     monkeypatch.delenv("LOG_TO_GDRIVE", raising=False)
 
     assert not _gdrive_logging_enabled()
+
+
+def test_build_logger_replaces_only_application_handlers(monkeypatch):
+    monkeypatch.setenv("LOG_TO_GDRIVE", "false")
+    custom_handler = logging.NullHandler()
+    app_logger = logging.getLogger("SalResourcesManager")
+    app_logger.addHandler(custom_handler)
+
+    try:
+        rebuilt_logger = _build_logger()
+        rebuilt_logger = _build_logger()
+
+        managed_handlers = [
+            handler
+            for handler in rebuilt_logger.handlers
+            if getattr(handler, "_sal_managed", False)
+        ]
+        assert len(managed_handlers) == 2
+        assert custom_handler in rebuilt_logger.handlers
+    finally:
+        app_logger.removeHandler(custom_handler)

@@ -25,20 +25,28 @@ class WorksheetManager:
 
     def fetch(self):
         nmd_logger.info(
-            f"GAPI: '{self._ws.spreadsheet.title}' fetch ws '{self._ws.title}'"
+            "GAPI: '%s' fetching worksheet '%s'",
+            self._ws.spreadsheet.title,
+            self._ws.title,
         )
         self._cache = self._ws.get_all_values(
             include_tailing_empty_rows=False, include_tailing_empty=False
         )
+        nmd_logger.debug("GAPI: worksheet fetched; rows=%d", len(self._cache))
 
     def cache(self) -> Matrix:
         if self._cache is None:
+            nmd_logger.debug("GAPI: worksheet cache miss")
             self.fetch()
         return self._cache
 
     def bold_cells(self, end_range: tuple, to_bold: bool = True):
         nmd_logger.info(
-            f"GAPI: ({self._ws.spreadsheet.title}/{self._ws.title}) {"bold" if to_bold else "unbold"} cells until {end_range}"
+            "GAPI: (%s/%s) %s cells through %s",
+            self._ws.spreadsheet.title,
+            self._ws.title,
+            "bolding" if to_bold else "unbolding",
+            end_range,
         )
         start_range = (1, 1)
         self._ws.apply_format(
@@ -47,7 +55,10 @@ class WorksheetManager:
 
     def set_header(self, header: Matrix):
         nmd_logger.info(
-            f"GAPI: ({self._ws.spreadsheet.title}/{self._ws.title}) set header: {header}"
+            "GAPI: (%s/%s) setting header rows=%d",
+            self._ws.spreadsheet.title,
+            self._ws.title,
+            len(header),
         )
         values = self.get_all_values()
         if self._header_range[0] > 0:
@@ -63,6 +74,7 @@ class WorksheetManager:
     def ensure_header(self, header: Matrix) -> None:
         """Create or repair a worksheet header without duplicating existing rows."""
         if not header:
+            nmd_logger.debug("GAPI: empty header requires no changes")
             return
 
         values = self.cache()
@@ -70,9 +82,11 @@ class WorksheetManager:
         header_columns = max(len(row) for row in header)
 
         if self._header_range[0] == header_rows and values[:header_rows] == header:
+            nmd_logger.debug("GAPI: worksheet header already valid")
             return
 
         if self._header_range[0] == 0 and values[:header_rows] == header:
+            nmd_logger.info("GAPI: freezing existing worksheet header")
             self._ws.frozen_rows = header_rows
             self._header_range = (header_rows, header_columns)
             self.bold_cells(self._header_range)
@@ -99,7 +113,11 @@ class WorksheetManager:
         sort_order: str = "DESCENDING",
     ):
         nmd_logger.info(
-            f"GAPI: ({self._ws.spreadsheet.title}/{self._ws.title}) sort table by {column_index} column in {sort_order} order"
+            "GAPI: (%s/%s) sorting by column=%d order=%s",
+            self._ws.spreadsheet.title,
+            self._ws.title,
+            column_index,
+            sort_order,
         )
         start_range = (self._header_range[0] + 1, 1)
         cache = self.cache()
@@ -113,7 +131,11 @@ class WorksheetManager:
         start_range: Optional[tuple] = None,
     ):
         nmd_logger.info(
-            f"GAPI: ({self._ws.spreadsheet.title}/{self._ws.title}) update {len(values)} rows from {start_range}"
+            "GAPI: (%s/%s) updating %d rows from %s",
+            self._ws.spreadsheet.title,
+            self._ws.title,
+            len(values),
+            start_range,
         )
         if not start_range:
             start_range = (self._header_range[0] + 1, 1)
@@ -125,12 +147,15 @@ class WorksheetManager:
         self.adjust_columns_width()
 
     def hide_column(self, column: int):
+        nmd_logger.info("GAPI: hiding worksheet column=%d", column)
         self._ws.hide_dimensions(column + 1, dimension="COLUMNS")
 
     def hide_worksheet(self):
+        nmd_logger.info("GAPI: hiding worksheet '%s'", self._ws.title)
         self._ws.hidden = True
 
     def adjust_columns_width(self):
         values = self.cache()
         columns = len(values[0]) if values else 0
+        nmd_logger.debug("GAPI: adjusting width for %d columns", columns)
         self._ws.adjust_column_width(1, columns)

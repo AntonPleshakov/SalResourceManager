@@ -5,6 +5,7 @@ from telebot.handler_backends import State, StatesGroup
 from telebot.types import CallbackQuery, InlineKeyboardMarkup, Message
 
 from db.user_data import get_user_data_db
+from logger.app_logger import logger
 from resources.user_data import (
     EDITABLE_FIELDS,
     RESOURCE_FIELDS,
@@ -36,8 +37,15 @@ def _section_menu(
     notice: str = "",
 ) -> None:
     user_id, chat_id, message_id = get_ids(message)
+    username = get_username(message)
+    logger.debug(
+        "Opening user data section=%s for user_id=%s username=%s",
+        section,
+        user_id,
+        username,
+    )
     bot.delete_state(user_id)
-    user = get_user_data_db().get_or_create(user_id, get_username(message))
+    user = get_user_data_db().get_or_create(user_id, username)
 
     values = "\n".join(
         f"{field.title}: <b>{user.get_value(field.name)}</b>" for field in fields
@@ -89,11 +97,23 @@ def request_value(callback_query: CallbackQuery, bot: TeleBot) -> None:
     field_name = callback_query.data.rsplit("/", maxsplit=1)[-1]
     field = EDITABLE_FIELDS.get(field_name)
     if field is None:
+        logger.warning(
+            "Unknown user data field requested by user_id=%s username=%s field=%s",
+            callback_query.from_user.id,
+            get_username(callback_query),
+            field_name,
+        )
         bot.answer_callback_query(callback_query.id, "Показатель не найден")
         return
 
     section = "resources" if field in RESOURCE_FIELDS else "technologies"
     user_id, chat_id, message_id = get_ids(callback_query)
+    logger.info(
+        "User data edit started user_id=%s username=%s field=%s",
+        user_id,
+        get_username(callback_query),
+        field_name,
+    )
     bot.set_state(user_id, EditUserDataStates.value)
     bot.add_data(user_id, field_name=field_name, section=section)
 
@@ -123,10 +143,22 @@ def fill_section(callback_query: CallbackQuery, bot: TeleBot) -> None:
     section = callback_query.data.rsplit("/", maxsplit=1)[-1]
     fields = SECTION_FIELDS.get(section)
     if fields is None:
+        logger.warning(
+            "Unknown user data section requested by user_id=%s username=%s section=%s",
+            callback_query.from_user.id,
+            get_username(callback_query),
+            section,
+        )
         bot.answer_callback_query(callback_query.id, "Раздел не найден")
         return
 
     user_id, chat_id, message_id = get_ids(callback_query)
+    logger.info(
+        "User data section fill started user_id=%s username=%s section=%s",
+        user_id,
+        get_username(callback_query),
+        section,
+    )
     bot.set_state(user_id, EditUserDataStates.fill_values)
     bot.add_data(user_id, fill_section=section, fill_index=0, fill_values={})
 
@@ -146,12 +178,16 @@ def fill_section(callback_query: CallbackQuery, bot: TeleBot) -> None:
 
 def save_value(message: Message, bot: TeleBot) -> None:
     user_id, chat_id, _ = get_ids(message)
+    username = get_username(message)
     with bot.retrieve_data(user_id) as data:
         field_name = data.get("field_name")
         section = data.get("section")
 
     field = EDITABLE_FIELDS.get(field_name)
     if field is None or section not in {"resources", "technologies"}:
+        logger.warning(
+            "Invalid edit state for user_id=%s username=%s", user_id, username
+        )
         bot.delete_state(user_id)
         bot.send_message(
             chat_id,
@@ -163,16 +199,35 @@ def save_value(message: Message, bot: TeleBot) -> None:
     try:
         value = parse_editable_field_value(field_name, message.text)
     except ValueError:
+        logger.info(
+            "Invalid user data input user_id=%s username=%s field=%s",
+            user_id,
+            username,
+            field_name,
+        )
         bot.reply_to(message, _value_input_hint(field))
         return
 
     try:
         get_user_data_db().set_value(
-            user_id, get_username(message), field_name, value
+            user_id, username, field_name, value
         )
     except ValueError as error:
+        logger.warning(
+            "Rejected user data value user_id=%s username=%s field=%s reason=%s",
+            user_id,
+            username,
+            field_name,
+            error,
+        )
         bot.reply_to(message, f"Значение для «{field.title}» не подходит: {error}")
         return
+    logger.info(
+        "User data edit completed user_id=%s username=%s field=%s",
+        user_id,
+        username,
+        field_name,
+    )
     notice = f"✅ {field.title}: <b>{value}</b> — сохранено."
     if section == "resources":
         resources_menu(message, bot, notice)
@@ -182,6 +237,7 @@ def save_value(message: Message, bot: TeleBot) -> None:
 
 def save_all_values(message: Message, bot: TeleBot) -> None:
     user_id, chat_id, _ = get_ids(message)
+    username = get_username(message)
     with bot.retrieve_data(user_id) as data:
         section = data.get("fill_section")
         index = data.get("fill_index")
@@ -195,6 +251,11 @@ def save_all_values(message: Message, bot: TeleBot) -> None:
         or not 0 <= index < len(fields)
         or not isinstance(values, dict)
     ):
+        logger.warning(
+            "Invalid section fill state for user_id=%s username=%s",
+            user_id,
+            username,
+        )
         bot.delete_state(user_id)
         bot.send_message(
             chat_id,
@@ -206,12 +267,27 @@ def save_all_values(message: Message, bot: TeleBot) -> None:
     try:
         value = parse_editable_field_value(field.name, message.text)
     except ValueError:
+        logger.info(
+            "Invalid section input user_id=%s username=%s section=%s field=%s",
+            user_id,
+            username,
+            section,
+            field.name,
+        )
         bot.reply_to(message, _value_input_hint(field))
         return
 
     values[field.name] = value
     next_index = index + 1
     if next_index < len(fields):
+        logger.debug(
+            "User data section fill progress user_id=%s username=%s section=%s step=%d/%d",
+            user_id,
+            username,
+            section,
+            next_index,
+            len(fields),
+        )
         bot.add_data(
             user_id,
             fill_section=section,
@@ -232,11 +308,25 @@ def save_all_values(message: Message, bot: TeleBot) -> None:
         return
 
     try:
-        get_user_data_db().set_values(user_id, get_username(message), values)
+        get_user_data_db().set_values(user_id, username, values)
     except ValueError as error:
+        logger.warning(
+            "Rejected user data section user_id=%s username=%s section=%s reason=%s",
+            user_id,
+            username,
+            section,
+            error,
+        )
         bot.reply_to(message, f"Значение не подходит: {error}")
         return
     bot.delete_state(user_id)
+    logger.info(
+        "User data section fill completed user_id=%s username=%s section=%s fields=%d",
+        user_id,
+        username,
+        section,
+        len(values),
+    )
     bot.send_message(
         chat_id,
         "✅ Все значения раздела сохранены.",
@@ -248,6 +338,7 @@ def save_all_values(message: Message, bot: TeleBot) -> None:
 
 
 def register_handlers(bot: TeleBot) -> None:
+    logger.debug("Registering user data handlers")
     bot.register_callback_query_handler(
         resources_menu,
         func=empty_filter,

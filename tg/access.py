@@ -48,10 +48,17 @@ class GroupAccessMiddleware(BaseMiddleware):
         self, update: Union[Message, CallbackQuery], data: dict
     ) -> CancelUpdate | None:
         if is_group_registration_message(update):
+            logger.debug("Allowing access group registration command")
             return None
 
         group_id = self._access_group_db.get_group_id()
         if group_id is None:
+            user_id, _, _ = get_ids(update)
+            logger.info(
+                "Group access denied for user_id=%s username=%s: group is not configured",
+                user_id,
+                get_username(update),
+            )
             self._deny_access(update, ACCESS_GROUP_NOT_REGISTERED_MESSAGE)
             return CancelUpdate()
 
@@ -60,7 +67,8 @@ class GroupAccessMiddleware(BaseMiddleware):
             member = self._bot.get_chat_member(group_id, user_id)
         except Exception as error:
             logger.warning(
-                "Unable to check group membership for user '%s': %s",
+                "Unable to check group membership for user_id=%s username=%s: %s",
+                user_id,
                 get_username(update),
                 error,
             )
@@ -70,7 +78,11 @@ class GroupAccessMiddleware(BaseMiddleware):
         if is_group_member(member):
             return None
 
-        logger.info("Group access denied for user '%s'", get_username(update))
+        logger.info(
+            "Group access denied for user_id=%s username=%s: not a member",
+            user_id,
+            get_username(update),
+        )
         self._deny_access(update, ACCESS_DENIED_MESSAGE)
         return CancelUpdate()
 
@@ -91,4 +103,6 @@ class GroupAccessMiddleware(BaseMiddleware):
             else:
                 self._bot.reply_to(update, text)
         except Exception as error:
-            logger.info("Unable to send group access denial: %s", error)
+            logger.warning(
+                "Unable to send group access denial: %s", type(error).__name__
+            )

@@ -3,8 +3,9 @@ from telebot.types import CallbackQuery, InlineKeyboardMarkup
 
 from db.user_data import get_user_data_db
 from db.war_stages import get_war_stages_db
+from logger.app_logger import logger
 from resources.war import WarActivity, WarPointsCalculator
-from tg.utils import Button, empty_filter, format_points, get_ids
+from tg.utils import Button, empty_filter, format_points, get_ids, get_username
 
 
 def _edit_message(
@@ -24,7 +25,10 @@ def war_menu(callback_query: CallbackQuery, bot: TeleBot) -> None:
 
 def _war_points_text() -> str:
     stages = get_war_stages_db().get_stages()
-    report = WarPointsCalculator().calculate(get_user_data_db().get_users(), stages)
+    users = get_user_data_db().get_users()
+    logger.info("Calculating war points users=%d days=%d", len(users), len(stages))
+    report = WarPointsCalculator().calculate(users, stages)
+    logger.info("War points calculated")
     lines = ["<b>Максимальные очки войны</b>", ""]
     for day, points in report.points_by_day.items():
         activities = ", ".join(activity.title for activity in stages[day])
@@ -99,6 +103,14 @@ def activity_options(callback_query: CallbackQuery, bot: TeleBot) -> None:
 
 def set_activity(callback_query: CallbackQuery, bot: TeleBot) -> None:
     _, _, day, position, activity = callback_query.data.split("/")
+    logger.info(
+        "War activity update requested admin_id=%s username=%s day=%s position=%s activity=%s",
+        callback_query.from_user.id,
+        get_username(callback_query),
+        day,
+        position,
+        activity,
+    )
     get_war_stages_db().set_activity(
         int(day), int(position), WarActivity(activity)
     )
@@ -107,6 +119,7 @@ def set_activity(callback_query: CallbackQuery, bot: TeleBot) -> None:
 
 
 def register_handlers(bot: TeleBot) -> None:
+    logger.debug("Registering war administration handlers")
     bot.register_callback_query_handler(
         war_menu,
         func=empty_filter,

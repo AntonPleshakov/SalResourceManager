@@ -7,10 +7,12 @@ from pydrive2.drive import GoogleDrive
 from pydrive2.files import GoogleDriveFile
 
 from config.config import getconf, getconf_path
+from logger.app_logger import logger
 
 
 class GDriveManager:
     def __init__(self):
+        logger.debug("Authenticating Google Drive client")
         with getconf_path("GSERVICE_FILE").open(encoding="utf-8") as service_file:
             service_dict = json.load(service_file)
         gauth_settings = {
@@ -24,8 +26,10 @@ class GDriveManager:
         self._drive: GoogleDrive = GoogleDrive(gauth)
         self._files: Dict[str, GoogleDriveFile] = {}
         self._folder_path: str = getconf("GDRIVE_FOLDER_PATH")
+        logger.info("Google Drive client initialized")
 
     def _create_file(self, file_name: str) -> GoogleDriveFile:
+        logger.info("GDrive: creating file '%s'", file_name)
         file = self._drive.CreateFile(
             {"parents": [{"id": self._folder_path}], "title": file_name}
         )
@@ -34,9 +38,11 @@ class GDriveManager:
         return file
 
     def _get_file(self, file_name: str) -> Optional[GoogleDriveFile]:
+        logger.debug("GDrive: looking up file '%s'", file_name)
         param = {"q": f"title='{file_name}' and '{self._folder_path}' in parents"}
         files_result = self._drive.ListFile(param).GetList()
         if not files_result:
+            logger.debug("GDrive: file '%s' not found", file_name)
             return None
 
         file = files_result[0]
@@ -54,6 +60,7 @@ class GDriveManager:
             return self._create_file(file_name)
 
     def rename_file(self, old_name: str, new_name: str):
+        logger.info("GDrive: renaming '%s' to '%s'", old_name, new_name)
         file = self._file(old_name)
         file["title"] = new_name
         file.Upload()
@@ -61,6 +68,7 @@ class GDriveManager:
         self._files[new_name] = self._files.pop(old_name)
 
     def delete_file(self, file_name: str):
+        logger.info("GDrive: deleting file '%s'", file_name)
         file = self._file(file_name)
         file.Delete()
 
@@ -69,15 +77,18 @@ class GDriveManager:
     def is_file_exists(self, file_name: str) -> bool:
         param = {"q": f"title='{file_name}' and '{self._folder_path}' in parents"}
         files_result = self._drive.ListFile(param).GetList()
-        return len(files_result) > 0
+        exists = len(files_result) > 0
+        logger.debug("GDrive: file '%s' exists=%s", file_name, exists)
+        return exists
 
     def download_file(self, gdrive_path: str, local_path: str):
+        logger.info("GDrive: downloading '%s'", gdrive_path)
         file = self._file(gdrive_path)
         file.GetContentFile(local_path)
 
     def upload_file(self, file_path: str, gdrive_file_name: str = ""):
-        file = self._file(
-            gdrive_file_name if gdrive_file_name else os.path.basename(file_path)
-        )
+        target_name = gdrive_file_name if gdrive_file_name else os.path.basename(file_path)
+        logger.info("GDrive: uploading '%s'", target_name)
+        file = self._file(target_name)
         file.SetContentFile(file_path)
         file.Upload()

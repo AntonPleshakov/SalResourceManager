@@ -33,13 +33,24 @@ def run_with_backoff(
 
     while True:
         try:
-            return operation()
+            result = operation()
+            if attempt > 1:
+                logger.info("Startup initialization succeeded on attempt %d", attempt)
+            return result
         except Exception as error:
             if not is_retryable(error):
+                logger.error(
+                    "Startup initialization failed with a non-retryable %s",
+                    type(error).__name__,
+                )
                 raise
 
             remaining = timeout_seconds - (time.monotonic() - started_at)
             if remaining <= 0:
+                logger.error(
+                    "Startup initialization timed out after %d attempts",
+                    attempt,
+                )
                 raise
 
             retry_delay = min(delay, remaining)
@@ -68,12 +79,27 @@ class ReconnectableDB:
             return operation()
         except Exception as error:
             if not is_retryable(error):
+                logger.error(
+                    "%s request failed with a non-retryable %s",
+                    type(self).__name__,
+                    type(error).__name__,
+                )
                 raise
-            logger.warning("%s request failed; reconnecting before retry", type(self).__name__)
+            logger.warning(
+                "%s request failed with %s; reconnecting before retry",
+                type(self).__name__,
+                type(error).__name__,
+            )
             self._reconnect()
             if should_retry is not None and not should_retry():
+                logger.info(
+                    "%s retry skipped because the operation was already applied",
+                    type(self).__name__,
+                )
                 return None
-            return operation()
+            result = operation()
+            logger.info("%s request succeeded after reconnect", type(self).__name__)
+            return result
 
     def _add_row_with_retry(
         self, row: List[str], should_retry: Callable[[], bool]

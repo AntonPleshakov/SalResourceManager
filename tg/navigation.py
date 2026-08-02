@@ -5,7 +5,8 @@ from telebot.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMar
 
 from db.admins import get_admins_db
 from db.user_data import get_user_data_db
-from tg.utils import Button, get_ids
+from tg.utils import Button, get_ids, get_username
+from logger.app_logger import logger
 
 
 def home(message: Union[Message, CallbackQuery], bot: TeleBot):
@@ -15,6 +16,11 @@ def home(message: Union[Message, CallbackQuery], bot: TeleBot):
     keyboard.add(Button("Война", "war").inline())
     keyboard.add(InlineKeyboardButton("Игровые данные", url=get_user_data_db().get_url()))
     user_id, chat_id, message_id = get_ids(message)
+    logger.debug(
+        "Opening home menu for user_id=%s username=%s",
+        user_id,
+        get_username(message),
+    )
     if get_admins_db().is_admin(user_id):
         keyboard.add(Button("Администраторы", "admins").inline())
     text = "Выберите раздел"

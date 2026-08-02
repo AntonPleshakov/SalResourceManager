@@ -21,8 +21,12 @@ class AddAdminStates(StatesGroup):
 
 
 def add_admins(callback_query: CallbackQuery, bot: TeleBot):
-    logger.info("Add admin requested by %s", get_username(callback_query))
     user_id, chat_id, message_id = get_ids(callback_query)
+    logger.info(
+        "Add admin requested by user_id=%s username=%s",
+        user_id,
+        get_username(callback_query),
+    )
     request = KeyboardButtonRequestUsers(
         request_id=0, user_is_bot=False, request_username=True
     )
@@ -41,6 +45,12 @@ def add_admins(callback_query: CallbackQuery, bot: TeleBot):
 def add_admins_confirmation(message: Message, bot: TeleBot):
     new_admins = [Admin(user.username or str(user.user_id), user.user_id) for user in message.users_shared.users]
     user_id, chat_id, message_id = get_ids(message)
+    logger.info(
+        "Admin selection received requester_id=%s username=%s selected=%d",
+        user_id,
+        get_username(message),
+        len(new_admins),
+    )
     bot.set_state(user_id, AddAdminStates.add_admin)
     bot.add_data(user_id, new_admins=new_admins)
     links = [get_user_link(admin.user_id.value, admin.username.value) for admin in new_admins]
@@ -59,6 +69,12 @@ def add_admins_approved(callback_query: CallbackQuery, bot: TeleBot):
     user_id, _, _ = get_ids(callback_query)
     with bot.retrieve_data(user_id) as data:
         new_admins = data.pop("new_admins")
+    logger.info(
+        "Admin addition approved requester_id=%s username=%s count=%d",
+        user_id,
+        get_username(callback_query),
+        len(new_admins),
+    )
     bot.delete_state(user_id)
     for admin in new_admins:
         get_admins_db().add_admin(admin)
@@ -66,11 +82,18 @@ def add_admins_approved(callback_query: CallbackQuery, bot: TeleBot):
             admin.user_id.value,
             "Вам выданы права администратора. Отправьте боту сообщение, чтобы открыть меню.",
         )
+    logger.info(
+        "Admin addition completed requester_id=%s username=%s count=%d",
+        user_id,
+        get_username(callback_query),
+        len(new_admins),
+    )
     bot.answer_callback_query(callback_query.id, "Администраторы добавлены")
     home(callback_query, bot)
 
 
 def register_handlers(bot: TeleBot):
+    logger.debug("Registering add-admin handlers")
     bot.register_callback_query_handler(
         add_admins,
         func=empty_filter,

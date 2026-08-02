@@ -47,8 +47,12 @@ class BotExceptionHandler(ExceptionHandler):
 
 
 def permission_denied_message(message: Union[Message, CallbackQuery]):
-    logger.info("Permission denied for user '%s'", get_username(message))
     user_id, chat_id, _ = get_ids(message)
+    logger.info(
+        "Permission denied for user_id=%s username=%s",
+        user_id,
+        get_username(message),
+    )
     text = get_permissions_denied_message(user_id)
     if isinstance(message, Message):
         bot.reply_to(message, text)
@@ -57,10 +61,18 @@ def permission_denied_message(message: Union[Message, CallbackQuery]):
 
 
 def initialize_databases():
-    initialize_admins_db()
+    logger.info("Initializing application databases")
+    admins_db = initialize_admins_db()
     access_group_db = initialize_access_group_db()
-    initialize_user_data_db()
-    initialize_war_stages_db()
+    user_data_db = initialize_user_data_db()
+    war_stages_db = initialize_war_stages_db()
+    logger.info(
+        "Application databases initialized: admins=%d users=%d war_days=%d access_group=%s",
+        len(admins_db.get_admins()),
+        len(user_data_db.get_users()),
+        len(war_stages_db.get_stages()),
+        "configured" if access_group_db.get_group_id() is not None else "missing",
+    )
     return access_group_db
 
 
@@ -77,6 +89,7 @@ if __name__ == "__main__":
         )
         raise
 
+    logger.debug("Registering Telegram filters, middleware and handlers")
     add_custom_filters(bot)
     bot.setup_middleware(GroupAccessMiddleware(bot, access_group_db))
     tg.manager.register_handlers(bot)
@@ -97,4 +110,6 @@ if __name__ == "__main__":
     try:
         bot.infinity_polling()
     finally:
+        logger.info("Stopping Sal Resources Manager")
         reminder_scheduler.stop()
+        logger.info("Sal Resources Manager stopped")

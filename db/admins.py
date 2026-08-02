@@ -27,6 +27,7 @@ class AdminsDB(ReconnectableDB):
 
     @staticmethod
     def _open_manager() -> WorksheetManager:
+        nmd_logger.debug("DB: opening admins worksheet")
         ss_name = getconf("ADMINS_GTABLE_KEY")
         ws_name = getconf("ADMINS_PAGE_NAME")
         spreadsheet = GSheetsManager().open(ss_name)
@@ -38,18 +39,30 @@ class AdminsDB(ReconnectableDB):
         return manager
 
     def _reconnect(self) -> None:
+        nmd_logger.info("DB: reconnecting admins storage")
         self._manager = self._open_manager()
 
     def add_admin(self, new_admin: Admin):
-        nmd_logger.info(f"DB: add admin {new_admin.username}")
+        nmd_logger.info(
+            "DB: adding admin user_id=%s username=%s",
+            new_admin.user_id.value,
+            new_admin.username.value,
+        )
+
         def admin_is_missing() -> bool:
             self.fetch_admins()
             return self.get_admin(new_admin.user_id.value) is None
 
         if not self._add_row_with_retry(new_admin.to_row(), admin_is_missing):
+            nmd_logger.info(
+                "DB: admin user_id=%s username=%s was already present after reconnect",
+                new_admin.user_id.value,
+                new_admin.username.value,
+            )
             return
         self._admins.append(new_admin)
         self._admins_id_set.add(new_admin.user_id.value)
+        nmd_logger.info("DB: admin added; total=%d", len(self._admins))
 
     def get_admins(self) -> List[Admin]:
         return self._admins
@@ -61,11 +74,23 @@ class AdminsDB(ReconnectableDB):
         return None
 
     def is_admin(self, user_id: int):
-        nmd_logger.info(f"DB: Check if {user_id} is admin")
-        return user_id in self._admins_id_set
+        result = user_id in self._admins_id_set
+        admin = self.get_admin(user_id)
+        username = admin.username.value if admin is not None else "<not-an-admin>"
+        nmd_logger.debug(
+            "DB: admin check user_id=%s username=%s result=%s",
+            user_id,
+            username,
+            result,
+        )
+        return result
 
     def del_admin(self, user_id: int):
-        nmd_logger.info(f"DB: del admin {user_id}")
+        admin = self.get_admin(user_id)
+        username = admin.username.value if admin is not None else "<not-found>"
+        nmd_logger.info(
+            "DB: deleting admin user_id=%s username=%s", user_id, username
+        )
         admins = self.get_admins()
         new_admins = [
             admin.to_row() for admin in admins if admin.user_id.value != user_id
@@ -73,9 +98,11 @@ class AdminsDB(ReconnectableDB):
         self._run_with_retry(lambda: self._manager.update_values(new_admins))
         self._admins = [admin for admin in admins if admin.user_id.value != user_id]
         self._admins_id_set = {admin.user_id.value for admin in self._admins}
+        nmd_logger.info("DB: admin deleted; total=%d", len(self._admins))
 
     def fetch_admins(self, refresh: bool = True):
         nmd_logger.info("DB: fetch admins")
+
         def load_admins() -> List[Admin]:
             if refresh:
                 self._manager.fetch()
@@ -85,6 +112,7 @@ class AdminsDB(ReconnectableDB):
 
         self._admins = self._run_with_retry(load_admins) or []
         self._admins_id_set: Set[int] = {admin.user_id.value for admin in self._admins}
+        nmd_logger.info("DB: fetched %d admins", len(self._admins))
 
 
 admins_db: Optional[AdminsDB] = None
@@ -93,10 +121,12 @@ admins_db: Optional[AdminsDB] = None
 def initialize_admins_db() -> AdminsDB:
     global admins_db
     admins_db = AdminsDB()
+    nmd_logger.debug("DB: admins singleton initialized")
     return admins_db
 
 
 def get_admins_db() -> AdminsDB:
     if admins_db is None:
+        nmd_logger.error("DB: admins requested before initialization")
         raise RuntimeError("Admins database has not been initialized")
     return admins_db

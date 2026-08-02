@@ -45,7 +45,9 @@ def send_standard_notification(bot: TeleBot) -> BroadcastResult:
     keyboard = _update_keyboard()
     sent = 0
     failed = 0
-    for user in get_user_data_db().get_users():
+    users = get_user_data_db().get_users()
+    logger.info("Starting standard admin notification recipients=%d", len(users))
+    for user in users:
         user_id = user.user_id.value
         try:
             bot.send_message(user_id, STANDARD_NOTIFICATION_TEXT, reply_markup=keyboard)
@@ -53,7 +55,10 @@ def send_standard_notification(bot: TeleBot) -> BroadcastResult:
         except Exception as error:
             failed += 1
             logger.warning(
-                "Unable to send admin notification to user %s: %s", user_id, error
+                "Unable to send admin notification to user_id=%s username=%s: %s",
+                user_id,
+                user.username.value,
+                error,
             )
     logger.info("Standard admin notification sent=%s failed=%s", sent, failed)
     return BroadcastResult(sent, failed)
@@ -80,8 +85,14 @@ def build_custom_notification_messages(
 ) -> List[str]:
     clean_text = text.strip()
     if not clean_text:
+        logger.warning("Rejected empty custom notification")
         raise ValueError("Notification text must not be empty")
     if len(clean_text) > MAX_CUSTOM_TEXT_LENGTH:
+        logger.warning(
+            "Rejected custom notification length=%d limit=%d",
+            len(clean_text),
+            MAX_CUSTOM_TEXT_LENGTH,
+        )
         raise ValueError("Notification text is too long")
 
     header = _custom_notification_header(clean_text, admin_name)
@@ -104,6 +115,11 @@ def build_custom_notification_messages(
         current_mentions = [mention]
 
     messages.append(header + prefix + ", ".join(current_mentions))
+    logger.debug(
+        "Built custom notification chunks=%d recipients=%d",
+        len(messages),
+        len(mentions),
+    )
     return messages
 
 
@@ -116,6 +132,11 @@ def send_custom_notification(
 
     users = get_user_data_db().get_users()
     messages = build_custom_notification_messages(text, admin_name, users)
+    logger.info(
+        "Starting custom group notification recipients=%d chunks=%d",
+        len(users),
+        len(messages),
+    )
     sent = 0
     failed = 0
     for message in messages:
@@ -136,14 +157,22 @@ def send_custom_private_notification(
 ) -> BroadcastResult:
     clean_text = text.strip()
     if not clean_text:
+        logger.warning("Rejected empty custom private notification")
         raise ValueError("Notification text must not be empty")
     if len(clean_text) > MAX_CUSTOM_TEXT_LENGTH:
+        logger.warning(
+            "Rejected custom private notification length=%d limit=%d",
+            len(clean_text),
+            MAX_CUSTOM_TEXT_LENGTH,
+        )
         raise ValueError("Notification text is too long")
 
     message = _custom_notification_header(clean_text, admin_name)
     sent = 0
     failed = 0
-    for user in get_user_data_db().get_users():
+    users = get_user_data_db().get_users()
+    logger.info("Starting custom private notification recipients=%d", len(users))
+    for user in users:
         user_id = user.user_id.value
         try:
             bot.send_message(user_id, message, disable_notification=False)
@@ -151,8 +180,9 @@ def send_custom_private_notification(
         except Exception as error:
             failed += 1
             logger.warning(
-                "Unable to send custom private notification to user %s: %s",
+                "Unable to send custom private notification to user_id=%s username=%s: %s",
                 user_id,
+                user.username.value,
                 error,
             )
     logger.info("Custom private notification sent=%s failed=%s", sent, failed)
@@ -161,6 +191,11 @@ def send_custom_private_notification(
 
 def notifications_menu(callback_query: CallbackQuery, bot: TeleBot) -> None:
     user_id, chat_id, message_id = get_ids(callback_query)
+    logger.debug(
+        "Opening notifications menu for admin_id=%s username=%s",
+        user_id,
+        get_username(callback_query),
+    )
     bot.delete_state(user_id)
     keyboard = InlineKeyboardMarkup(row_width=1)
     keyboard.add(
@@ -196,6 +231,11 @@ def confirm_standard_notification(
 def send_standard_notification_confirmed(
     callback_query: CallbackQuery, bot: TeleBot
 ) -> None:
+    logger.info(
+        "Standard notification confirmed by admin_id=%s username=%s",
+        callback_query.from_user.id,
+        get_username(callback_query),
+    )
     result = send_standard_notification(bot)
     bot.answer_callback_query(
         callback_query.id,
@@ -224,9 +264,20 @@ def request_custom_notification(
 def receive_custom_notification_text(message: Message, bot: TeleBot) -> None:
     text = (message.text or "").strip()
     if not text:
+        logger.info(
+            "Empty custom notification submitted by admin_id=%s username=%s",
+            message.from_user.id,
+            get_username(message),
+        )
         bot.reply_to(message, "Текст уведомления не должен быть пустым.")
         return
     if len(text) > MAX_CUSTOM_TEXT_LENGTH:
+        logger.info(
+            "Oversized custom notification submitted by admin_id=%s username=%s length=%d",
+            message.from_user.id,
+            get_username(message),
+            len(text),
+        )
         bot.reply_to(
             message,
             f"Текст слишком длинный. Максимум — {MAX_CUSTOM_TEXT_LENGTH} символов.",
@@ -234,6 +285,12 @@ def receive_custom_notification_text(message: Message, bot: TeleBot) -> None:
         return
 
     user_id, chat_id, _ = get_ids(message)
+    logger.info(
+        "Custom notification draft accepted admin_id=%s username=%s length=%d",
+        user_id,
+        get_username(message),
+        len(text),
+    )
     admin_name = get_username(message)
     bot.set_state(user_id, NotificationStates.custom_confirmation)
     bot.add_data(user_id, notification_text=text, admin_name=admin_name)
@@ -270,10 +327,19 @@ def send_custom_group_notification_confirmed(
 ) -> None:
     user_id, _, _ = get_ids(callback_query)
     text, admin_name = _get_custom_notification_data(bot, user_id)
+    logger.info(
+        "Custom group notification confirmed admin_id=%s username=%s length=%d",
+        user_id,
+        get_username(callback_query),
+        len(text),
+    )
 
     try:
         result = send_custom_notification(bot, text, admin_name)
     except RuntimeError:
+        logger.warning(
+            "Custom group notification rejected: access group is not configured"
+        )
         bot.answer_callback_query(
             callback_query.id,
             "Группа не зарегистрирована",
@@ -294,6 +360,12 @@ def send_custom_private_notification_confirmed(
 ) -> None:
     user_id, _, _ = get_ids(callback_query)
     text, admin_name = _get_custom_notification_data(bot, user_id)
+    logger.info(
+        "Custom private notification confirmed admin_id=%s username=%s length=%d",
+        user_id,
+        get_username(callback_query),
+        len(text),
+    )
     result = send_custom_private_notification(bot, text, admin_name)
     bot.answer_callback_query(
         callback_query.id,
@@ -304,6 +376,7 @@ def send_custom_private_notification_confirmed(
 
 
 def register_handlers(bot: TeleBot) -> None:
+    logger.debug("Registering notification handlers")
     bot.register_callback_query_handler(
         notifications_menu,
         func=empty_filter,

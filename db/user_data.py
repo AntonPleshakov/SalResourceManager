@@ -17,6 +17,7 @@ class UserDataDB(ReconnectableDB):
 
     @classmethod
     def _open_manager(cls) -> Tuple[WorksheetManager, str]:
+        logger.debug("DB: opening user data worksheet")
         spreadsheet = GSheetsManager().open(getconf("GAME_DATA_GTABLE_KEY"))
         worksheet_name = getconf("USER_DATA_PAGE_NAME")
         if spreadsheet.is_worksheet_exist(worksheet_name):
@@ -28,10 +29,12 @@ class UserDataDB(ReconnectableDB):
 
     @classmethod
     def connect(cls) -> "UserDataDB":
+        logger.info("DB: connecting user data storage")
         manager, spreadsheet_url = cls._open_manager()
         return cls(manager, spreadsheet_url)
 
     def _reconnect(self) -> None:
+        logger.info("DB: reconnecting user data storage")
         self._manager, self._spreadsheet_url = self._open_manager()
 
     def fetch(self, refresh: bool = True) -> None:
@@ -43,6 +46,7 @@ class UserDataDB(ReconnectableDB):
 
         users = self._run_with_retry(load_users)
         self._users = {user.user_id.value: user for user in users}
+        logger.info("DB: fetched resource data for %d users", len(self._users))
 
     def get_user(self, user_id: int) -> Optional[UserData]:
         return self._users.get(user_id)
@@ -57,15 +61,30 @@ class UserDataDB(ReconnectableDB):
         user = self.get_user(user_id)
         if user is not None:
             if user.username.value != username:
+                logger.debug(
+                    "DB: updating username for user_id=%s username=%s",
+                    user_id,
+                    username,
+                )
                 user.username.value = username
                 self._persist_all()
             return user
 
-        logger.info("DB: add resource data for user %s", user_id)
+        logger.info(
+            "DB: adding resource data for user_id=%s username=%s",
+            user_id,
+            username,
+        )
         user = UserData(user_id=user_id, username=username)
         if not self._add_user(user):
+            logger.info(
+                "DB: user_id=%s username=%s was already present after reconnect",
+                user_id,
+                username,
+            )
             return self._users[user_id]
         self._users[user_id] = user
+        logger.info("DB: resource user added; total=%d", len(self._users))
         return user
 
     def _add_user(self, user: UserData) -> bool:
@@ -80,7 +99,10 @@ class UserDataDB(ReconnectableDB):
     ) -> UserData:
         user = self.set_values(user_id, username, {field_name: value})
         logger.info(
-            "DB: set user %s field %s to %s", user_id, field_name, value
+            "DB: updated user_id=%s username=%s field=%s",
+            user_id,
+            username,
+            field_name,
         )
         return user
 
@@ -95,25 +117,44 @@ class UserDataDB(ReconnectableDB):
             for field_name, value in values.items():
                 user.set_value(field_name, value)
             if not self._add_user(user):
+                logger.info(
+                    "DB: user_id=%s username=%s was already present while saving fields",
+                    user_id,
+                    username,
+                )
                 return self._users[user_id]
             self._users[user_id] = user
+            logger.info(
+                "DB: created user_id=%s username=%s with fields=%s",
+                user_id,
+                username,
+                sorted(values),
+            )
             return user
 
         user.username.value = username
         for field_name, value in values.items():
             user.set_value(field_name, value)
         self._persist_all()
-        logger.info("DB: set user %s fields %s", user_id, list(values))
+        logger.info(
+            "DB: updated user_id=%s username=%s fields=%s",
+            user_id,
+            username,
+            sorted(values),
+        )
         return user
 
     @staticmethod
     def _validate_values(values: Dict[str, int]) -> None:
         if not values:
+            logger.warning("DB: rejected empty user data update")
             raise ValueError("At least one resource value is required")
         for field_name, value in values.items():
             if field_name not in EDITABLE_FIELDS:
+                logger.warning("DB: rejected unknown user data field=%s", field_name)
                 raise ValueError(f"Unknown resource field: {field_name}")
             if not isinstance(value, int) or value < 0:
+                logger.warning("DB: rejected invalid value for field=%s", field_name)
                 raise ValueError("Resource value must be a non-negative integer")
             if field_name == "forge_level" and not 1 <= value <= 35:
                 raise ValueError("Forge level must be between 1 and 35")
@@ -125,6 +166,7 @@ class UserDataDB(ReconnectableDB):
                 raise ValueError("Extra mount chance must be between 0 and 50")
 
     def _persist_all(self) -> None:
+        logger.debug("DB: persisting resource data for %d users", len(self._users))
         self._run_with_retry(
             lambda: self._manager.update_values(
                 [user.to_row() for user in self._users.values()]
@@ -138,10 +180,12 @@ user_data_db: Optional[UserDataDB] = None
 def initialize_user_data_db() -> UserDataDB:
     global user_data_db
     user_data_db = UserDataDB.connect()
+    logger.debug("DB: user data singleton initialized")
     return user_data_db
 
 
 def get_user_data_db() -> UserDataDB:
     if user_data_db is None:
+        logger.error("DB: user data requested before initialization")
         raise RuntimeError("User data database has not been initialized")
     return user_data_db

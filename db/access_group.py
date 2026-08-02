@@ -20,6 +20,7 @@ class AccessGroupDB(ReconnectableDB):
 
     @staticmethod
     def _open_manager() -> WorksheetManager:
+        logger.debug("DB: opening access group worksheet")
         spreadsheet = GSheetsManager().open(getconf("ADMINS_GTABLE_KEY"))
         if spreadsheet.is_worksheet_exist(SETTINGS_WORKSHEET_NAME):
             manager = spreadsheet.get_worksheet(SETTINGS_WORKSHEET_NAME)
@@ -29,6 +30,7 @@ class AccessGroupDB(ReconnectableDB):
         return manager
 
     def _reconnect(self) -> None:
+        logger.info("DB: reconnecting access group storage")
         self._manager = self._open_manager()
 
     def fetch(self, refresh: bool = True) -> None:
@@ -43,6 +45,9 @@ class AccessGroupDB(ReconnectableDB):
             return None
 
         self._group_id = self._run_with_retry(load_group_id)
+        logger.info(
+            "DB: access group fetched; configured=%s", self._group_id is not None
+        )
 
     def get_group_id(self) -> Optional[int]:
         return self._group_id
@@ -60,10 +65,12 @@ access_group_db: Optional[AccessGroupDB] = None
 def initialize_access_group_db() -> AccessGroupDB:
     global access_group_db
     access_group_db = AccessGroupDB()
+    logger.debug("DB: access group singleton initialized")
     return access_group_db
 
 
 def get_access_group_db() -> AccessGroupDB:
     if access_group_db is None:
+        logger.error("DB: access group requested before initialization")
         raise RuntimeError("Access group database has not been initialized")
     return access_group_db
