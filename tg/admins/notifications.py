@@ -5,10 +5,11 @@ from telebot import TeleBot, formatting
 from telebot.handler_backends import State, StatesGroup
 from telebot.types import CallbackQuery, InlineKeyboardMarkup, Message
 
+from common.datetime_utils import now
 from db.access_group import get_access_group_db
 from db.user_data import get_user_data_db
 from logger.app_logger import logger
-from resources.user_data import UserData
+from resources.user_data import TRACKED_FIELDS, ResourceField, UserData
 from tg.utils import Button, empty_filter, get_ids, get_username
 
 
@@ -41,16 +42,35 @@ def _update_keyboard() -> InlineKeyboardMarkup:
     return keyboard
 
 
+def _standard_notification_text(fields: Iterable[ResourceField]) -> str:
+    titles = "\n".join(f"• {field.title}" for field in fields)
+    return f"{STANDARD_NOTIFICATION_TEXT}\n\n<b>Не обновлены сегодня:</b>\n{titles}"
+
+
 def send_standard_notification(bot: TeleBot) -> BroadcastResult:
     keyboard = _update_keyboard()
     sent = 0
     failed = 0
+    skipped = 0
     users = get_user_data_db().get_users()
+    notification_date = now().date()
     logger.info("Starting standard admin notification recipients=%d", len(users))
     for user in users:
         user_id = user.user_id.value
+        missing_fields = [
+            field
+            for field in TRACKED_FIELDS
+            if user.get_updated_on(field.name) != notification_date
+        ]
+        if not missing_fields:
+            skipped += 1
+            continue
         try:
-            bot.send_message(user_id, STANDARD_NOTIFICATION_TEXT, reply_markup=keyboard)
+            bot.send_message(
+                user_id,
+                _standard_notification_text(missing_fields),
+                reply_markup=keyboard,
+            )
             sent += 1
         except Exception as error:
             failed += 1
@@ -60,7 +80,12 @@ def send_standard_notification(bot: TeleBot) -> BroadcastResult:
                 user.username.value,
                 error,
             )
-    logger.info("Standard admin notification sent=%s failed=%s", sent, failed)
+    logger.info(
+        "Standard admin notification sent=%s failed=%s skipped=%s",
+        sent,
+        failed,
+        skipped,
+    )
     return BroadcastResult(sent, failed)
 
 

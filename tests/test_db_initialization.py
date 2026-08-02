@@ -8,7 +8,7 @@ reset_config(str(Path(__file__).parents[1] / "config" / "config_template.ini"))
 from db.access_group import SETTINGS_HEADER, SETTINGS_WORKSHEET_NAME, AccessGroupDB
 from db.admins import AdminsDB
 from db.gapi.worksheet_manager import WorksheetManager
-from db.user_data import UserDataDB
+from db.user_data import LEGACY_V1_HEADER, UserDataDB
 from db.war_stages import WarStagesDB
 from resources.user_data import UserData
 from resources.war import DEFAULT_WAR_STAGES
@@ -87,11 +87,21 @@ class FakeWorksheetManager:
     def __init__(self, rows=None):
         self.rows = [list(row) for row in (rows or [])]
         self.header = None
+        self.hidden_columns = []
         self.update_calls = 0
         self.fetch_calls = 0
 
     def ensure_header(self, header):
         self.header = header
+
+    def get_header(self):
+        return self.header or []
+
+    def set_header(self, header):
+        self.header = header
+
+    def hide_column(self, column):
+        self.hidden_columns.append(column)
 
     def fetch(self):
         self.fetch_calls += 1
@@ -174,6 +184,49 @@ def test_user_data_db_initializes_existing_empty_worksheet(monkeypatch):
     assert database.get_users() == []
     assert manager.header == [UserData().params_views()]
     assert manager.fetch_calls == 0
+    assert manager.hidden_columns == [
+        index
+        for index, name in enumerate(UserData().params())
+        if name.endswith("_updated_on")
+    ]
+
+
+def test_user_data_db_migrates_legacy_rows_and_removes_gems(monkeypatch):
+    legacy_row = [
+        "42",
+        "tester",
+        "1000",
+        "2000",
+        "3",
+        "4000",
+        "999",
+        "5",
+        "6",
+        "7",
+        "8",
+        "9",
+        "10",
+        "11",
+    ]
+    manager = FakeWorksheetManager([legacy_row])
+    manager.header = [LEGACY_V1_HEADER]
+    spreadsheet = FakeSpreadsheet(manager, worksheet_exists=True)
+    import db.user_data as user_data
+
+    patch_spreadsheet(monkeypatch, user_data, spreadsheet)
+
+    database = UserDataDB.connect()
+    user = database.get_user(42)
+
+    assert manager.header == UserDataDB.HEADER
+    assert len(manager.rows[0]) == len(UserDataDB.HEADER[0])
+    assert "Гемы" not in manager.header[0]
+    assert user.mount_keys.value == 1000
+    assert user.pets.value == 5
+    assert user.forge_level.value == 7
+    assert user.get_updated_on("pets") is None
+
+
 
 
 def test_war_stages_db_initializes_existing_empty_worksheet(monkeypatch):

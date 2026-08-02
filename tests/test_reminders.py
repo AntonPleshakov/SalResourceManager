@@ -68,7 +68,7 @@ def test_daily_reminder_mentions_configured_war_stages(monkeypatch):
 
     assert "1-го дня войны" in text
     assert "Ковка, Подземелья, Навыки" in text
-    assert "Могли быть потрачены:" in text
+    assert "Не обновлены сегодня:" in text
     assert "• Билетики навыков" in text
     assert "• Молотки" in text
     assert "Ключи маунтов" not in text
@@ -99,14 +99,14 @@ def test_daily_reminder_deduplicates_resources_and_keeps_catalog_order(monkeypat
     assert text.index("• Питомцы") < text.index("• Необъединённые маунты")
 
 
-def test_daily_reminder_explains_when_no_tracked_resource_is_spent(monkeypatch):
+def test_daily_reminder_explains_when_no_tracked_field_is_affected(monkeypatch):
     class FakeWarStagesDB:
         def get_stages(self):
             return {
                 2: (
                     WarActivity.DUNGEONS,
-                    WarActivity.FORGE,
-                    WarActivity.TECHNOLOGIES,
+                    WarActivity.DUNGEONS,
+                    WarActivity.DUNGEONS,
                 )
             }
 
@@ -118,7 +118,7 @@ def test_daily_reminder_explains_when_no_tracked_resource_is_spent(monkeypatch):
         ScheduledReminder(dt(2026, 8, 6, 13), ReminderKind.DAILY, 2)
     )
 
-    assert "нет отслеживаемых расходуемых ресурсов" in text
+    assert "нет отслеживаемых показателей" in text
 
 
 def test_weekly_reminder_mentions_received_resources():
@@ -153,3 +153,121 @@ def test_send_reminder_sends_to_every_user_and_continues_after_error(monkeypatch
     )
 
     assert [call[0] for call in bot.calls] == [1, 2]
+
+
+def test_daily_reminder_skips_current_user_and_lists_only_missing_resources(
+    monkeypatch,
+):
+    reminder = ScheduledReminder(dt(2026, 8, 5, 13), ReminderKind.DAILY, 1)
+    current_user = UserData(user_id=1, username="current")
+    partial_user = UserData(user_id=2, username="partial")
+    for resource_name in ("hammers", "skills"):
+        current_user.mark_updated(resource_name, reminder.time.date())
+    partial_user.mark_updated("hammers", reminder.time.date())
+
+    class FakeUserDataDB:
+        def get_users(self):
+            return [current_user, partial_user]
+
+    class FakeWarStagesDB:
+        def get_stages(self):
+            return DEFAULT_WAR_STAGES
+
+    class FakeBot:
+        def __init__(self):
+            self.calls = []
+
+        def send_message(self, user_id, text, reply_markup):
+            self.calls.append((user_id, text, reply_markup))
+
+    monkeypatch.setattr("tg.reminders.get_user_data_db", lambda: FakeUserDataDB())
+    monkeypatch.setattr("tg.reminders.get_war_stages_db", lambda: FakeWarStagesDB())
+    bot = FakeBot()
+
+    send_reminder(bot, reminder)
+
+    assert [call[0] for call in bot.calls] == [2]
+    assert "Билетики навыков" in bot.calls[0][1]
+    assert "Молотки" not in bot.calls[0][1]
+
+
+def test_daily_reminder_is_not_sent_when_day_has_no_tracked_fields(monkeypatch):
+    class FakeUserDataDB:
+        def get_users(self):
+            return [UserData(user_id=1, username="tester")]
+
+    class FakeWarStagesDB:
+        def get_stages(self):
+            return {
+                2: (
+                    WarActivity.DUNGEONS,
+                    WarActivity.DUNGEONS,
+                    WarActivity.DUNGEONS,
+                )
+            }
+
+    class FakeBot:
+        def __init__(self):
+            self.calls = []
+
+        def send_message(self, *args, **kwargs):
+            self.calls.append((args, kwargs))
+
+    monkeypatch.setattr("tg.reminders.get_user_data_db", lambda: FakeUserDataDB())
+    monkeypatch.setattr("tg.reminders.get_war_stages_db", lambda: FakeWarStagesDB())
+    bot = FakeBot()
+
+    send_reminder(
+        bot,
+        ScheduledReminder(dt(2026, 8, 6, 13), ReminderKind.DAILY, 2),
+    )
+
+    assert bot.calls == []
+
+
+def test_technology_reminder_lists_only_outdated_technologies(monkeypatch):
+    reminder = ScheduledReminder(dt(2026, 8, 6, 13), ReminderKind.DAILY, 2)
+    user = UserData(user_id=1, username="tester")
+    for field_name in (
+        "forge_level",
+        "skill_summon_cost",
+        "extra_egg_chance",
+        "mount_summon_cost",
+    ):
+        user.mark_updated(field_name, reminder.time.date())
+
+    class FakeUserDataDB:
+        def get_users(self):
+            return [user]
+
+    class FakeWarStagesDB:
+        def get_stages(self):
+            return {
+                2: (
+                    WarActivity.TECHNOLOGIES,
+                    WarActivity.DUNGEONS,
+                    WarActivity.DUNGEONS,
+                )
+            }
+
+    class FakeBot:
+        def __init__(self):
+            self.calls = []
+
+        def send_message(self, *args, **kwargs):
+            self.calls.append((args, kwargs))
+
+    monkeypatch.setattr("tg.reminders.get_user_data_db", lambda: FakeUserDataDB())
+    monkeypatch.setattr("tg.reminders.get_war_stages_db", lambda: FakeWarStagesDB())
+    bot = FakeBot()
+
+    send_reminder(bot, reminder)
+
+    assert len(bot.calls) == 1
+    text = bot.calls[0][0][1]
+    keyboard = bot.calls[0][1]["reply_markup"]
+    assert "Шанс на доп. маунта" in text
+    assert "Уровень кузницы" not in text
+    assert [button.callback_data for row in keyboard.keyboard for button in row] == [
+        "user_data/fill/technologies"
+    ]

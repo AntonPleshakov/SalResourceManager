@@ -97,6 +97,9 @@ class WorksheetManager:
     def get_all_values(self) -> Matrix:
         return self.cache()[self._header_range[0] :]
 
+    def get_header(self) -> Matrix:
+        return self.cache()[: self._header_range[0]]
+
     def add_row(self, row: List[str]):
         nmd_logger.info(
             f"GAPI: ({self._ws.spreadsheet.title}/{self._ws.title}) add row with {len(row)} cells"

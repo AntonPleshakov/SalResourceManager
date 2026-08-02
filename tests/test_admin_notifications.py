@@ -1,3 +1,4 @@
+from datetime import date, datetime, timezone
 from pathlib import Path
 
 import pytest
@@ -47,8 +48,49 @@ def test_standard_notification_is_sent_to_every_user(monkeypatch):
 
     assert result == BroadcastResult(sent=1, failed=1)
     assert [call[0] for call in bot.calls] == [1, 2]
-    assert all(call[1] == STANDARD_NOTIFICATION_TEXT for call in bot.calls)
+    assert all(call[1].startswith(STANDARD_NOTIFICATION_TEXT) for call in bot.calls)
+    assert "Не обновлены сегодня:" in bot.calls[0][1]
     assert len(bot.calls[0][2].keyboard) == 2
+
+
+def test_standard_notification_skips_users_with_current_resources(monkeypatch):
+    user = UserData(user_id=1, username="current")
+    for field_name in (
+        "mount_keys",
+        "skills",
+        "shells",
+        "hammers",
+        "pets",
+        "unmerged_mounts",
+        "forge_level",
+        "skill_summon_cost",
+        "extra_egg_chance",
+        "mount_summon_cost",
+        "extra_mount_chance",
+    ):
+        user.mark_updated(field_name, date(2026, 8, 2))
+    monkeypatch.setattr(
+        "tg.admins.notifications.get_user_data_db",
+        lambda: FakeUserDataDB([user]),
+    )
+    monkeypatch.setattr(
+        "tg.admins.notifications.now",
+        lambda: datetime(2026, 8, 2, tzinfo=timezone.utc),
+    )
+
+    class FakeBot:
+        def __init__(self):
+            self.calls = []
+
+        def send_message(self, *args, **kwargs):
+            self.calls.append((args, kwargs))
+
+    bot = FakeBot()
+
+    result = send_standard_notification(bot)
+
+    assert result == BroadcastResult(sent=0, failed=0)
+    assert bot.calls == []
 
 
 def test_custom_notification_escapes_text_and_mentions_every_user():

@@ -1,5 +1,6 @@
 import importlib
 import sys
+from datetime import date
 from decimal import Decimal
 from pathlib import Path
 
@@ -63,9 +64,8 @@ def test_user_data_round_trip():
         skills=2,
         shells=3,
         hammers=4,
-        gems=5,
-        pets=6,
-        unmerged_mounts=7,
+        pets=5,
+        unmerged_mounts=6,
         skill_summon_cost=8,
         extra_egg_chance=9,
         mount_summon_cost=10,
@@ -80,7 +80,6 @@ def test_user_data_round_trip():
         "skills",
         "shells",
         "hammers",
-        "gems",
         "pets",
         "unmerged_mounts",
         "forge_level",
@@ -96,12 +95,15 @@ def test_database_creates_and_updates_user():
     database = UserDataDB(manager)
 
     created = database.get_or_create(42, "tester")
-    updated = database.set_value(42, "tester", "gems", 1500)
+    updated = database.set_value(
+        42, "tester", "pets", 1500, updated_on=date(2026, 8, 2)
+    )
 
     assert created is updated
-    assert updated.gems.value == 1500
+    assert updated.pets.value == 1500
+    assert updated.get_updated_on("pets") == date(2026, 8, 2)
     assert len(manager.rows) == 1
-    assert UserData.from_row(manager.rows[0]).gems.value == 1500
+    assert UserData.from_row(manager.rows[0]).pets.value == 1500
 
 
 def test_database_loads_existing_users():
@@ -130,13 +132,40 @@ def test_database_saves_multiple_fields_in_one_update():
     updated = database.set_values(
         42,
         "tester",
-        {"gems": 1500, "pets": 3, "extra_mount_chance": 10},
+        {"hammers": 1500, "pets": 3, "extra_mount_chance": 10},
+        updated_on=date(2026, 8, 2),
     )
 
     assert manager.update_calls == 1
-    assert updated.gems.value == 1500
+    assert updated.hammers.value == 1500
     assert updated.pets.value == 3
     assert updated.extra_mount_chance.value == 10
+    assert updated.get_updated_on("hammers") == date(2026, 8, 2)
+    assert updated.get_updated_on("pets") == date(2026, 8, 2)
+    assert updated.get_updated_on("extra_mount_chance") == date(2026, 8, 2)
+
+
+def test_user_rows_preserve_blank_update_dates():
+    user = UserData(user_id=42, username="tester", pets=100)
+    restored = UserData.from_row(user.to_row())
+
+    assert restored.pets.value == 100
+    assert restored.get_updated_on("pets") is None
+
+
+def test_updating_technology_marks_its_own_update_date():
+    database = UserDataDB(FakeWorksheetManager())
+
+    user = database.set_value(
+        42,
+        "tester",
+        "forge_level",
+        10,
+        updated_on=date(2026, 8, 2),
+    )
+
+    assert user.get_updated_on("forge_level") == date(2026, 8, 2)
+    assert user.get_updated_on("mount_keys") is None
 
 
 def test_database_rejects_unknown_forge_level():
@@ -210,9 +239,9 @@ def test_new_user_batch_save_reconnects_before_retrying_add(monkeypatch):
         lambda: setattr(database, "_manager", replacement_manager),
     )
 
-    database.set_values(42, "tester", {"gems": 1500})
+    database.set_values(42, "tester", {"pets": 1500})
 
-    assert UserData.from_row(replacement_manager.rows[0]).gems.value == 1500
+    assert UserData.from_row(replacement_manager.rows[0]).pets.value == 1500
 
 
 def test_war_stages_reconnect_after_failed_write(monkeypatch):
@@ -398,7 +427,7 @@ def test_parse_thousand_based_resource_value():
     assert parse_editable_field_value("hammers", "1.5") == 1_500
     assert parse_editable_field_value("shells", "1,5") == 1_500
     assert parse_editable_field_value("mount_keys", "1") == 1_000
-    assert parse_editable_field_value("gems", "1 500") == 1_500
+    assert parse_editable_field_value("pets", "1 500") == 1_500
 
 
 def test_parse_thousand_based_resource_value_rejects_extra_precision():

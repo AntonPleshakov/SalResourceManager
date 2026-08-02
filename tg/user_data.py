@@ -9,6 +9,7 @@ from logger.app_logger import logger
 from resources.user_data import (
     EDITABLE_FIELDS,
     RESOURCE_FIELDS,
+    TRACKED_FIELDS,
     TECHNOLOGY_FIELDS,
     ResourceField,
     THOUSAND_INPUT_FIELDS,
@@ -47,9 +48,17 @@ def _section_menu(
     bot.delete_state(user_id)
     user = get_user_data_db().get_or_create(user_id, username)
 
-    values = "\n".join(
-        f"{field.title}: <b>{user.get_value(field.name)}</b>" for field in fields
-    )
+    value_lines = []
+    for field in fields:
+        line = f"{field.title}: <b>{user.get_value(field.name)}</b>"
+        if field in TRACKED_FIELDS:
+            updated_on = user.get_updated_on(field.name)
+            updated_label = (
+                updated_on.strftime("%d.%m.%Y") if updated_on else "никогда"
+            )
+            line += f" <i>(обновлено: {updated_label})</i>"
+        value_lines.append(line)
+    values = "\n".join(value_lines)
     text = f"<b>{title}</b>\n\n{values}\n\nВыберите показатель для изменения."
     if notice:
         text = f"{notice}\n\n{text}"
@@ -57,7 +66,7 @@ def _section_menu(
     keyboard = InlineKeyboardMarkup(row_width=1)
     keyboard.add(
         Button(
-            f"Заполнить все: {title.lower()}",
+            f"Заполнить все",
             f"user_data/fill/{section}",
         ).inline()
     )
