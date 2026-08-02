@@ -3,6 +3,7 @@ from telebot import TeleBot
 from tg import admins
 from tg import group_registration
 from tg import user_data
+from tg import war
 from tg.navigation import home
 from tg.utils import empty_filter
 from logger.app_logger import logger
@@ -12,6 +13,7 @@ def register_handlers(bot: TeleBot):
     logger.debug("Registering Telegram command and callback handlers")
     group_registration.register_handlers(bot)
     user_data.register_handlers(bot)
+    war.register_handlers(bot)
     bot.register_message_handler(
         home,
         content_types=["text"],

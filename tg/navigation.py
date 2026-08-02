@@ -13,7 +13,7 @@ def home(message: Union[Message, CallbackQuery], bot: TeleBot):
     keyboard = InlineKeyboardMarkup(row_width=1)
     keyboard.add(Button("Ресурсы", "resources").inline())
     keyboard.add(Button("Технологии", "technologies").inline())
-    keyboard.add(Button("Война", "war").inline())
+    keyboard.add(Button("Максимальные очки войны", "war").inline())
     keyboard.add(InlineKeyboardButton("Игровые данные", url=get_user_data_db().get_url()))
     user_id, chat_id, message_id = get_ids(message)
     logger.debug(
