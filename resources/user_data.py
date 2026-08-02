@@ -43,6 +43,22 @@ THOUSAND_INPUT_FIELDS = frozenset(
 )
 
 
+def validate_editable_field_value(field_name: str, value: int) -> int:
+    if field_name not in EDITABLE_FIELDS:
+        raise ValueError(f"Unknown user data field: {field_name}")
+    if not isinstance(value, int) or value < 0:
+        raise ValueError("Resource value must be a non-negative integer")
+    if field_name == "forge_level" and not 1 <= value <= 35:
+        raise ValueError("Forge level must be between 1 and 35")
+    if field_name == "skill_summon_cost" and not 0 <= value <= 25:
+        raise ValueError("Skill summon cost reduction must be between 0 and 25")
+    if field_name == "mount_summon_cost" and not 0 <= value <= 25:
+        raise ValueError("Mount summon cost reduction must be between 0 and 25")
+    if field_name == "extra_mount_chance" and not 0 <= value <= 50:
+        raise ValueError("Extra mount chance must be between 0 and 50")
+    return value
+
+
 def parse_non_negative_int(value: str) -> int:
     normalized = value.strip().replace(" ", "").replace("_", "")
     if not normalized.isdigit():
@@ -52,13 +68,15 @@ def parse_non_negative_int(value: str) -> int:
 
 def parse_editable_field_value(field_name: str, value: str) -> int:
     if field_name not in THOUSAND_INPUT_FIELDS:
-        return parse_non_negative_int(value)
+        parsed = parse_non_negative_int(value)
+        return validate_editable_field_value(field_name, parsed)
 
     normalized = value.strip().replace(",", ".")
     if not re.fullmatch(r"\d+(?:\.\d)?", normalized):
         raise ValueError("Value must be a non-negative number with one decimal place")
     whole, _, fraction = normalized.partition(".")
-    return int(whole) * 1_000 + int(fraction or "0") * 100
+    parsed = int(whole) * 1_000 + int(fraction or "0") * 100
+    return validate_editable_field_value(field_name, parsed)
 
 
 class UserData(Parameters):

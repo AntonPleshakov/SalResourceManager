@@ -1,8 +1,10 @@
 import importlib
 import sys
+from contextlib import nullcontext
 from datetime import date
 from decimal import Decimal
 from pathlib import Path
+from types import SimpleNamespace
 
 from config.config import reset_config
 
@@ -27,7 +29,7 @@ from resources.war_rules.forging import (
     weapon_points,
 )
 from tg.utils import format_points
-from tg.user_data import _get_group_tag
+from tg.user_data import _get_group_tag, save_all_values
 
 
 class FakeWorksheetManager:
@@ -478,6 +480,38 @@ def test_parse_thousand_based_resource_value_rejects_extra_precision():
         except ValueError:
             continue
         raise AssertionError(f"{value!r} must be rejected")
+
+
+def test_fill_all_rejects_invalid_value_before_advancing_to_next_field():
+    class FakeBot:
+        def __init__(self):
+            self.data = {
+                "fill_section": "technologies",
+                "fill_index": 0,
+                "fill_values": {},
+            }
+            self.replies = []
+
+        def retrieve_data(self, _user_id):
+            return nullcontext(self.data)
+
+        def reply_to(self, _message, text):
+            self.replies.append(text)
+
+    message = SimpleNamespace(
+        from_user=SimpleNamespace(id=42, username="tester", first_name="Tester"),
+        chat=SimpleNamespace(id=42),
+        id=1,
+        text="36",
+    )
+    bot = FakeBot()
+
+    save_all_values(message, bot)
+
+    assert bot.data["fill_index"] == 0
+    assert bot.data["fill_values"] == {}
+    assert "Уровень кузницы" in bot.replies[0]
+    assert "between 1 and 35" in bot.replies[0]
 
 
 def test_format_points_rounds_and_adds_suffixes():

@@ -242,14 +242,18 @@ def save_value(message: Message, bot: TeleBot) -> None:
 
     try:
         value = parse_editable_field_value(field_name, message.text)
-    except ValueError:
+    except ValueError as error:
         logger.info(
             "Invalid user data input user_id=%s username=%s field=%s",
             user_id,
             username,
             field_name,
         )
-        bot.reply_to(message, _value_input_hint(field))
+        bot.reply_to(
+            message,
+            f"Значение для «{field.title}» не подходит: {error}\n"
+            f"{_value_input_hint(field)}",
+        )
         return
 
     try:
@@ -310,7 +314,7 @@ def save_all_values(message: Message, bot: TeleBot) -> None:
     field = fields[index]
     try:
         value = parse_editable_field_value(field.name, message.text)
-    except ValueError:
+    except ValueError as error:
         logger.info(
             "Invalid section input user_id=%s username=%s section=%s field=%s",
             user_id,
@@ -318,7 +322,11 @@ def save_all_values(message: Message, bot: TeleBot) -> None:
             section,
             field.name,
         )
-        bot.reply_to(message, _value_input_hint(field))
+        bot.reply_to(
+            message,
+            f"Значение для «{field.title}» не подходит: {error}\n"
+            f"{_value_input_hint(field)}",
+        )
         return
 
     values[field.name] = value

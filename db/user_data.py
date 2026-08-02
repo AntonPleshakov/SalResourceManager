@@ -7,7 +7,11 @@ from db.gapi.gsheets_manager import GSheetsManager
 from db.gapi.worksheet_manager import WorksheetManager
 from db.retry import ReconnectableDB
 from logger.app_logger import logger
-from resources.user_data import EDITABLE_FIELDS, UPDATED_AT_FIELDS, UserData
+from resources.user_data import (
+    UPDATED_AT_FIELDS,
+    UserData,
+    validate_editable_field_value,
+)
 
 
 USER_DATA_SCHEMA_VERSION = 2
@@ -266,20 +270,11 @@ class UserDataDB(ReconnectableDB):
             logger.warning("DB: rejected empty user data update")
             raise ValueError("At least one resource value is required")
         for field_name, value in values.items():
-            if field_name not in EDITABLE_FIELDS:
-                logger.warning("DB: rejected unknown user data field=%s", field_name)
-                raise ValueError(f"Unknown user data field: {field_name}")
-            if not isinstance(value, int) or value < 0:
+            try:
+                validate_editable_field_value(field_name, value)
+            except ValueError:
                 logger.warning("DB: rejected invalid value for field=%s", field_name)
-                raise ValueError("Resource value must be a non-negative integer")
-            if field_name == "forge_level" and not 1 <= value <= 35:
-                raise ValueError("Forge level must be between 1 and 35")
-            if field_name == "skill_summon_cost" and not 0 <= value <= 25:
-                raise ValueError("Skill summon cost reduction must be between 0 and 25")
-            if field_name == "mount_summon_cost" and not 0 <= value <= 25:
-                raise ValueError("Mount summon cost reduction must be between 0 and 25")
-            if field_name == "extra_mount_chance" and not 0 <= value <= 50:
-                raise ValueError("Extra mount chance must be between 0 and 50")
+                raise
 
     def _persist_all(self) -> None:
         logger.debug("DB: persisting resource data for %d users", len(self._users))
