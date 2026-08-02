@@ -31,6 +31,14 @@ class AlwaysAnswerCallbackQueryMiddleware(BaseMiddleware):
         super().__init__()
         self.update_types = ["callback_query"]
 
+    def pre_process(self, message: CallbackQuery, data: dict) -> None:
+        logger.debug(
+            "Processing callback query for user_id=%s username=%s",
+            message.from_user.id,
+            get_username(message),
+        )
+        return None
+
     def post_process(
         self, message: CallbackQuery, data: dict, exception: BaseException | None
     ):
