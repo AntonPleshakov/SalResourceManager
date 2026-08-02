@@ -1,3 +1,4 @@
+import time
 from typing import Callable, List, Optional, TypeVar
 
 from googleapiclient.errors import HttpError
@@ -17,6 +18,41 @@ def is_retryable(error: Exception) -> bool:
         error,
         (ConnectionError, TimeoutError, RequestError, RequestException),
     )
+
+
+def run_with_backoff(
+    operation: Callable[[], T],
+    *,
+    timeout_seconds: float = 60,
+    initial_delay_seconds: float = 1,
+    max_delay_seconds: float = 15,
+) -> T:
+    started_at = time.monotonic()
+    delay = initial_delay_seconds
+    attempt = 1
+
+    while True:
+        try:
+            return operation()
+        except Exception as error:
+            if not is_retryable(error):
+                raise
+
+            remaining = timeout_seconds - (time.monotonic() - started_at)
+            if remaining <= 0:
+                raise
+
+            retry_delay = min(delay, remaining)
+            logger.warning(
+                "Startup initialization attempt %d failed: %s. "
+                "Retrying in %.1f seconds",
+                attempt,
+                error,
+                retry_delay,
+            )
+            time.sleep(retry_delay)
+            attempt += 1
+            delay = min(delay * 2, max_delay_seconds)
 
 
 class ReconnectableDB:

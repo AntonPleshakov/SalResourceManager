@@ -9,6 +9,7 @@ import tg.manager
 from config.config import getconf, getconf_int
 from db.access_group import initialize_access_group_db
 from db.admins import initialize_admins_db
+from db.retry import run_with_backoff
 from db.user_data import initialize_user_data_db
 from db.war_stages import initialize_war_stages_db
 from logger.app_logger import logger
@@ -21,6 +22,8 @@ from tg.utils import empty_filter, get_ids, get_permissions_denied_message, get_
 bot = TeleBot(
     getconf("TOKEN"), parse_mode="HTML", use_class_middlewares=True, threaded=False
 )
+
+STARTUP_RETRY_TIMEOUT_SECONDS = 60
 
 
 class AlwaysAnswerCallbackQueryMiddleware(BaseMiddleware):
@@ -53,12 +56,27 @@ def permission_denied_message(message: Union[Message, CallbackQuery]):
         bot.send_message(chat_id, text)
 
 
-if __name__ == "__main__":
-    logger.info("Sal Resources Manager started")
+def initialize_databases():
     initialize_admins_db()
     access_group_db = initialize_access_group_db()
     initialize_user_data_db()
     initialize_war_stages_db()
+    return access_group_db
+
+
+if __name__ == "__main__":
+    logger.info("Starting Sal Resources Manager")
+    try:
+        access_group_db = run_with_backoff(
+            initialize_databases,
+            timeout_seconds=STARTUP_RETRY_TIMEOUT_SECONDS,
+        )
+    except Exception:
+        logger.exception(
+            "Startup initialization failed; Sal Resources Manager is exiting"
+        )
+        raise
+
     add_custom_filters(bot)
     bot.setup_middleware(GroupAccessMiddleware(bot, access_group_db))
     tg.manager.register_handlers(bot)
@@ -75,6 +93,7 @@ if __name__ == "__main__":
     bot.exception_handler = BotExceptionHandler()
     reminder_scheduler = ReminderScheduler(bot, getconf_int("REMINDER_HOUR", 13))
     reminder_scheduler.start()
+    logger.info("Sal Resources Manager started")
     try:
         bot.infinity_polling()
     finally:
