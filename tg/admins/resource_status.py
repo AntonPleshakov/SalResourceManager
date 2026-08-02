@@ -9,7 +9,13 @@ from config.config import getconf_int
 from db.user_data import get_user_data_db
 from logger.app_logger import logger
 from resources.user_data import TRACKED_FIELDS, UserData
-from tg.utils import Button, empty_filter, get_ids, get_username
+from tg.utils import (
+    Button,
+    empty_filter,
+    format_user_identity,
+    get_ids,
+    get_username,
+)
 
 
 MAX_TELEGRAM_MESSAGE_LENGTH = 4_096
@@ -37,10 +43,13 @@ def build_stale_resources_report(
 
         if not stale_fields:
             continue
-        username = formatting.escape_html(
-            user.username.value or str(user.user_id.value)
+        identity = format_user_identity(
+            user.username.value or str(user.user_id.value), user.tag.value
         )
-        user_link = f'<a href="tg://user?id={user.user_id.value}">{username}</a>'
+        user_link = (
+            f'<a href="tg://user?id={user.user_id.value}">'
+            f"{formatting.escape_html(identity)}</a>"
+        )
         user_blocks.append(f"{user_link}:\n" + "\n".join(stale_fields))
 
     header = f"<b>Данные без обновления {stale_after_days} дней и более</b>"

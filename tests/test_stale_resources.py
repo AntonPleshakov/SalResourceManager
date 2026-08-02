@@ -11,7 +11,7 @@ from tg.admins.resource_status import build_stale_resources_report
 
 
 def test_stale_report_lists_only_old_or_never_updated_resources():
-    user = UserData(user_id=42, username="tester")
+    user = UserData(user_id=42, username="tester", tag="Лидер")
     user.mark_updated("mount_keys", date(2026, 8, 2))
     user.mark_updated("skills", date(2026, 8, 1))
     user.mark_updated("shells", date(2026, 7, 31))
@@ -28,6 +28,7 @@ def test_stale_report_lists_only_old_or_never_updated_resources():
     assert "Скорлупа — 31.07.2026" in report
     assert "Уровень кузницы — 01.08.2026" in report
     assert "tg://user?id=42" in report
+    assert "tester (Лидер)" in report
     assert "Дата отчёта" not in report
 
 

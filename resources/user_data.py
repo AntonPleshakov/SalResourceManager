@@ -19,7 +19,7 @@ RESOURCE_FIELDS: Tuple[ResourceField, ...] = (
     ResourceField("skills", "Билетики навыков"),
     ResourceField("shells", "Скорлупа"),
     ResourceField("hammers", "Молотки"),
-    ResourceField("pets", "Питомцы"),
+    ResourceField("pets", "Питомцы и яйца"),
     ResourceField("unmerged_mounts", "Необъединённые маунты"),
 )
 
@@ -66,6 +66,7 @@ class UserData(Parameters):
         self,
         user_id: int = 0,
         username: str = "",
+        tag: str = "",
         mount_keys: int = 0,
         skills: int = 0,
         shells: int = 0,
@@ -91,6 +92,7 @@ class UserData(Parameters):
     ):
         self.user_id = IntParam("Telegram ID", user_id)
         self.username = StrParam("Пользователь", username)
+        self.tag = StrParam("Тег", tag)
         self.mount_keys = IntParam("Ключи маунтов", mount_keys)
         self.mount_keys_updated_on = StrParam(
             "Ключи маунтов — обновлено", mount_keys_updated_on
@@ -107,8 +109,10 @@ class UserData(Parameters):
         self.hammers_updated_on = StrParam(
             "Молотки — обновлено", hammers_updated_on
         )
-        self.pets = IntParam("Питомцы", pets)
-        self.pets_updated_on = StrParam("Питомцы — обновлено", pets_updated_on)
+        self.pets = IntParam("Питомцы и яйца", pets)
+        self.pets_updated_on = StrParam(
+            "Питомцы и яйца — обновлено", pets_updated_on
+        )
         self.unmerged_mounts = IntParam(
             "Необъединённые маунты", unmerged_mounts
         )

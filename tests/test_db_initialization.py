@@ -221,9 +221,12 @@ def test_user_data_db_migrates_legacy_rows_and_removes_gems(monkeypatch):
     assert manager.header == UserDataDB.HEADER
     assert len(manager.rows[0]) == len(UserDataDB.HEADER[0])
     assert "Гемы" not in manager.header[0]
+    assert "Питомцы и яйца" in manager.header[0]
+    assert manager.header[0].index("Тег") == manager.header[0].index("Пользователь") + 1
     assert user.mount_keys.value == 1000
     assert user.pets.value == 5
     assert user.forge_level.value == 7
+    assert user.tag.value == ""
     assert user.get_updated_on("pets") is None
 
 

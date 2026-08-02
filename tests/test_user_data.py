@@ -27,6 +27,7 @@ from resources.war_rules.forging import (
     weapon_points,
 )
 from tg.utils import format_points
+from tg.user_data import _get_group_tag
 
 
 class FakeWorksheetManager:
@@ -60,6 +61,7 @@ def test_user_data_round_trip():
     original = UserData(
         user_id=42,
         username="tester",
+        tag="Лидер",
         mount_keys=1,
         skills=2,
         shells=3,
@@ -75,6 +77,9 @@ def test_user_data_round_trip():
     restored = UserData.from_row(original.to_row())
 
     assert restored == original
+    assert restored.tag.value == "Лидер"
+    header = original.params_views()
+    assert header[header.index("Пользователь") + 1] == "Тег"
     assert set(EDITABLE_FIELDS) == {
         "mount_keys",
         "skills",
@@ -88,6 +93,42 @@ def test_user_data_round_trip():
         "mount_summon_cost",
         "extra_mount_chance",
     }
+
+
+def test_group_tag_is_taken_from_chat_member_tag(monkeypatch):
+    class FakeAccessGroupDB:
+        def get_group_id(self):
+            return -100123
+
+    class FakeBot:
+        def get_chat_member(self, group_id, user_id):
+            assert group_id == -100123
+            assert user_id == 42
+            return type("Member", (), {"tag": "Лидер"})()
+
+    monkeypatch.setattr(
+        "tg.user_data.get_access_group_db", lambda: FakeAccessGroupDB()
+    )
+
+    assert _get_group_tag(FakeBot(), 42) == "Лидер"
+
+
+def test_group_tag_prefers_chat_member_custom_title(monkeypatch):
+    class FakeAccessGroupDB:
+        def get_group_id(self):
+            return -100123
+
+    class FakeBot:
+        def get_chat_member(self, _group_id, _user_id):
+            return type(
+                "Member", (), {"custom_title": "Офицер", "tag": "Лидер"}
+            )()
+
+    monkeypatch.setattr(
+        "tg.user_data.get_access_group_db", lambda: FakeAccessGroupDB()
+    )
+
+    assert _get_group_tag(FakeBot(), 42) == "Офицер"
 
 
 def test_database_creates_and_updates_user():

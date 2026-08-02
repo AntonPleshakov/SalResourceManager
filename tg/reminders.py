@@ -13,7 +13,7 @@ from db.war_stages import get_war_stages_db
 from logger.app_logger import logger
 from resources.user_data import RESOURCE_FIELDS, TECHNOLOGY_FIELDS, TRACKED_FIELDS
 from resources.war import WarActivity
-from tg.utils import Button
+from tg.utils import Button, format_user_identity
 
 
 class ReminderKind(str, Enum):
@@ -160,7 +160,7 @@ def send_reminder(bot: TeleBot, reminder: ScheduledReminder) -> None:
             logger.debug(
                 "Resource reminder skipped for user_id=%s username=%s: all resources are current",
                 user_id,
-                user.username.value,
+                format_user_identity(user.username.value, user.tag.value),
             )
             continue
         text = _reminder_text(reminder, missing_names)
@@ -172,7 +172,7 @@ def send_reminder(bot: TeleBot, reminder: ScheduledReminder) -> None:
             logger.warning(
                 "Unable to send resource reminder to user_id=%s username=%s: %s",
                 user_id,
-                user.username.value,
+                format_user_identity(user.username.value, user.tag.value),
                 error,
             )
     logger.info(

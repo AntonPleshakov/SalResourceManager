@@ -27,6 +27,7 @@ LEGACY_V1_HEADER = [
     "Снижение стоимости призыва маунта (%)",
     "Шанс на доп. маунта",
 ]
+LEGACY_COLUMN_ALIASES = {"Питомцы и яйца": "Питомцы"}
 class UserDataDB(ReconnectableDB):
     HEADER = [UserData().params_views()]
 
@@ -78,11 +79,18 @@ class UserDataDB(ReconnectableDB):
                 USER_DATA_SCHEMA_VERSION,
             )
             source_indexes = {title: index for index, title in enumerate(header)}
+
+            def source_index(column: str) -> Optional[int]:
+                return source_indexes.get(
+                    column,
+                    source_indexes.get(LEGACY_COLUMN_ALIASES.get(column)),
+                )
+
             migrated_rows = [
                 [
-                    row[source_indexes[column]]
-                    if source_indexes.get(column) is not None
-                    and source_indexes[column] < len(row)
+                    row[index]
+                    if (index := source_index(column)) is not None
+                    and index < len(row)
                     else ""
                     for column in cls.HEADER[0]
                 ]
@@ -128,30 +136,39 @@ class UserDataDB(ReconnectableDB):
     def get_url(self) -> str:
         return self._spreadsheet_url
 
-    def get_or_create(self, user_id: int, username: str) -> UserData:
+    def get_or_create(
+        self, user_id: int, username: str, tag: Optional[str] = None
+    ) -> UserData:
         user = self.get_user(user_id)
         if user is not None:
-            if user.username.value != username:
+            if user.username.value != username or (
+                tag is not None and user.tag.value != tag
+            ):
                 logger.debug(
-                    "DB: updating username for user_id=%s username=%s",
+                    "DB: updating user identity for user_id=%s username=%s tag=%s",
                     user_id,
                     username,
+                    tag,
                 )
                 user.username.value = username
+                if tag is not None:
+                    user.tag.value = tag
                 self._persist_all()
             return user
 
         logger.info(
-            "DB: adding resource data for user_id=%s username=%s",
+            "DB: adding resource data for user_id=%s username=%s tag=%s",
             user_id,
             username,
+            tag,
         )
-        user = UserData(user_id=user_id, username=username)
+        user = UserData(user_id=user_id, username=username, tag=tag or "")
         if not self._add_user(user):
             logger.info(
-                "DB: user_id=%s username=%s was already present after reconnect",
+                "DB: user_id=%s username=%s tag=%s was already present after reconnect",
                 user_id,
                 username,
+                tag or "",
             )
             return self._users[user_id]
         self._users[user_id] = user
@@ -172,17 +189,20 @@ class UserDataDB(ReconnectableDB):
         field_name: str,
         value: int,
         updated_on: Optional[date] = None,
+        tag: Optional[str] = None,
     ) -> UserData:
         user = self.set_values(
             user_id,
             username,
             {field_name: value},
             updated_on=updated_on,
+            tag=tag,
         )
         logger.info(
-            "DB: updated user_id=%s username=%s field=%s",
+            "DB: updated user_id=%s username=%s tag=%s field=%s",
             user_id,
             username,
+            tag or "",
             field_name,
         )
         return user
@@ -193,43 +213,49 @@ class UserDataDB(ReconnectableDB):
         username: str,
         values: Dict[str, int],
         updated_on: Optional[date] = None,
+        tag: Optional[str] = None,
     ) -> UserData:
         self._validate_values(values)
         field_updated_on = updated_on or now().date()
 
         user = self.get_user(user_id)
         if user is None:
-            user = UserData(user_id=user_id, username=username)
+            user = UserData(user_id=user_id, username=username, tag=tag or "")
             for field_name, value in values.items():
                 user.set_value(field_name, value)
                 if field_name in UPDATED_AT_FIELDS:
                     user.mark_updated(field_name, field_updated_on)
             if not self._add_user(user):
                 logger.info(
-                    "DB: user_id=%s username=%s was already present while saving fields",
+                    "DB: user_id=%s username=%s tag=%s was already present while saving fields",
                     user_id,
                     username,
+                    tag or "",
                 )
                 return self._users[user_id]
             self._users[user_id] = user
             logger.info(
-                "DB: created user_id=%s username=%s with fields=%s",
+                "DB: created user_id=%s username=%s tag=%s with fields=%s",
                 user_id,
                 username,
+                tag or "",
                 sorted(values),
             )
             return user
 
         user.username.value = username
+        if tag is not None:
+            user.tag.value = tag
         for field_name, value in values.items():
             user.set_value(field_name, value)
             if field_name in UPDATED_AT_FIELDS:
                 user.mark_updated(field_name, field_updated_on)
         self._persist_all()
         logger.info(
-            "DB: updated user_id=%s username=%s fields=%s",
+            "DB: updated user_id=%s username=%s tag=%s fields=%s",
             user_id,
             username,
+            tag or "",
             sorted(values),
         )
         return user

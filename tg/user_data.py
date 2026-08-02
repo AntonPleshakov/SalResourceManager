@@ -1,3 +1,4 @@
+from decimal import Decimal
 from typing import Sequence, Union
 
 from telebot import TeleBot
@@ -5,6 +6,7 @@ from telebot.handler_backends import State, StatesGroup
 from telebot.types import CallbackQuery, InlineKeyboardMarkup, Message
 
 from db.user_data import get_user_data_db
+from db.access_group import get_access_group_db
 from logger.app_logger import logger
 from resources.user_data import (
     EDITABLE_FIELDS,
@@ -15,7 +17,13 @@ from resources.user_data import (
     THOUSAND_INPUT_FIELDS,
     parse_editable_field_value,
 )
-from tg.utils import Button, empty_filter, get_ids, get_username
+from tg.utils import (
+    Button,
+    empty_filter,
+    format_points,
+    get_ids,
+    get_username,
+)
 
 
 class EditUserDataStates(StatesGroup):
@@ -29,6 +37,29 @@ SECTION_FIELDS = {
 }
 
 
+def _get_group_tag(bot: TeleBot, user_id: int) -> str | None:
+    try:
+        group_id = get_access_group_db().get_group_id()
+    except RuntimeError:
+        return None
+    if group_id is None:
+        return None
+    try:
+        member = bot.get_chat_member(group_id, user_id)
+        return (
+            getattr(member, "custom_title", None)
+            or getattr(member, "tag", None)
+            or ""
+        )
+    except Exception as error:
+        logger.warning(
+            "Unable to get group tag for user_id=%s: %s",
+            user_id,
+            type(error).__name__,
+        )
+        return None
+
+
 def _section_menu(
     message: Union[Message, CallbackQuery],
     bot: TeleBot,
@@ -39,6 +70,7 @@ def _section_menu(
 ) -> None:
     user_id, chat_id, message_id = get_ids(message)
     username = get_username(message)
+    tag = _get_group_tag(bot, user_id)
     logger.debug(
         "Opening user data section=%s for user_id=%s username=%s",
         section,
@@ -46,11 +78,14 @@ def _section_menu(
         username,
     )
     bot.delete_state(user_id)
-    user = get_user_data_db().get_or_create(user_id, username)
+    user = get_user_data_db().get_or_create(user_id, username, tag)
 
     value_lines = []
     for field in fields:
-        line = f"{field.title}: <b>{user.get_value(field.name)}</b>"
+        value = user.get_value(field.name)
+        if field in RESOURCE_FIELDS and Decimal(value) >= Decimal("1000"):
+            value = format_points(Decimal(value))
+        line = f"{field.title}: <b>{value}</b>"
         if field in TRACKED_FIELDS:
             updated_on = user.get_updated_on(field.name)
             updated_label = (

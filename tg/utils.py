@@ -30,7 +30,11 @@ def get_ids(message: Union[Message, CallbackQuery]) -> Tuple[int, int, int]:
 
 def get_username(message: Union[Message, CallbackQuery]) -> str:
     user = message.from_user
-    return user.username or user.first_name
+    return user.username or user.first_name or str(user.id)
+
+
+def format_user_identity(username: str, tag: str = "") -> str:
+    return f"{username} ({tag})" if tag else username
 
 
 def format_points(value: Decimal) -> str:

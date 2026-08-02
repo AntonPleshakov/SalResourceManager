@@ -10,7 +10,13 @@ from db.access_group import get_access_group_db
 from db.user_data import get_user_data_db
 from logger.app_logger import logger
 from resources.user_data import TRACKED_FIELDS, ResourceField, UserData
-from tg.utils import Button, empty_filter, get_ids, get_username
+from tg.utils import (
+    Button,
+    empty_filter,
+    format_user_identity,
+    get_ids,
+    get_username,
+)
 
 
 STANDARD_NOTIFICATION_TEXT = (
@@ -77,7 +83,7 @@ def send_standard_notification(bot: TeleBot) -> BroadcastResult:
             logger.warning(
                 "Unable to send admin notification to user_id=%s username=%s: %s",
                 user_id,
-                user.username.value,
+                format_user_identity(user.username.value, user.tag.value),
                 error,
             )
     logger.info(
@@ -90,7 +96,9 @@ def send_standard_notification(bot: TeleBot) -> BroadcastResult:
 
 
 def _user_mention(user: UserData) -> str:
-    name = user.username.value or str(user.user_id.value)
+    name = format_user_identity(
+        user.username.value or str(user.user_id.value), user.tag.value
+    )
     escaped_name = formatting.escape_html(name)
     return f'<a href="tg://user?id={user.user_id.value}">{escaped_name}</a>'
 
@@ -207,7 +215,7 @@ def send_custom_private_notification(
             logger.warning(
                 "Unable to send custom private notification to user_id=%s username=%s: %s",
                 user_id,
-                user.username.value,
+                format_user_identity(user.username.value, user.tag.value),
                 error,
             )
     logger.info("Custom private notification sent=%s failed=%s", sent, failed)

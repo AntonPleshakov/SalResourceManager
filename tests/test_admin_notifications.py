@@ -133,7 +133,7 @@ def test_custom_notification_rejects_empty_or_too_long_text():
 
 
 def test_custom_notification_is_sent_to_access_group_with_sound(monkeypatch):
-    users = [UserData(user_id=1, username="one")]
+    users = [UserData(user_id=1, username="one", tag="Лидер")]
     monkeypatch.setattr(
         "tg.admins.notifications.get_user_data_db", lambda: FakeUserDataDB(users)
     )
@@ -162,6 +162,7 @@ def test_custom_notification_is_sent_to_access_group_with_sound(monkeypatch):
     assert bot.calls[0][0] == -100123
     assert bot.calls[0][2] is False
     assert "tg://user?id=1" in bot.calls[0][1]
+    assert "one (Лидер)" in bot.calls[0][1]
 
 
 def test_custom_private_notification_is_sent_to_every_user(monkeypatch):
