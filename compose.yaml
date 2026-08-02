@@ -1,21 +1,25 @@
+name: sal-resource-manager
+
 services:
   bot:
-    build:
-      context: .
-    image: sal-resources-manager:latest
-    container_name: sal-resources-manager
+    image: ${BOT_IMAGE:-ghcr.io/antonpleshakov/salresourcemanager:latest}
+    container_name: sal-resource-manager
     restart: unless-stopped
     init: true
-    mem_limit: 256m
-    cpus: 0.50
+
     environment:
       MODE: ${MODE:-Release}
-      LOG_TO_GDRIVE: "false"
+      LOG_TO_GDRIVE: ${LOG_TO_GDRIVE:-false}
+
+    volumes:
+      - ${CONFIG_FILE:-./config/config.ini}:/app/config/config.ini:ro
+      - ${GOOGLE_CREDENTIALS_FILE:-./gapi_service_file.json}:/app/gapi_service_file.json:ro
+
+    mem_limit: 256m
+    cpus: 0.50
+
     logging:
       driver: local
       options:
         max-size: "10m"
         max-file: "3"
-    volumes:
-      - ./config/config.ini:/app/config/config.ini:ro
-      - ./gapi_service_file.json:/app/gapi_service_file.json:ro

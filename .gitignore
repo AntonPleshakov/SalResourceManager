@@ -1,4 +1,6 @@
 .idea/
+.env
+compose.override.yaml
 config/config.ini
 gapi_service_file.json
 *.log*

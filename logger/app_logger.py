@@ -15,7 +15,7 @@ class _MaxLevelFilter(logging.Filter):
 
 
 def _gdrive_logging_enabled() -> bool:
-    value = os.getenv("LOG_TO_GDRIVE", "true")
+    value = os.getenv("LOG_TO_GDRIVE", "false")
     return value.strip().lower() in {"1", "true", "yes", "on"}
 
 

@@ -1,6 +1,8 @@
 .git
 .gitignore
 .idea
+.env
+compose.override.yaml
 .pytest_cache
 .venv
 __pycache__

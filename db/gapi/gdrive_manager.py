@@ -6,12 +6,12 @@ from pydrive2.auth import GoogleAuth
 from pydrive2.drive import GoogleDrive
 from pydrive2.files import GoogleDriveFile
 
-from config.config import getconf
+from config.config import getconf, getconf_path
 
 
 class GDriveManager:
     def __init__(self):
-        with open("gapi_service_file.json", "r") as service_file:
+        with getconf_path("GSERVICE_FILE").open(encoding="utf-8") as service_file:
             service_dict = json.load(service_file)
         gauth_settings = {
             "service_config": {

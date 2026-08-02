@@ -24,3 +24,9 @@ def test_gdrive_logging_can_be_disabled_by_environment(monkeypatch):
     monkeypatch.setenv("LOG_TO_GDRIVE", "false")
 
     assert not _gdrive_logging_enabled()
+
+
+def test_gdrive_logging_is_disabled_by_default(monkeypatch):
+    monkeypatch.delenv("LOG_TO_GDRIVE", raising=False)
+
+    assert not _gdrive_logging_enabled()

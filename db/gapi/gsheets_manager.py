@@ -1,10 +1,9 @@
 from typing import List
-from pathlib import Path
 
 import pygsheets
 from pygsheets.client import Client
 
-from config.config import getconf
+from config.config import getconf, getconf_path
 from logger.app_logger import logger as nmd_logger
 from .spreadsheet_manager import SpreadsheetManager
 
@@ -17,11 +16,8 @@ class SpreadsheetData:
 
 class GSheetsManager:
     def __init__(self):
-        service_file = Path(getconf("GSERVICE_FILE"))
-        if not service_file.is_absolute():
-            service_file = Path(__file__).parents[2] / service_file
         self._client: Client = pygsheets.authorize(
-            service_file=str(service_file)
+            service_file=str(getconf_path("GSERVICE_FILE"))
         )
 
     def open(self, spreadsheet_key: str) -> SpreadsheetManager:
