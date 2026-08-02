@@ -84,7 +84,15 @@ def del_admin_approved(callback_query: CallbackQuery, bot: TeleBot):
     user_id, _, _ = get_ids(callback_query)
     bot.delete_state(user_id)
     bot.answer_callback_query(callback_query.id, "Права администратора отозваны")
-    bot.send_message(admin_id, "Ваши права администратора были отозваны.")
+    try:
+        bot.send_message(admin_id, "Ваши права администратора были отозваны.")
+    except Exception as error:
+        logger.warning(
+            "Unable to notify removed admin user_id=%s username=%s: %s",
+            admin_id,
+            admin.username.value,
+            error,
+        )
     logger.info(
         "Admin removal completed target_id=%s target_username=%s",
         admin_id,

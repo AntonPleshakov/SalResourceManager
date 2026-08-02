@@ -78,10 +78,18 @@ def add_admins_approved(callback_query: CallbackQuery, bot: TeleBot):
     bot.delete_state(user_id)
     for admin in new_admins:
         get_admins_db().add_admin(admin)
-        bot.send_message(
-            admin.user_id.value,
-            "Вам выданы права администратора. Отправьте боту сообщение, чтобы открыть меню.",
-        )
+        try:
+            bot.send_message(
+                admin.user_id.value,
+                "Вам выданы права администратора. Отправьте боту сообщение, чтобы открыть меню.",
+            )
+        except Exception as error:
+            logger.warning(
+                "Unable to notify new admin user_id=%s username=%s: %s",
+                admin.user_id.value,
+                admin.username.value,
+                error,
+            )
     logger.info(
         "Admin addition completed requester_id=%s username=%s count=%d",
         user_id,
