@@ -117,16 +117,38 @@ jobs:
           DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
           DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
         run: |
-          test -n "$DEPLOY_HOST"
-          test -n "$DEPLOY_USER"
-
+          host="${DEPLOY_HOST//$'\r'/}"
+          host="${host//$'\n'/}"
+          user="${DEPLOY_USER//$'\r'/}"
+          user="${user//$'\n'/}"
           port="${DEPLOY_PORT:-22}"
-          target="${DEPLOY_USER}@${DEPLOY_HOST}"
-          ssh_options=(-i "$HOME/.ssh/deploy_key" -p "$port" -o BatchMode=yes)
+          port="${port//$'\r'/}"
+          port="${port//$'\n'/}"
+
+          if [[ -z "$host" || ! "$host" =~ ^[A-Za-z0-9._:-]+$ ]]; then
+            echo "::error::DEPLOY_HOST must contain only a hostname or IP address, without protocol, username, port, quotes, or whitespace."
+            exit 1
+          fi
+          if [[ -z "$user" || ! "$user" =~ ^[A-Za-z_][A-Za-z0-9_-]*$ ]]; then
+            echo "::error::DEPLOY_USER must contain only the SSH username."
+            exit 1
+          fi
+          if ! [[ "$port" =~ ^[0-9]+$ ]]; then
+            echo "::error::DEPLOY_PORT must be a number."
+            exit 1
+          fi
+
+          target="${user}@${host}"
+          ssh_options=(
+            -i "$HOME/.ssh/deploy_key"
+            -p "$port"
+            -o BatchMode=yes
+            -o ConnectTimeout=15
+          )
 
           ssh "${ssh_options[@]}" "$target" \
             'if [ "$(id -u)" -eq 0 ]; then
-             cd /opt/sal-resource-manager
+               cd /opt/sal-resource-manager
                docker compose pull bot
                docker compose up -d --force-recreate bot
              else
