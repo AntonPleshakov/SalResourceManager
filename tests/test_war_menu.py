@@ -62,6 +62,7 @@ def callback_data(markup):
 
 
 def test_home_contains_single_war_points_menu(monkeypatch):
+    monkeypatch.setattr("tg.navigation.show_unseen_releases", lambda *_: False)
     monkeypatch.setattr("tg.navigation.get_user_data_db", lambda: FakeUserDataDB())
     monkeypatch.setattr(
         "tg.navigation.get_admins_db",
@@ -73,6 +74,7 @@ def test_home_contains_single_war_points_menu(monkeypatch):
 
     buttons = callback_data(bot.sent[0][2])
     assert "war_menu" in buttons
+    assert "releases" in buttons
     assert "war_calculator" not in buttons
     assert "war" not in buttons
 

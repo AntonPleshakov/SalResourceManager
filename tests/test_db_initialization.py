@@ -7,6 +7,11 @@ reset_config(str(Path(__file__).parents[1] / "config" / "config_template.ini"))
 
 from db.access_group import SETTINGS_HEADER, SETTINGS_WORKSHEET_NAME, AccessGroupDB
 from db.admins import AdminsDB
+from db.release_views import (
+    RELEASE_VIEWS_HEADER,
+    RELEASE_VIEWS_WORKSHEET_NAME,
+    ReleaseViewsDB,
+)
 from db.gapi.worksheet_manager import WorksheetManager
 from db.user_data import LEGACY_V1_HEADER, UserDataDB
 from db.war_stages import WarStagesDB
@@ -170,6 +175,32 @@ def test_access_group_db_initializes_existing_empty_worksheet(monkeypatch):
     assert spreadsheet.opened == [SETTINGS_WORKSHEET_NAME]
     assert manager.header == SETTINGS_HEADER
     assert manager.fetch_calls == 0
+
+
+def test_release_views_db_creates_worksheet_and_header(monkeypatch):
+    import db.release_views as release_views
+
+    manager = FakeWorksheetManager()
+    spreadsheet = FakeSpreadsheet(manager)
+    patch_spreadsheet(monkeypatch, release_views, spreadsheet)
+
+    database = ReleaseViewsDB()
+
+    assert spreadsheet.added == [RELEASE_VIEWS_WORKSHEET_NAME]
+    assert manager.header == RELEASE_VIEWS_HEADER
+    assert database.get_users_count() == 0
+
+
+def test_release_views_db_tracks_seen_version():
+    manager = FakeWorksheetManager([["42", "1.0.0"]])
+    database = ReleaseViewsDB(manager)
+
+    database.mark_seen(42, "1.1.0")
+    database.mark_seen(100, "1.1.0")
+
+    assert database.get_last_seen_version(42) == "1.1.0"
+    assert database.get_last_seen_version(100) == "1.1.0"
+    assert manager.rows == [["42", "1.1.0"], ["100", "1.1.0"]]
 
 
 def test_user_data_db_initializes_existing_empty_worksheet(monkeypatch):

@@ -10,6 +10,7 @@ from config.config import getconf, getconf_int
 from db.access_group import initialize_access_group_db
 from db.admins import initialize_admins_db
 from db.retry import run_with_backoff
+from db.release_views import initialize_release_views_db
 from db.user_data import initialize_user_data_db
 from db.war_stages import initialize_war_stages_db
 from logger.app_logger import logger
@@ -72,12 +73,15 @@ def initialize_databases():
     logger.info("Initializing application databases")
     admins_db = initialize_admins_db()
     access_group_db = initialize_access_group_db()
+    release_views_db = initialize_release_views_db()
     user_data_db = initialize_user_data_db()
     war_stages_db = initialize_war_stages_db()
     logger.info(
-        "Application databases initialized: admins=%d users=%d war_days=%d access_group=%s",
+        "Application databases initialized: admins=%d users=%d "
+        "release_views=%d war_days=%d access_group=%s",
         len(admins_db.get_admins()),
         len(user_data_db.get_users()),
+        release_views_db.get_users_count(),
         len(war_stages_db.get_stages()),
         "configured" if access_group_db.get_group_id() is not None else "missing",
     )
