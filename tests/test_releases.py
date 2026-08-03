@@ -80,12 +80,13 @@ def test_user_sees_every_release_published_after_last_seen_version():
         "1.1.0",
         "1.2.0",
         "1.3.0",
+        "1.4.0",
     ]
 
 
-def test_latest_release_is_version_1_3_0():
-    assert CURRENT_VERSION == "1.3.0"
-    assert [release.version for release in unseen_releases("1.2.0")] == ["1.3.0"]
+def test_latest_release_is_version_1_4_0():
+    assert CURRENT_VERSION == "1.4.0"
+    assert [release.version for release in unseen_releases("1.3.0")] == ["1.4.0"]
 
 
 def test_release_notes_contain_version_changes_and_date():
