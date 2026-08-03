@@ -1,0 +1,140 @@
+from pathlib import Path
+
+from telebot.types import CallbackQuery, Chat, Message, User
+
+from config.config import reset_config
+
+reset_config(str(Path(__file__).parents[1] / "config" / "config_template.ini"))
+
+from resources.user_data import UserData
+from resources.war import DEFAULT_WAR_STAGES, WarPointsCalculator
+from tg.navigation import home
+from tg.utils import format_points
+from tg.war import personal_war_points, public_war_points, war_menu
+
+
+def make_callback(user_id: int = 42, data: str = "war_calculator") -> CallbackQuery:
+    user = User(user_id, False, "Tester", username="tester")
+    chat = Chat(user_id, "private")
+    message = Message(1, user, 0, chat, "text", {"text": "menu"}, None)
+    return CallbackQuery("callback-1", user, data, "", None, message)
+
+
+class FakeBot:
+    def __init__(self):
+        self.sent = []
+        self.edited = []
+        self.deleted_states = []
+
+    def send_message(self, chat_id, text, reply_markup=None):
+        self.sent.append((chat_id, text, reply_markup))
+
+    def edit_message_text(self, text, chat_id, message_id, reply_markup=None):
+        self.edited.append((text, chat_id, message_id, reply_markup))
+
+    def delete_state(self, user_id):
+        self.deleted_states.append(user_id)
+
+
+class FakeUserDataDB:
+    def __init__(self, user=None):
+        self.user = user
+
+    def get_user(self, user_id):
+        if self.user is not None and self.user.user_id.value == user_id:
+            return self.user
+        return None
+
+    def get_users(self):
+        return [self.user] if self.user is not None else []
+
+    def get_url(self):
+        return "https://example.test/resources"
+
+
+class FakeWarStagesDB:
+    def get_stages(self):
+        return DEFAULT_WAR_STAGES
+
+
+def callback_data(markup):
+    return [button.callback_data for row in markup.keyboard for button in row]
+
+
+def test_home_contains_single_war_points_menu(monkeypatch):
+    monkeypatch.setattr("tg.navigation.get_user_data_db", lambda: FakeUserDataDB())
+    monkeypatch.setattr(
+        "tg.navigation.get_admins_db",
+        lambda: type("Admins", (), {"is_admin": lambda self, user_id: False})(),
+    )
+    bot = FakeBot()
+
+    home(make_callback().message, bot)
+
+    buttons = callback_data(bot.sent[0][2])
+    assert "war_menu" in buttons
+    assert "war_calculator" not in buttons
+    assert "war" not in buttons
+
+
+def test_war_points_menu_contains_both_calculations():
+    bot = FakeBot()
+
+    war_menu(make_callback(data="war_menu"), bot)
+
+    text, _, _, markup = bot.edited[0]
+    assert "Очки войны" in text
+    assert callback_data(markup) == ["war_calculator", "war", "home"]
+
+
+def test_personal_war_calculator_uses_requesting_users_data(monkeypatch):
+    user = UserData(
+        user_id=42,
+        username="tester",
+        mount_keys=2500,
+        skills=1000,
+        shells=400,
+        hammers=300,
+        pets=2,
+        unmerged_mounts=3,
+        forge_level=10,
+        skill_summon_cost=10,
+        extra_egg_chance=5,
+        mount_summon_cost=10,
+        extra_mount_chance=10,
+    )
+    monkeypatch.setattr("tg.war.get_user_data_db", lambda: FakeUserDataDB(user))
+    monkeypatch.setattr("tg.war.get_war_stages_db", lambda: FakeWarStagesDB())
+    bot = FakeBot()
+
+    personal_war_points(make_callback(user.user_id.value), bot)
+
+    expected = WarPointsCalculator().calculate([user], DEFAULT_WAR_STAGES)
+    text, _, _, markup = bot.edited[0]
+    assert "Калькулятор очков войны" in text
+    assert f"Итого: <b>{format_points(expected.total)}</b>" in text
+    assert "resources" in callback_data(markup)
+    assert "technologies" in callback_data(markup)
+    assert "war_menu" in callback_data(markup)
+
+
+def test_maximum_war_points_returns_to_war_menu(monkeypatch):
+    user = UserData(user_id=42, username="tester")
+    monkeypatch.setattr("tg.war.get_user_data_db", lambda: FakeUserDataDB(user))
+    monkeypatch.setattr("tg.war.get_war_stages_db", lambda: FakeWarStagesDB())
+    bot = FakeBot()
+
+    public_war_points(make_callback(data="war"), bot)
+
+    assert callback_data(bot.edited[0][3]) == ["war_menu"]
+
+
+def test_personal_war_calculator_prompts_when_data_is_missing(monkeypatch):
+    monkeypatch.setattr("tg.war.get_user_data_db", lambda: FakeUserDataDB())
+    bot = FakeBot()
+
+    personal_war_points(make_callback(), bot)
+
+    text, _, _, markup = bot.edited[0]
+    assert "заполните свои ресурсы" in text
+    assert callback_data(markup) == ["resources", "technologies", "war_menu"]
