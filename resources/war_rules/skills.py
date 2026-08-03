@@ -5,7 +5,7 @@ from resources.user_data import UserData
 from resources.war_rules.details import ActivityDetails, format_calculation_number
 
 
-SKILL_TICKET_POINTS = Decimal("225")
+SKILL_CREATION_POINTS = Decimal("225")
 SKILL_UPGRADE_POINTS = Decimal("175")
 SKILL_BASE_TICKET_COST = Decimal("40")
 SKILL_AVERAGE_DUPLICATES_PER_UPGRADE = Decimal("5")
@@ -27,9 +27,9 @@ def explain_skill_points(user: UserData) -> ActivityDetails:
     expected_upgrades = max(
         summoned_skills - SKILL_AVERAGE_INITIAL_COUNT, Decimal("0")
     ) / SKILL_AVERAGE_DUPLICATES_PER_UPGRADE
-    ticket_points = tickets * SKILL_TICKET_POINTS
+    creation_points = summoned_skills * SKILL_CREATION_POINTS
     upgrade_points = expected_upgrades * SKILL_UPGRADE_POINTS
-    points = ticket_points + upgrade_points
+    points = creation_points + upgrade_points
     return ActivityDetails(
         consumable_points=points,
         repeatable_points=Decimal("0"),
@@ -48,13 +48,14 @@ def explain_skill_points(user: UserData) -> ActivityDetails:
             f"{format_calculation_number(SKILL_AVERAGE_INITIAL_COUNT)}, 0) ÷ "
             f"{format_calculation_number(SKILL_AVERAGE_DUPLICATES_PER_UPGRADE)} = "
             f"{format_calculation_number(expected_upgrades)}",
-            f"За билетики: {format_calculation_number(tickets)} × "
-            f"{format_calculation_number(SKILL_TICKET_POINTS)} = "
-            f"{format_calculation_number(ticket_points)} очков",
+            f"За создание навыков: "
+            f"{format_calculation_number(summoned_skills)} × "
+            f"{format_calculation_number(SKILL_CREATION_POINTS)} = "
+            f"{format_calculation_number(creation_points)} очков",
             f"За улучшения: {format_calculation_number(expected_upgrades)} × "
             f"{format_calculation_number(SKILL_UPGRADE_POINTS)} = "
             f"{format_calculation_number(upgrade_points)} очков",
-            f"Итого: {format_calculation_number(ticket_points)} + "
+            f"Итого: {format_calculation_number(creation_points)} + "
             f"{format_calculation_number(upgrade_points)} = "
             f"{format_calculation_number(points)} очков",
         ),

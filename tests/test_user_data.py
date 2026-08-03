@@ -635,12 +635,20 @@ def test_war_points_calculator_applies_pet_rule():
 def test_war_points_calculator_estimates_skill_points():
     user = UserData(user_id=42, skills=2490, skill_summon_cost=17)
 
-    report = WarPointsCalculator().calculate(
+    calculator = WarPointsCalculator()
+    report = calculator.calculate(
         [user], {1: (WarActivity.SKILLS,)}
     )
+    details = calculator.calculate_details(user, [WarActivity.SKILLS])[
+        WarActivity.SKILLS
+    ]
 
-    assert report.points_by_day == {1: Decimal("562256.550")}
-    assert report.total == Decimal("562256.550")
+    assert report.points_by_day == {1: Decimal("18881.550")}
+    assert report.total == Decimal("18881.550")
+    assert any(
+        "За создание навыков: 75 × 225 = 16 875 очков" in calculation
+        for calculation in details.calculations
+    )
 
 
 def test_parse_non_negative_int():
