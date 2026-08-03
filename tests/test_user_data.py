@@ -23,11 +23,14 @@ from resources.war import (
     WarActivity,
     WarPointsCalculator,
 )
+from resources.war_rules.forge import calculate_forge_points
 from resources.war_rules.forging import (
     FORGE_WEAPON_CHANCES,
     forge_weapon_chances,
     weapon_points,
 )
+from resources.war_rules.mounts import calculate_mount_points
+from resources.war_rules.technologies import calculate_technology_points
 from tg.utils import format_points
 from tg.user_data import _get_group_tag, save_all_values
 
@@ -402,8 +405,139 @@ def test_war_points_calculator_reports_each_activity_separately():
             WarActivity.DUNGEONS: 33_600,
         }
     }
+    assert report.points_by_activity == {
+        WarActivity.FORGING: 6,
+        WarActivity.DUNGEONS: 33_600,
+    }
     assert report.points_by_day == {1: 33_612}
-    assert report.total == 33_612
+    assert report.total == 33_606
+
+
+def test_consumable_activity_scores_once_and_repeatable_activity_scores_each_time():
+    user = UserData(
+        user_id=42,
+        mount_keys=2_500,
+        mount_summon_cost=0,
+        extra_mount_chance=0,
+        unmerged_mounts=0,
+    )
+    stages = {
+        1: (WarActivity.MOUNTS, WarActivity.TECHNOLOGIES),
+        2: (WarActivity.MOUNTS, WarActivity.TECHNOLOGIES),
+    }
+
+    report = WarPointsCalculator().calculate([user], stages)
+    mount_points = calculate_mount_points(user)
+    technology_points = calculate_technology_points(user)
+
+    assert report.points_by_activity_by_day == {
+        1: {
+            WarActivity.MOUNTS: mount_points,
+            WarActivity.TECHNOLOGIES: technology_points,
+        },
+        2: {
+            WarActivity.MOUNTS: mount_points,
+            WarActivity.TECHNOLOGIES: technology_points,
+        },
+    }
+    assert report.points_by_activity == {
+        WarActivity.MOUNTS: mount_points,
+        WarActivity.TECHNOLOGIES: technology_points * 2,
+    }
+    assert report.total == mount_points + technology_points * 2
+    assert sum(report.points_by_day.values()) == (
+        mount_points * 2 + technology_points * 2
+    )
+    assert sum(report.points_by_day.values()) > report.total
+
+
+def test_pet_resources_score_once_but_daily_hatching_repeats():
+    user = UserData(user_id=42, shells=100, pets=2)
+
+    report = WarPointsCalculator().calculate(
+        [user],
+        {
+            1: (WarActivity.PETS,),
+            2: (WarActivity.PETS,),
+        },
+    )
+    details = WarPointsCalculator().calculate_details(
+        user, [WarActivity.PETS]
+    )[WarActivity.PETS]
+
+    assert report.points_by_day == {
+        1: details.points,
+        2: details.points,
+    }
+    assert report.points_by_activity == {
+        WarActivity.PETS: details.consumable_points
+        + details.repeatable_points * 2
+    }
+
+
+def test_slow_forge_scores_once_while_dungeons_repeat():
+    user = UserData(user_id=42, forge_level=23)
+    stages = {
+        1: (WarActivity.FORGE, WarActivity.DUNGEONS),
+        2: (WarActivity.FORGE, WarActivity.DUNGEONS),
+    }
+
+    report = WarPointsCalculator().calculate([user], stages)
+    details = WarPointsCalculator().calculate_details(
+        user,
+        [WarActivity.FORGE, WarActivity.DUNGEONS],
+    )
+
+    assert report.points_by_activity == {
+        WarActivity.FORGE: details[WarActivity.FORGE].points,
+        WarActivity.DUNGEONS: details[WarActivity.DUNGEONS].points * 2,
+    }
+    assert report.points_by_activity_by_day[2][WarActivity.FORGE] == 0
+    assert (
+        report.points_by_activity_by_day[2][WarActivity.DUNGEONS]
+        == details[WarActivity.DUNGEONS].points
+    )
+
+
+def test_forge_at_level_22_upgrades_before_its_second_war_day():
+    user = UserData(user_id=42, forge_level=22)
+
+    report = WarPointsCalculator().calculate(
+        [user],
+        {
+            2: (WarActivity.FORGE,),
+            4: (WarActivity.FORGE,),
+        },
+    )
+    first_points = calculate_forge_points(user)
+    second_points = calculate_forge_points(
+        UserData(user_id=42, forge_level=23)
+    )
+
+    assert report.points_by_day == {
+        2: first_points,
+        4: second_points,
+    }
+    assert report.points_by_activity == {
+        WarActivity.FORGE: first_points + second_points
+    }
+
+
+def test_forge_above_level_22_does_not_upgrade_before_second_war_day():
+    user = UserData(user_id=42, forge_level=23)
+
+    report = WarPointsCalculator().calculate(
+        [user],
+        {
+            2: (WarActivity.FORGE,),
+            4: (WarActivity.FORGE,),
+        },
+    )
+
+    assert report.points_by_day == {
+        2: calculate_forge_points(user),
+        4: 0,
+    }
 
 
 def test_activity_details_match_calculated_points():

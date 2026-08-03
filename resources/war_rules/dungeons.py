@@ -11,7 +11,8 @@ DUNGEON_POINTS_PER_RUN = 4_200
 def explain_dungeon_points(_: UserData) -> ActivityDetails:
     points = Decimal(DUNGEON_RUNS * DUNGEON_POINTS_PER_RUN)
     return ActivityDetails(
-        points=points,
+        consumable_points=Decimal("0"),
+        repeatable_points=points,
         inputs=(f"Прохождения подземелий: {DUNGEON_RUNS}",),
         calculations=(
             f"{DUNGEON_RUNS} прохождений × "

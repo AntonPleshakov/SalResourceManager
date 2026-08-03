@@ -31,7 +31,8 @@ def explain_pet_points(user: UserData) -> ActivityDetails:
     merge_points = (Decimal(user.pets.value) + eggs) * PET_OR_EGG_MERGE_POINTS
     points = merge_points + MAX_HATCHING_POINTS_PER_DAY + MAX_HATCHING_POINTS_IN_ADVANCE
     return ActivityDetails(
-        points=points,
+        consumable_points=merge_points + MAX_HATCHING_POINTS_IN_ADVANCE,
+        repeatable_points=MAX_HATCHING_POINTS_PER_DAY,
         inputs=(
             f"Скорлупа: {format_calculation_number(user.shells.value)}",
             f"Дополнительный шанс яйца: {user.extra_egg_chance.value}%",

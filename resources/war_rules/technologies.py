@@ -12,7 +12,8 @@ def explain_technology_points(_: UserData) -> ActivityDetails:
         FIFTH_TIER_TECHNOLOGY_POINTS + FOURTH_TIER_TECHNOLOGY_POINTS
     )
     return ActivityDetails(
-        points=points,
+        consumable_points=Decimal("0"),
+        repeatable_points=points,
         inputs=("Фиксированный расчёт без расхода ресурсов пользователя",),
         calculations=(
             f"Технология V уровня: "

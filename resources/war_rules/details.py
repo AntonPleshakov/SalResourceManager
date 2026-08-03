@@ -5,9 +5,14 @@ from typing import Tuple
 
 @dataclass(frozen=True)
 class ActivityDetails:
-    points: Decimal
+    consumable_points: Decimal
+    repeatable_points: Decimal
     inputs: Tuple[str, ...]
     calculations: Tuple[str, ...]
+
+    @property
+    def points(self) -> Decimal:
+        return self.consumable_points + self.repeatable_points
 
 
 def format_calculation_number(value: Decimal | int) -> str:

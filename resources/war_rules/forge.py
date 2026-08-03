@@ -7,6 +7,7 @@ from resources.war_rules.details import ActivityDetails, format_calculation_numb
 
 FORGE_POINTS_PER_THOUSAND_COINS = 38
 FORGE_RESET_UPGRADES = 8
+FORGE_MAX_LEVEL_FOR_SECOND_EVENT = 22
 FORGE_TOTAL_COSTS: Tuple[int, ...] = (
     0,
     400,
@@ -52,8 +53,7 @@ def _forge_total_cost(forge_level: int) -> int:
     return FORGE_TOTAL_COSTS[forge_level]
 
 
-def explain_forge_points(user: UserData) -> ActivityDetails:
-    forge_level = user.forge_level.value
+def explain_forge_level(forge_level: int) -> ActivityDetails:
     total_cost = _forge_total_cost(forge_level)
     counted_thousands = total_cost // 1_000
     points = Decimal(counted_thousands * FORGE_POINTS_PER_THOUSAND_COINS)
@@ -72,11 +72,54 @@ def explain_forge_points(user: UserData) -> ActivityDetails:
         ]
     )
     return ActivityDetails(
-        points=points,
+        consumable_points=points,
+        repeatable_points=Decimal("0"),
         inputs=(f"Уровень кузницы: {forge_level}",),
         calculations=tuple(calculations),
     )
 
 
+def explain_forge_points(user: UserData) -> ActivityDetails:
+    return explain_forge_level(user.forge_level.value)
+
+
 def calculate_forge_points(user: UserData) -> Decimal:
     return explain_forge_points(user).points
+
+
+def explain_forge_occurrences(
+    user: UserData, occurrence_count: int
+) -> Tuple[ActivityDetails, ...]:
+    if occurrence_count <= 0:
+        return ()
+
+    forge_level = user.forge_level.value
+    occurrences = [explain_forge_level(forge_level)]
+    if occurrence_count >= 2:
+        if forge_level <= FORGE_MAX_LEVEL_FOR_SECOND_EVENT:
+            occurrences.append(explain_forge_level(forge_level + 1))
+        else:
+            occurrences.append(
+                ActivityDetails(
+                    consumable_points=Decimal("0"),
+                    repeatable_points=Decimal("0"),
+                    inputs=(f"Уровень кузницы: {forge_level}",),
+                    calculations=(
+                        f"Улучшение до уровня {forge_level + 1} не завершится "
+                        "между вторым и четвёртым днями войны",
+                    ),
+                )
+            )
+    while len(occurrences) < occurrence_count:
+        occurrences.append(
+            ActivityDetails(
+                consumable_points=Decimal("0"),
+                repeatable_points=Decimal("0"),
+                inputs=(f"Уровень кузницы: {forge_level}",),
+                calculations=(
+                    "Для дополнительных дней кузницы нет настроенного "
+                    "временного интервала",
+                ),
+            )
+        )
+    return tuple(occurrences)

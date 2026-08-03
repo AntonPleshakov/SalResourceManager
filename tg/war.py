@@ -8,6 +8,7 @@ from db.war_stages import get_war_stages_db
 from logger.app_logger import logger
 from resources.user_data import UserData
 from resources.war import WarActivity, WarPointsCalculator
+from resources.war_rules.forge import explain_forge_occurrences
 from tg.utils import Button, empty_filter, format_points, get_ids, get_username
 
 
@@ -17,11 +18,30 @@ def _war_points_text() -> str:
     logger.info("Calculating war points users=%d days=%d", len(users), len(stages))
     report = WarPointsCalculator().calculate(users, stages)
     logger.info("War points calculated")
-    lines = ["<b>Максимальные очки войны</b>", ""]
+    lines = [
+        "<b>Максимальные очки войны</b>",
+        "<i>Максимум по каждому дню</i>",
+        "",
+    ]
     for day, points in report.points_by_day.items():
         activities = ", ".join(activity.title for activity in stages[day])
         lines.append(f"День {day}: <b>{format_points(points)}</b> — {activities}")
-    lines.extend(["", f"Итого: <b>{format_points(report.total)}</b>"])
+    lines.extend(
+        [
+            "",
+            "<b>Итого по активностям</b>",
+            *(
+                f"• {activity.title}: "
+                f"<b>{format_points(points)}</b>"
+                for activity, points in report.points_by_activity.items()
+            ),
+            "",
+            f"Всего: <b>{format_points(report.total)}</b>",
+            "",
+            "Максимум каждого дня считается отдельно. В итогах расходуемые "
+            "ресурсы учитываются один раз.",
+        ]
+    )
     return "\n".join(lines)
 
 
@@ -29,7 +49,11 @@ def _personal_war_points_text(user: UserData) -> str:
     stages = get_war_stages_db().get_stages()
     logger.info("Calculating personal war points user_id=%s", user.user_id.value)
     report = WarPointsCalculator().calculate([user], stages)
-    lines = ["<b>Калькулятор очков войны</b>", ""]
+    lines = [
+        "<b>Калькулятор очков войны</b>",
+        "<i>Максимум по каждому дню</i>",
+        "",
+    ]
     for day, points in report.points_by_day.items():
         lines.append(f"<b>День {day}: {format_points(points)}</b>")
         for activity, activity_points in report.points_by_activity_by_day[
@@ -41,8 +65,17 @@ def _personal_war_points_text(user: UserData) -> str:
         lines.append("")
     lines.extend(
         [
-            f"Итого: <b>{format_points(report.total)}</b>",
+            "<b>Итого по активностям</b>",
+            *(
+                f"• {activity.title}: "
+                f"<b>{format_points(points)}</b>"
+                for activity, points in report.points_by_activity.items()
+            ),
             "",
+            f"Всего: <b>{format_points(report.total)}</b>",
+            "",
+            "Максимум каждого дня считается отдельно. В итогах расходуемые "
+            "ресурсы учитываются один раз.",
             "Расчёт сделан по вашим сохранённым ресурсам и технологиям.",
         ]
     )
@@ -68,25 +101,82 @@ def _activity_days(stages, selected_activity: WarActivity) -> str:
     return ", ".join(days)
 
 
+def _activity_occurrences(stages, selected_activity: WarActivity) -> int:
+    return sum(
+        activities.count(selected_activity) for activities in stages.values()
+    )
+
+
 def _personal_war_activity_details_text(
     user: UserData, activity: WarActivity
 ) -> str:
     stages = get_war_stages_db().get_stages()
-    details = WarPointsCalculator().calculate_details(user, [activity])[activity]
+    occurrences = _activity_occurrences(stages, activity)
+    calculator = WarPointsCalculator()
+    details = calculator.calculate_details(user, [activity])[activity]
+    occurrence_points = calculator.calculate_occurrence_points(
+        user,
+        activity,
+        occurrences,
+    )
+    total_points = sum(occurrence_points)
     lines = [
         f"<b>{activity.title}</b>",
         f"Дни войны: {_activity_days(stages, activity)}",
-        f"Очки за одно появление: <b>{format_points(details.points)}</b>",
-        "",
-        "<i>Исходные данные</i>",
-        *(f"• {formatting.escape_html(value)}" for value in details.inputs),
-        "",
-        "<i>Как получены очки</i>",
         *(
-            f"• {formatting.escape_html(calculation)}"
-            for calculation in details.calculations
+            f"Появление {index}: <b>{format_points(points)}</b>"
+            for index, points in enumerate(occurrence_points, start=1)
         ),
+        f"Всего за войну: <b>{format_points(total_points)}</b>",
+        "",
     ]
+    if activity == WarActivity.FORGE:
+        for index, occurrence_details in enumerate(
+            explain_forge_occurrences(user, occurrences),
+            start=1,
+        ):
+            lines.extend(
+                [
+                    f"<i>Появление {index}</i>",
+                    *(
+                        f"• {formatting.escape_html(value)}"
+                        for value in occurrence_details.inputs
+                    ),
+                    *(
+                        f"• {formatting.escape_html(calculation)}"
+                        for calculation in occurrence_details.calculations
+                    ),
+                    "",
+                ]
+            )
+        lines.extend(
+            [
+                "<i>Учёт повторений</i>",
+                "• Монеты считаются безлимитными",
+                "• К четвёртому дню уровень повышается на 1, только если "
+                "исходный уровень не выше 22",
+            ]
+        )
+        return "\n".join(lines)
+
+    lines.extend(
+        [
+            "<i>Исходные данные</i>",
+            *(f"• {formatting.escape_html(value)}" for value in details.inputs),
+            "",
+            "<i>Как получены очки</i>",
+            *(
+                f"• {formatting.escape_html(calculation)}"
+                for calculation in details.calculations
+            ),
+            "",
+            "<i>Учёт повторений</i>",
+            f"• Расходуемая часть: "
+            f"{format_points(details.consumable_points)} — один раз",
+            f"• Повторяемая часть: {format_points(details.repeatable_points)} × "
+            f"{occurrences}",
+        ]
+    )
     return "\n".join(lines)
 
 
@@ -170,12 +260,13 @@ def personal_war_details_menu(
 
     stages = get_war_stages_db().get_stages()
     activities = _configured_activities(stages)
-    details = WarPointsCalculator().calculate_details(user, activities)
+    report = WarPointsCalculator().calculate([user], stages)
     keyboard = InlineKeyboardMarkup(row_width=1)
     for activity in activities:
         keyboard.add(
             Button(
-                f"{activity.title} — {format_points(details[activity].points)}",
+                f"{activity.title} — "
+                f"{format_points(report.points_by_activity[activity])}",
                 f"war_calculator/details/{activity.value}",
             ).inline()
         )

@@ -129,7 +129,8 @@ def test_personal_war_calculator_uses_requesting_users_data(monkeypatch):
         f"<b>День 1: {format_points(first_day_points)}</b>\n"
         f"{first_day_details}"
     ) in text
-    assert f"Итого: <b>{format_points(expected.total)}</b>" in text
+    assert "<b>Итого по активностям</b>" in text
+    assert f"Всего: <b>{format_points(expected.total)}</b>" in text
     assert "war_calculator/details" in callback_data(markup)
     assert "resources" in callback_data(markup)
     assert "technologies" in callback_data(markup)
@@ -184,6 +185,25 @@ def test_personal_war_activity_details_explain_resources_and_formula(monkeypatch
     ]
 
 
+def test_forge_details_explain_level_change_between_war_days(monkeypatch):
+    user = UserData(user_id=42, username="tester", forge_level=10)
+    monkeypatch.setattr("tg.war.get_user_data_db", lambda: FakeUserDataDB(user))
+    monkeypatch.setattr("tg.war.get_war_stages_db", lambda: FakeWarStagesDB())
+    bot = FakeBot()
+
+    personal_war_activity_details(
+        make_callback(user.user_id.value, "war_calculator/details/forge"),
+        bot,
+    )
+
+    text = bot.edited[0][0]
+    assert "Дни войны: 2, 4" in text
+    assert "Уровень кузницы: 10" in text
+    assert "Уровень кузницы: 11" in text
+    assert "Монеты считаются безлимитными" in text
+    assert "исходный уровень не выше 22" in text
+
+
 def test_maximum_war_points_returns_to_war_menu(monkeypatch):
     user = UserData(user_id=42, username="tester")
     monkeypatch.setattr("tg.war.get_user_data_db", lambda: FakeUserDataDB(user))
@@ -192,6 +212,9 @@ def test_maximum_war_points_returns_to_war_menu(monkeypatch):
 
     public_war_points(make_callback(data="war"), bot)
 
+    text = bot.edited[0][0]
+    assert "<b>Итого по активностям</b>" in text
+    assert "Всего:" in text
     assert callback_data(bot.edited[0][3]) == ["war_menu"]
 
 

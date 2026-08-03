@@ -31,7 +31,8 @@ def explain_skill_points(user: UserData) -> ActivityDetails:
     upgrade_points = expected_upgrades * SKILL_UPGRADE_POINTS
     points = ticket_points + upgrade_points
     return ActivityDetails(
-        points=points,
+        consumable_points=points,
+        repeatable_points=Decimal("0"),
         inputs=(
             f"Билетики навыков: {format_calculation_number(tickets)}",
             f"Снижение стоимости призыва: {format_calculation_number(discount)}%",

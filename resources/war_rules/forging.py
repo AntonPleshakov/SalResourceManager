@@ -71,7 +71,8 @@ def explain_forging_points(user: UserData) -> ActivityDetails:
     expected_points = _expected_points_per_hammer(user.forge_level.value)
     points = Decimal(user.hammers.value) * expected_points
     return ActivityDetails(
-        points=points,
+        consumable_points=points,
+        repeatable_points=Decimal("0"),
         inputs=(
             f"Молотки: {format_calculation_number(user.hammers.value)}",
             f"Уровень кузницы: {user.forge_level.value}",

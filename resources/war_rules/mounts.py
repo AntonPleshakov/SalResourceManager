@@ -55,7 +55,8 @@ def explain_mount_points(user: UserData) -> ActivityDetails:
         ]
     )
     return ActivityDetails(
-        points=points,
+        consumable_points=points,
+        repeatable_points=Decimal("0"),
         inputs=(
             f"Ключи маунтов: {format_calculation_number(user.mount_keys.value)}",
             f"Снижение стоимости призыва: {user.mount_summon_cost.value}%",
