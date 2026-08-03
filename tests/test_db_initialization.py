@@ -8,6 +8,7 @@ reset_config(str(Path(__file__).parents[1] / "config" / "config_template.ini"))
 from db.access_group import SETTINGS_HEADER, SETTINGS_WORKSHEET_NAME, AccessGroupDB
 from db.admins import AdminsDB
 from db.release_views import (
+    LEGACY_RELEASE_VIEWS_HEADER,
     RELEASE_VIEWS_HEADER,
     RELEASE_VIEWS_WORKSHEET_NAME,
     ReleaseViewsDB,
@@ -192,15 +193,34 @@ def test_release_views_db_creates_worksheet_and_header(monkeypatch):
 
 
 def test_release_views_db_tracks_seen_version():
-    manager = FakeWorksheetManager([["42", "1.0.0"]])
+    manager = FakeWorksheetManager([["42", "tester", "1.0.0"]])
+    manager.header = RELEASE_VIEWS_HEADER
     database = ReleaseViewsDB(manager)
 
-    database.mark_seen(42, "1.1.0")
-    database.mark_seen(100, "1.1.0")
+    database.mark_seen(42, "renamed", "1.1.0")
+    database.mark_seen(100, "new_user", "1.1.0")
 
     assert database.get_last_seen_version(42) == "1.1.0"
     assert database.get_last_seen_version(100) == "1.1.0"
-    assert manager.rows == [["42", "1.1.0"], ["100", "1.1.0"]]
+    assert manager.rows == [
+        ["42", "renamed", "1.1.0"],
+        ["100", "new_user", "1.1.0"],
+    ]
+
+
+def test_release_views_db_migrates_existing_rows_without_username():
+    manager = FakeWorksheetManager([["42", "1.0.0"]])
+    manager.header = LEGACY_RELEASE_VIEWS_HEADER
+
+    database = ReleaseViewsDB(manager)
+
+    assert manager.header == RELEASE_VIEWS_HEADER
+    assert manager.rows == [["42", "", "1.0.0"]]
+    assert database.get_last_seen_version(42) == "1.0.0"
+
+    database.update_username(42, "tester")
+
+    assert manager.rows == [["42", "tester", "1.0.0"]]
 
 
 def test_user_data_db_initializes_existing_empty_worksheet(monkeypatch):

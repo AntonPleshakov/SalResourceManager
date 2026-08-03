@@ -1,3 +1,4 @@
+from datetime import date
 from pathlib import Path
 
 import pytest
@@ -7,7 +8,7 @@ from config.config import reset_config
 
 reset_config(str(Path(__file__).parents[1] / "config" / "config_template.ini"))
 
-from resources.releases import CURRENT_VERSION, RELEASES, unseen_releases
+from resources.releases import CURRENT_VERSION, RELEASES, Release, unseen_releases
 from tg.releases import format_release_notes, show_release_notes, show_unseen_releases
 
 
@@ -19,15 +20,22 @@ def make_callback(user_id: int = 42, data: str = "releases") -> CallbackQuery:
 
 
 class FakeReleaseViewsDB:
-    def __init__(self, version=None):
+    def __init__(self, version=None, username=""):
         self.version = version
+        self.username = username
         self.marked = []
+        self.updated_usernames = []
 
     def get_last_seen_version(self, user_id):
         return self.version
 
-    def mark_seen(self, user_id, version):
-        self.marked.append((user_id, version))
+    def update_username(self, user_id, username):
+        self.updated_usernames.append((user_id, username))
+        self.username = username
+
+    def mark_seen(self, user_id, username, version):
+        self.marked.append((user_id, username, version))
+        self.username = username
         self.version = version
 
 
@@ -52,8 +60,14 @@ def callback_data(markup):
     return [button.callback_data for row in markup.keyboard for button in row]
 
 
-def test_new_user_sees_only_current_release():
-    assert unseen_releases(None) == RELEASES[-1:]
+def test_new_user_sees_up_to_five_current_releases(monkeypatch):
+    releases = tuple(
+        Release(str(index) + ".0.0", date(2026, 8, index), ("Изменение",))
+        for index in range(1, 7)
+    )
+    monkeypatch.setattr("resources.releases.RELEASES", releases)
+
+    assert unseen_releases(None) == releases[-5:]
 
 
 def test_current_user_has_no_unseen_releases():
@@ -82,13 +96,21 @@ def test_unseen_release_is_marked_only_after_successful_display(monkeypatch):
     callback = make_callback()
 
     assert show_unseen_releases(callback, FakeBot()) is True
-    assert database.marked == [(42, CURRENT_VERSION)]
+    assert database.marked == [(42, "tester", CURRENT_VERSION)]
 
     database.marked.clear()
     database.version = None
     with pytest.raises(RuntimeError, match="Telegram unavailable"):
         show_unseen_releases(callback, FakeBot(fail=True))
     assert database.marked == []
+
+
+def test_username_is_updated_even_when_there_are_no_unseen_releases(monkeypatch):
+    database = FakeReleaseViewsDB(CURRENT_VERSION, "old_username")
+    monkeypatch.setattr("tg.releases.get_release_views_db", lambda: database)
+
+    assert show_unseen_releases(make_callback(), FakeBot()) is False
+    assert database.updated_usernames == [(42, "tester")]
 
 
 def test_release_button_shows_current_release_and_returns_home(monkeypatch):

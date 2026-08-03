@@ -59,9 +59,9 @@ def version_key(version: str) -> Tuple[int, int, int]:
 
 
 def unseen_releases(last_seen_version: Optional[str]) -> Tuple[Release, ...]:
-    """Return missed releases, or only the current release for a new user."""
+    """Return missed releases, or up to five recent releases for a new user."""
     if not last_seen_version:
-        return RELEASES[-1:]
+        return RELEASES[-5:]
 
     try:
         last_seen_key = version_key(last_seen_version)

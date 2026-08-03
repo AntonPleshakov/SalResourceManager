@@ -35,13 +35,18 @@ def _show_notes(
         bot.edit_message_text(text, chat_id, message_id, reply_markup=keyboard)
     else:
         bot.send_message(chat_id, text, reply_markup=keyboard)
-    get_release_views_db().mark_seen(user_id, CURRENT_VERSION)
+    get_release_views_db().mark_seen(
+        user_id,
+        get_username(message),
+        CURRENT_VERSION,
+    )
 
 
 def show_unseen_releases(
     message: Union[Message, CallbackQuery], bot: TeleBot
 ) -> bool:
     user_id, _, _ = get_ids(message)
+    username = get_username(message)
     try:
         release_views = get_release_views_db()
     except RuntimeError:
@@ -50,12 +55,13 @@ def show_unseen_releases(
 
     releases = unseen_releases(release_views.get_last_seen_version(user_id))
     if not releases:
+        release_views.update_username(user_id, username)
         return False
 
     logger.info(
         "Showing unseen releases to user_id=%s username=%s versions=%s",
         user_id,
-        get_username(message),
+        username,
         [release.version for release in releases],
     )
     _show_notes(message, bot, releases)
