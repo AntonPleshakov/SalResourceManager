@@ -7,10 +7,16 @@ from config.config import reset_config
 reset_config(str(Path(__file__).parents[1] / "config" / "config_template.ini"))
 
 from resources.user_data import UserData
-from resources.war import DEFAULT_WAR_STAGES, WarPointsCalculator
+from resources.war import DEFAULT_WAR_STAGES, WarActivity, WarPointsCalculator
 from tg.navigation import home
 from tg.utils import format_points
-from tg.war import personal_war_points, public_war_points, war_menu
+from tg.war import (
+    personal_war_activity_details,
+    personal_war_details_menu,
+    personal_war_points,
+    public_war_points,
+    war_menu,
+)
 
 
 def make_callback(user_id: int = 42, data: str = "war_calculator") -> CallbackQuery:
@@ -114,10 +120,68 @@ def test_personal_war_calculator_uses_requesting_users_data(monkeypatch):
     expected = WarPointsCalculator().calculate([user], DEFAULT_WAR_STAGES)
     text, _, _, markup = bot.edited[0]
     assert "Калькулятор очков войны" in text
+    first_day_points = expected.points_by_day[1]
+    first_day_details = "\n".join(
+        f"• {activity.title}: <b>{format_points(points)}</b>"
+        for activity, points in expected.points_by_activity_by_day[1].items()
+    )
+    assert (
+        f"<b>День 1: {format_points(first_day_points)}</b>\n"
+        f"{first_day_details}"
+    ) in text
     assert f"Итого: <b>{format_points(expected.total)}</b>" in text
+    assert "war_calculator/details" in callback_data(markup)
     assert "resources" in callback_data(markup)
     assert "technologies" in callback_data(markup)
     assert "war_menu" in callback_data(markup)
+
+
+def test_personal_war_details_menu_lists_every_configured_activity(monkeypatch):
+    user = UserData(user_id=42, username="tester", forge_level=1)
+    monkeypatch.setattr("tg.war.get_user_data_db", lambda: FakeUserDataDB(user))
+    monkeypatch.setattr("tg.war.get_war_stages_db", lambda: FakeWarStagesDB())
+    bot = FakeBot()
+
+    personal_war_details_menu(
+        make_callback(user.user_id.value, "war_calculator/details"), bot
+    )
+
+    text, _, _, markup = bot.edited[0]
+    buttons = callback_data(markup)
+    assert "Подробный расчёт" in text
+    assert {
+        f"war_calculator/details/{activity.value}" for activity in WarActivity
+    }.issubset(buttons)
+    assert buttons[-1] == "war_calculator"
+
+
+def test_personal_war_activity_details_explain_resources_and_formula(monkeypatch):
+    user = UserData(
+        user_id=42,
+        username="tester",
+        forge_level=10,
+        hammers=300,
+    )
+    monkeypatch.setattr("tg.war.get_user_data_db", lambda: FakeUserDataDB(user))
+    monkeypatch.setattr("tg.war.get_war_stages_db", lambda: FakeWarStagesDB())
+    bot = FakeBot()
+
+    personal_war_activity_details(
+        make_callback(user.user_id.value, "war_calculator/details/forging"),
+        bot,
+    )
+
+    text, _, _, markup = bot.edited[0]
+    assert "<b>Ковка</b>" in text
+    assert "Дни войны: 1, 3, 5" in text
+    assert "Молотки: 300" in text
+    assert "Уровень кузницы: 10" in text
+    assert "Средние очки за один молоток" in text
+    assert "очков" in text
+    assert callback_data(markup) == [
+        "war_calculator/details",
+        "war_calculator",
+    ]
 
 
 def test_maximum_war_points_returns_to_war_menu(monkeypatch):

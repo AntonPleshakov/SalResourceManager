@@ -2,6 +2,7 @@ from decimal import Decimal
 from typing import List, Sequence
 
 from resources.user_data import UserData
+from resources.war_rules.details import ActivityDetails, format_calculation_number
 
 FORGE_WEAPON_CHANCES: List[List[Decimal]] = [
     [Decimal("100.00"), Decimal("0.00"), Decimal("0.00"), Decimal("0.00"), Decimal("0.00"), Decimal("0.00"), Decimal("0.00"), Decimal("0.00"), Decimal("0.00"), Decimal("0.00")],
@@ -58,10 +59,32 @@ def weapon_points(weapon_index: int) -> int:
     return 5
 
 
-def calculate_forging_points(user: UserData) -> Decimal:
-    chances = forge_weapon_chances(user.forge_level.value)
-    expected_points = sum(
+def _expected_points_per_hammer(forge_level: int) -> Decimal:
+    chances = forge_weapon_chances(forge_level)
+    return sum(
         Decimal(str(chance)) * weapon_points(weapon_index) / Decimal("100")
         for weapon_index, chance in enumerate(chances)
     )
-    return Decimal(user.hammers.value) * expected_points
+
+
+def explain_forging_points(user: UserData) -> ActivityDetails:
+    expected_points = _expected_points_per_hammer(user.forge_level.value)
+    points = Decimal(user.hammers.value) * expected_points
+    return ActivityDetails(
+        points=points,
+        inputs=(
+            f"Молотки: {format_calculation_number(user.hammers.value)}",
+            f"Уровень кузницы: {user.forge_level.value}",
+        ),
+        calculations=(
+            "Средние очки за один молоток с учётом шансов оружия: "
+            f"{format_calculation_number(expected_points)}",
+            f"{format_calculation_number(user.hammers.value)} × "
+            f"{format_calculation_number(expected_points)} = "
+            f"{format_calculation_number(points)} очков",
+        ),
+    )
+
+
+def calculate_forging_points(user: UserData) -> Decimal:
+    return explain_forging_points(user).points

@@ -2,6 +2,7 @@ from decimal import Decimal
 from typing import Tuple
 
 from resources.user_data import UserData
+from resources.war_rules.details import ActivityDetails, format_calculation_number
 
 
 FORGE_POINTS_PER_THOUSAND_COINS = 38
@@ -45,10 +46,37 @@ FORGE_TOTAL_COSTS: Tuple[int, ...] = (
 )
 
 
-def calculate_forge_points(user: UserData) -> Decimal:
-    forge_level = user.forge_level.value
+def _forge_total_cost(forge_level: int) -> int:
     if forge_level == len(FORGE_TOTAL_COSTS):
-        total_cost = sum(FORGE_TOTAL_COSTS[1 : FORGE_RESET_UPGRADES + 1])
-    else:
-        total_cost = FORGE_TOTAL_COSTS[forge_level]
-    return Decimal(total_cost // 1_000 * FORGE_POINTS_PER_THOUSAND_COINS)
+        return sum(FORGE_TOTAL_COSTS[1 : FORGE_RESET_UPGRADES + 1])
+    return FORGE_TOTAL_COSTS[forge_level]
+
+
+def explain_forge_points(user: UserData) -> ActivityDetails:
+    forge_level = user.forge_level.value
+    total_cost = _forge_total_cost(forge_level)
+    counted_thousands = total_cost // 1_000
+    points = Decimal(counted_thousands * FORGE_POINTS_PER_THOUSAND_COINS)
+    calculations = []
+    if forge_level == len(FORGE_TOTAL_COSTS):
+        calculations.append(
+            f"После сброса кузницы учитывается стоимость уровней 1–"
+            f"{FORGE_RESET_UPGRADES}"
+        )
+    calculations.extend(
+        [
+            f"Стоимость улучшений: {format_calculation_number(total_cost)} монет",
+            f"Засчитываемые тысячи монет: {counted_thousands}",
+            f"{counted_thousands} × {FORGE_POINTS_PER_THOUSAND_COINS} = "
+            f"{format_calculation_number(points)} очков",
+        ]
+    )
+    return ActivityDetails(
+        points=points,
+        inputs=(f"Уровень кузницы: {forge_level}",),
+        calculations=tuple(calculations),
+    )
+
+
+def calculate_forge_points(user: UserData) -> Decimal:
+    return explain_forge_points(user).points

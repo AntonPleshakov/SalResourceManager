@@ -376,7 +376,65 @@ def test_war_points_calculator_applies_fixed_forging_rule():
     )
 
     assert report.points_by_day == {1: 6}
+    assert report.points_by_activity_by_day == {
+        1: {WarActivity.FORGING: 6}
+    }
     assert report.total == 6
+
+
+def test_war_points_calculator_reports_each_activity_separately():
+    user = UserData(user_id=42, forge_level=1, hammers=3)
+
+    report = WarPointsCalculator().calculate(
+        [user],
+        {
+            1: (
+                WarActivity.FORGING,
+                WarActivity.DUNGEONS,
+                WarActivity.FORGING,
+            )
+        },
+    )
+
+    assert report.points_by_activity_by_day == {
+        1: {
+            WarActivity.FORGING: 12,
+            WarActivity.DUNGEONS: 33_600,
+        }
+    }
+    assert report.points_by_day == {1: 33_612}
+    assert report.total == 33_612
+
+
+def test_activity_details_match_calculated_points():
+    user = UserData(
+        user_id=42,
+        mount_keys=2_500,
+        skills=1_000,
+        shells=400,
+        hammers=300,
+        pets=2,
+        unmerged_mounts=3,
+        forge_level=10,
+        skill_summon_cost=10,
+        extra_egg_chance=5,
+        mount_summon_cost=10,
+        extra_mount_chance=10,
+    )
+    activities = list(WarActivity)
+    calculator = WarPointsCalculator()
+
+    report = calculator.calculate(
+        [user],
+        {day: (activity,) for day, activity in enumerate(activities, start=1)},
+    )
+    details = calculator.calculate_details(user, activities)
+
+    assert set(details) == set(activities)
+    for day, activity in enumerate(activities, start=1):
+        assert details[activity].points == report.points_by_day[day]
+        assert details[activity].inputs
+        assert details[activity].calculations
 
 
 def test_war_points_calculator_applies_fixed_dungeon_rule_per_user():
