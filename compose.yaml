@@ -15,7 +15,7 @@ services:
       - ${CONFIG_FILE:-./config/config.ini}:/app/config/config.ini:ro
       - ${GOOGLE_CREDENTIALS_FILE:-./gapi_service_file.json}:/app/gapi_service_file.json:ro
 
-    mem_limit: 256m
+    mem_limit: 512m
     cpus: 0.50
 
     logging:
