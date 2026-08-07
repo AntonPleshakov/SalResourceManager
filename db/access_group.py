@@ -57,6 +57,7 @@ class AccessGroupDB(ReconnectableDB):
         values = [[ACCESS_GROUP_ID_KEY, str(group_id)]]
         self._run_with_retry(lambda: self._manager.update_values(values))
         self._group_id = group_id
+        self._sync_sqlite_mirror()
 
 
 access_group_db: Optional[AccessGroupDB] = None

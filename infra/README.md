@@ -21,6 +21,10 @@ The script ensures that:
 - the configured application image is pulled and Compose is applied;
 - the bot starts successfully and `/app/data` is a writable persistent mount.
 
+During migration stage 1, this mount stores `sal_resources.db`. This file is
+application state and is not managed or replaced by the server configuration
+script.
+
 Docker Engine itself must already be installed. The SSH user must be `root` or
 have passwordless `sudo` access.
 
@@ -74,8 +78,9 @@ The script compares managed files before replacing them and relies on
 the mounted application config or Google credentials change.
 
 To prepare a replacement host, add its SSH alias and run the same command. The
-SQLite database is state and will be moved separately in a controlled backup
-and restore procedure once SQLite support is implemented.
+SQLite database is application state and is not copied by this script. During
+stage 1 it can be rebuilt from Google on the replacement host; later migration
+stages will require a controlled backup and restore procedure.
 
 Automatic GitHub deployments continue to update only the application image.
 Host directories, permissions, Compose configuration, and secrets are managed

@@ -85,6 +85,9 @@ class ReleaseViewsDB(ReconnectableDB):
     def get_users_count(self) -> int:
         return len(self._users)
 
+    def get_users(self) -> Dict[int, tuple[str, str]]:
+        return dict(self._users)
+
     def _persist_users(self, users: Dict[int, tuple[str, str]]) -> None:
         rows = [
             [str(stored_user_id), stored_username, stored_version]
@@ -92,6 +95,7 @@ class ReleaseViewsDB(ReconnectableDB):
         ]
         self._run_with_retry(lambda: self._manager.update_values(rows))
         self._users = users
+        self._sync_sqlite_mirror()
 
     def update_username(self, user_id: int, username: str) -> None:
         user = self._users.get(user_id)

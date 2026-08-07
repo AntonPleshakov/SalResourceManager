@@ -20,8 +20,12 @@ def getconf_int(option: str, fallback: int | None = None) -> int:
     return _config.getint(_MODE, option, fallback=fallback)
 
 
-def getconf_path(option: str) -> Path:
-    path = Path(getconf(option))
+def getconf_path(option: str, fallback: str | None = None) -> Path:
+    if fallback is None:
+        value = getconf(option)
+    else:
+        value = _config.get(_MODE, option, fallback=fallback)
+    path = Path(value)
     if path.is_absolute():
         return path
     return _PROJECT_ROOT / path

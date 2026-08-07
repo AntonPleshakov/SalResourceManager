@@ -174,8 +174,10 @@ class UserDataDB(ReconnectableDB):
                 username,
                 tag or "",
             )
+            self._sync_sqlite_mirror()
             return self._users[user_id]
         self._users[user_id] = user
+        self._sync_sqlite_mirror()
         logger.info("DB: resource user added; total=%d", len(self._users))
         return user
 
@@ -236,8 +238,10 @@ class UserDataDB(ReconnectableDB):
                     username,
                     tag or "",
                 )
+                self._sync_sqlite_mirror()
                 return self._users[user_id]
             self._users[user_id] = user
+            self._sync_sqlite_mirror()
             logger.info(
                 "DB: created user_id=%s username=%s tag=%s with fields=%s",
                 user_id,
@@ -283,6 +287,7 @@ class UserDataDB(ReconnectableDB):
                 [user.to_row() for user in self._users.values()]
             )
         )
+        self._sync_sqlite_mirror()
 
 
 user_data_db: Optional[UserDataDB] = None

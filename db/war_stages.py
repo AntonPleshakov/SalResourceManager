@@ -85,6 +85,7 @@ class WarStagesDB(ReconnectableDB):
         self._run_with_retry(
             lambda: self._manager.update_values(self._stages_to_rows(self._stages))
         )
+        self._sync_sqlite_mirror()
 
     @staticmethod
     def _stages_to_rows(stages: Dict[int, WarStage]):

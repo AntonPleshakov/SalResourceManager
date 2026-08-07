@@ -67,6 +67,15 @@ def run_with_backoff(
 
 
 class ReconnectableDB:
+    _sqlite_mirror_writer: Optional[Callable[[], None]] = None
+
+    def enable_sqlite_mirror(self, writer: Callable[[], None]) -> None:
+        self._sqlite_mirror_writer = writer
+
+    def _sync_sqlite_mirror(self) -> None:
+        if self._sqlite_mirror_writer is not None:
+            self._sqlite_mirror_writer()
+
     def _reconnect(self) -> None:
         raise NotImplementedError
 

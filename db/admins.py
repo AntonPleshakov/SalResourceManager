@@ -59,9 +59,11 @@ class AdminsDB(ReconnectableDB):
                 new_admin.user_id.value,
                 new_admin.username.value,
             )
+            self._sync_sqlite_mirror()
             return
         self._admins.append(new_admin)
         self._admins_id_set.add(new_admin.user_id.value)
+        self._sync_sqlite_mirror()
         nmd_logger.info("DB: admin added; total=%d", len(self._admins))
 
     def get_admins(self) -> List[Admin]:
@@ -98,6 +100,7 @@ class AdminsDB(ReconnectableDB):
         self._run_with_retry(lambda: self._manager.update_values(new_admins))
         self._admins = [admin for admin in admins if admin.user_id.value != user_id]
         self._admins_id_set = {admin.user_id.value for admin in self._admins}
+        self._sync_sqlite_mirror()
         nmd_logger.info("DB: admin deleted; total=%d", len(self._admins))
 
     def fetch_admins(self, refresh: bool = True):
