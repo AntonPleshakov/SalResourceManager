@@ -57,7 +57,6 @@ class AccessGroupDB(ReconnectableDB):
         values = [[ACCESS_GROUP_ID_KEY, str(group_id)]]
         self._run_with_retry(lambda: self._manager.update_values(values))
         self._group_id = group_id
-        self._sync_sqlite_mirror()
 
 
 access_group_db: Optional[AccessGroupDB] = None
@@ -68,6 +67,11 @@ def initialize_access_group_db() -> AccessGroupDB:
     access_group_db = AccessGroupDB()
     logger.debug("DB: access group singleton initialized")
     return access_group_db
+
+
+def set_access_group_db(database) -> None:
+    global access_group_db
+    access_group_db = database
 
 
 def get_access_group_db() -> AccessGroupDB:

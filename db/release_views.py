@@ -95,7 +95,6 @@ class ReleaseViewsDB(ReconnectableDB):
         ]
         self._run_with_retry(lambda: self._manager.update_values(rows))
         self._users = users
-        self._sync_sqlite_mirror()
 
     def update_username(self, user_id: int, username: str) -> None:
         user = self._users.get(user_id)
@@ -134,6 +133,11 @@ def initialize_release_views_db() -> ReleaseViewsDB:
     release_views_db = ReleaseViewsDB()
     logger.debug("DB: release views singleton initialized")
     return release_views_db
+
+
+def set_release_views_db(database) -> None:
+    global release_views_db
+    release_views_db = database
 
 
 def get_release_views_db() -> ReleaseViewsDB:

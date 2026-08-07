@@ -9,7 +9,7 @@ reset_config(str(Path(__file__).parents[1] / "config" / "config_template.ini"))
 
 from db.admins import Admin
 from tg.admins.add_admin import add_admins_approved
-from tg.admins.del_admin import del_admin_approved
+from tg.admins.del_admin import del_admin_approved, del_admin_options
 
 
 def make_callback(data: str = "approved") -> CallbackQuery:
@@ -24,6 +24,8 @@ class FakeBot:
         self.deleted_states = []
         self.callback_answers = []
         self.send_attempts = []
+        self.edits = []
+        self.states = []
 
     def retrieve_data(self, user_id):
         return nullcontext(self.data)
@@ -37,6 +39,37 @@ class FakeBot:
 
     def answer_callback_query(self, callback_query_id, text):
         self.callback_answers.append((callback_query_id, text))
+
+    def edit_message_text(self, *args, **kwargs):
+        self.edits.append((args, kwargs))
+
+    def set_state(self, user_id, state):
+        self.states.append((user_id, state))
+
+
+def test_delete_admin_options_exclude_requester(monkeypatch):
+    admins = [
+        Admin("requester", 42),
+        Admin("first", 1),
+        Admin("second", 101),
+    ]
+    fake_db = type(
+        "FakeAdminsDB",
+        (),
+        {"get_admins": lambda _: admins},
+    )()
+    monkeypatch.setattr("tg.admins.del_admin.get_admins_db", lambda: fake_db)
+    bot = FakeBot()
+
+    del_admin_options(make_callback(), bot)
+
+    keyboard = bot.edits[0][1]["reply_markup"]
+    callback_data = [
+        button.callback_data
+        for row in keyboard.keyboard
+        for button in row
+    ]
+    assert callback_data == ["1", "101", "admins"]
 
 
 def test_add_admins_finishes_when_private_notifications_fail(monkeypatch):

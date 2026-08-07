@@ -85,7 +85,6 @@ class WarStagesDB(ReconnectableDB):
         self._run_with_retry(
             lambda: self._manager.update_values(self._stages_to_rows(self._stages))
         )
-        self._sync_sqlite_mirror()
 
     @staticmethod
     def _stages_to_rows(stages: Dict[int, WarStage]):
@@ -103,6 +102,11 @@ def initialize_war_stages_db() -> WarStagesDB:
     war_stages_db = WarStagesDB.connect()
     logger.debug("DB: war stages singleton initialized")
     return war_stages_db
+
+
+def set_war_stages_db(database) -> None:
+    global war_stages_db
+    war_stages_db = database
 
 
 def get_war_stages_db() -> WarStagesDB:

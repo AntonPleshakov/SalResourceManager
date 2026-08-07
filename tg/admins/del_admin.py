@@ -14,10 +14,15 @@ class DelAdminStates(StatesGroup):
 
 
 def del_admin_options(callback_query: CallbackQuery, bot: TeleBot):
-    current_admins = get_admins_db().get_admins()[1:]
+    requester_id = callback_query.from_user.id
+    current_admins = [
+        admin
+        for admin in get_admins_db().get_admins()
+        if admin.user_id.value != requester_id
+    ]
     logger.info(
         "Admin removal requested by user_id=%s username=%s candidates=%d",
-        callback_query.from_user.id,
+        requester_id,
         get_username(callback_query),
         len(current_admins),
     )
