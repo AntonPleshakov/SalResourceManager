@@ -10,8 +10,10 @@ _config = configparser.ConfigParser()
 _config.read(_CONFIG_PATH, encoding="utf-8")
 
 
-def getconf(option: str) -> str:
-    return _config.get(_MODE, option)
+def getconf(option: str, fallback: str | None = None) -> str:
+    if fallback is None:
+        return _config.get(_MODE, option)
+    return _config.get(_MODE, option, fallback=fallback)
 
 
 def getconf_int(option: str, fallback: int | None = None) -> int:

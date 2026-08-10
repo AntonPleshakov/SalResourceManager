@@ -7,22 +7,27 @@ directory is not an append-only migration log.
 
 The thin `configure-server.py` entry point delegates argument parsing and SSH
 orchestration to the `configure_server` Python package. Linux operations live
-in the separate `configure_server/remote.sh` script. It is copied to the
-temporary directory on the server and executed with Bash, so Python is not
-required on the remote host.
+in the separate `configure_server/remote.sh` script. The certificate lifecycle
+is implemented by `configure_server/generate-webhook-certificate.sh`. Both are
+copied to the temporary directory on the server and executed with Bash, so
+Python is not required on the remote host.
 
 The script ensures that:
 
 - Docker Engine is available and the Compose plugin is installed;
-- `/opt/sal-resource-manager`, `config/`, and `data/` exist;
+- `/opt/sal-resource-manager`, `config/`, `certs/`, and `data/` exist;
 - `data/` is owned by UID/GID `10001`;
+- OpenSSL is installed and a self-signed webhook certificate matching the
+  public IPv4 address in `WEBHOOK_URL` exists;
+- active UFW installations allow inbound TCP port `8443`;
 - the current `compose.yaml`, application config, and Google report credentials
   are installed with the required permissions;
 - the configured application image is pulled and Compose is applied;
 - the bot starts successfully and `/app/data` is a writable persistent mount.
 
-This mount stores `sal_resources.db`. The file is application state and is not
-managed or replaced by the server configuration script.
+The data mount stores `sal_resources.db`. The certificate mount stores the
+generated public certificate and private key. Both survive container and image
+replacement.
 
 Docker Engine itself must already be installed. The SSH user must be `root` or
 have passwordless `sudo` access.
@@ -86,3 +91,34 @@ the application and do not need to be restored.
 Automatic GitHub deployments continue to update only the application image.
 Host directories, permissions, Compose configuration, and secrets are managed
 by `configure-server.py`.
+
+## Webhook certificate
+
+Set the following values before configuring the server:
+
+```ini
+WEBHOOK_URL = https://203.0.113.10:8443/telegram/
+```
+
+Replace `203.0.113.10` with the server's static public IPv4 address. The
+listener address, port, certificate paths, and webhook secret are managed by
+application defaults and do not require deployment-specific configuration. The
+certificate generator validates the address, creates a 2048-bit RSA certificate
+whose CN and subject alternative name match it, and protects the private key
+with mode `0400`. Existing certificates are retained until they have fewer than
+30 days remaining. Re-run `configure-server.py` periodically to renew the
+certificate and after changing the server's public IP.
+
+The script can also be run directly on the server as root:
+
+```bash
+sudo /opt/sal-resource-manager/generate-webhook-certificate.sh \
+  203.0.113.10 \
+  /opt/sal-resource-manager/certs/webhook.pem \
+  /opt/sal-resource-manager/certs/webhook.key \
+  10001 10001
+```
+
+If it prints `generated`, restart the bot so it loads and uploads the new
+certificate. Provider-level firewalls are outside the script's control and
+must allow inbound TCP port `8443`.

@@ -14,6 +14,7 @@ PACKAGE_DIR = Path(__file__).resolve().parent
 INFRA_DIR = PACKAGE_DIR.parent
 PROJECT_DIR = INFRA_DIR.parent
 REMOTE_SCRIPT_FILE = PACKAGE_DIR / "remote.sh"
+CERTIFICATE_SCRIPT_FILE = PACKAGE_DIR / "generate-webhook-certificate.sh"
 
 
 class ConfigureError(RuntimeError):
@@ -117,6 +118,7 @@ def require_local_prerequisites(settings: Settings) -> None:
     files = [
         PROJECT_DIR / "compose.yaml",
         REMOTE_SCRIPT_FILE,
+        CERTIFICATE_SCRIPT_FILE,
         settings.config_file,
         settings.google_credentials_file,
     ]

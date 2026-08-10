@@ -6,4 +6,5 @@ config/config.ini
 gapi_service_file.json
 *.log*
 data/
+certs/
 __pycache__/

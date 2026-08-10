@@ -1,2 +1,2 @@
 pygsheets==2.0.6
-pyTelegramBotAPI==4.36.0
+pyTelegramBotAPI[fastapi,uvicorn]==4.36.0

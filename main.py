@@ -13,11 +13,17 @@ from tg.access import GroupAccessMiddleware
 from tg.filters import add_custom_filters
 from tg.reminders import ReminderScheduler
 from tg.utils import empty_filter, get_ids, get_permissions_denied_message, get_username
+from tg.webhook import load_webhook_settings, serve_webhook
 
 
 bot = TeleBot(
-    getconf("TOKEN"), parse_mode="HTML", use_class_middlewares=True, threaded=False
+    getconf("TOKEN"),
+    parse_mode="HTML",
+    use_class_middlewares=True,
+    threaded=True,
+    num_threads=1,
 )
+
 
 class AlwaysAnswerCallbackQueryMiddleware(BaseMiddleware):
     def __init__(self):
@@ -43,7 +49,7 @@ class AlwaysAnswerCallbackQueryMiddleware(BaseMiddleware):
 
 class BotExceptionHandler(ExceptionHandler):
     def handle(self, exception: BaseException):
-        logger.exception("Polling exception: %s", exception)
+        logger.exception("Telegram update processing exception: %s", exception)
         return True
 
 
@@ -80,6 +86,7 @@ def initialize_databases():
 if __name__ == "__main__":
     logger.info("Starting Sal Resources Manager")
     try:
+        webhook_settings = load_webhook_settings()
         access_group_db = initialize_databases()
     except Exception:
         logger.exception(
@@ -104,10 +111,17 @@ if __name__ == "__main__":
     bot.exception_handler = BotExceptionHandler()
     reminder_scheduler = ReminderScheduler(bot, getconf_int("REMINDER_HOUR", 13))
     reminder_scheduler.start()
-    logger.info("Sal Resources Manager started")
+    logger.info(
+        "Sal Resources Manager started; listening for Telegram webhooks "
+        "on %s:%d/%s/",
+        webhook_settings.listen,
+        webhook_settings.port,
+        webhook_settings.url_path,
+    )
     try:
-        bot.infinity_polling()
+        serve_webhook(bot, webhook_settings)
     finally:
         logger.info("Stopping Sal Resources Manager")
         reminder_scheduler.stop()
+        bot.stop_bot()
         logger.info("Sal Resources Manager stopped")

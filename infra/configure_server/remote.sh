@@ -7,6 +7,9 @@ APP_UID="10001"
 APP_GID="10001"
 CONTAINER_NAME="sal-resource-manager"
 SOURCE_DIR="${1:?Source directory is required}"
+CERTIFICATE_SCRIPT="$APP_DIR/generate-webhook-certificate.sh"
+CERTIFICATE_PATH="$APP_DIR/certs/webhook.pem"
+PRIVATE_KEY_PATH="$APP_DIR/certs/webhook.key"
 APP_RESTART_REQUIRED=false
 
 log() {
@@ -47,6 +50,7 @@ ensure_compose() {
 ensure_directories() {
     install -d -m 0750 "$APP_DIR"
     install -d -m 0750 "$APP_DIR/config"
+    install -o "$APP_UID" -g "$APP_GID" -d -m 0750 "$APP_DIR/certs"
     install -o "$APP_UID" -g "$APP_GID" -d -m 0750 "$APP_DIR/data"
 }
 
@@ -78,11 +82,113 @@ install_configuration() {
         "$SOURCE_DIR/compose.yaml" "$APP_DIR/compose.yaml" \
         root root 0644 false
     install_managed_file \
+        "$SOURCE_DIR/generate-webhook-certificate.sh" "$CERTIFICATE_SCRIPT" \
+        root root 0750 false
+    install_managed_file \
         "$SOURCE_DIR/config.ini" "$APP_DIR/config/config.ini" \
         "$APP_UID" "$APP_GID" 0400 true
     install_managed_file \
         "$SOURCE_DIR/gapi_service_file.json" "$APP_DIR/gapi_service_file.json" \
         "$APP_UID" "$APP_GID" 0400 true
+}
+
+read_config_option() {
+    local option="$1"
+    local mode="${MODE:-Release}"
+
+    awk -v wanted="$option" -v wanted_section="$mode" '
+        BEGIN { section = "default" }
+        /^[[:space:]]*[;#]/ { next }
+        /^[[:space:]]*\[[^]]+\][[:space:]]*$/ {
+            section = $0
+            sub(/^[[:space:]]*\[/, "", section)
+            sub(/\][[:space:]]*$/, "", section)
+            section = tolower(section)
+            next
+        }
+        {
+            separator = index($0, "=")
+            if (separator == 0) next
+            key = substr($0, 1, separator - 1)
+            gsub(/^[[:space:]]+|[[:space:]]+$/, "", key)
+            if (tolower(key) != tolower(wanted)) next
+            value = substr($0, separator + 1)
+            gsub(/^[[:space:]]+|[[:space:]]+$/, "", value)
+            if (section == "default") {
+                default_value = value
+                has_default = 1
+            }
+            if (section == tolower(wanted_section)) {
+                selected_value = value
+                has_selected = 1
+            }
+        }
+        END {
+            if (has_selected) print selected_value
+            else if (has_default) print default_value
+        }
+    ' "$APP_DIR/config/config.ini"
+}
+
+ensure_openssl() {
+    if command -v openssl >/dev/null 2>&1; then
+        log "OpenSSL is available."
+        return
+    fi
+
+    log "OpenSSL is missing. Installing it..."
+    require_command apt-get
+    export DEBIAN_FRONTEND=noninteractive
+    apt-get update
+    apt-get install -y openssl
+    require_command openssl
+}
+
+configure_webhook_certificate() {
+    local certificate_status
+    local public_ip
+    local webhook_url
+
+    webhook_url="$(read_config_option WEBHOOK_URL)"
+
+    [[ "$webhook_url" =~ ^https://([0-9]{1,3}(\.[0-9]{1,3}){3}):8443/.+ ]] ||
+        fail "WEBHOOK_URL must use a public IPv4 address and port 8443."
+    public_ip="${BASH_REMATCH[1]}"
+
+    certificate_status="$(
+        "$CERTIFICATE_SCRIPT" \
+            "$public_ip" \
+            "$CERTIFICATE_PATH" \
+            "$PRIVATE_KEY_PATH" \
+            "$APP_UID" \
+            "$APP_GID"
+    )"
+    case "$certificate_status" in
+        current)
+            log "Webhook certificate for $public_ip is current."
+            ;;
+        generated)
+            APP_RESTART_REQUIRED=true
+            log "Generated a webhook certificate for $public_ip."
+            ;;
+        *)
+            fail "Unexpected certificate generator result: $certificate_status"
+            ;;
+    esac
+}
+
+configure_firewall() {
+    if ! command -v ufw >/dev/null 2>&1; then
+        log "UFW is not installed; skipping the host firewall rule."
+        return
+    fi
+    if ! ufw status | grep -Fq "Status: active"; then
+        log "UFW is inactive; skipping the host firewall rule."
+        return
+    fi
+
+    ufw allow 8443/tcp >/dev/null
+    log "UFW allows inbound TCP traffic on port 8443."
 }
 
 login_to_ghcr() {
@@ -132,7 +238,8 @@ verify_application() {
         logs="$(docker logs "$CONTAINER_NAME" --tail 250 2>&1 || true)"
 
         if [[ "$status" == "running" ]] &&
-            grep -Fq "Sal Resources Manager started" <<<"$logs"; then
+            grep -Fq "Sal Resources Manager started" <<<"$logs" &&
+            grep -Fq "Uvicorn running on https://0.0.0.0:8443" <<<"$logs"; then
             log "Application startup completed."
             return
         fi
@@ -167,11 +274,29 @@ verify_storage() {
         : > "$probe"
     '
     log "Persistent /app/data mount is writable by the application user."
+
+    local certificate_mount
+    mount_format='{{range .Mounts}}{{if eq .Destination "/app/certs"}}'
+    mount_format+='{{.Source}}|{{.RW}}{{end}}{{end}}'
+    certificate_mount="$(
+        docker inspect \
+            --format "$mount_format" \
+            "$CONTAINER_NAME"
+    )"
+    [[ "$certificate_mount" == "$APP_DIR/certs|false" ]] ||
+        fail "Unexpected /app/certs mount: '$certificate_mount'."
+    docker exec "$CONTAINER_NAME" sh -c '
+        test -r /app/certs/webhook.pem
+        test -r /app/certs/webhook.key
+    '
+    log "Webhook certificate and private key are readable by the application."
 }
 
 main() {
     [[ "${EUID}" -eq 0 ]] || fail "Remote configuration must run as root."
     [[ -f "$SOURCE_DIR/compose.yaml" ]] || fail "compose.yaml was not uploaded."
+    [[ -f "$SOURCE_DIR/generate-webhook-certificate.sh" ]] ||
+        fail "Certificate generator was not uploaded."
     [[ -f "$SOURCE_DIR/config.ini" ]] || fail "config.ini was not uploaded."
     [[ -f "$SOURCE_DIR/gapi_service_file.json" ]] ||
         fail "gapi_service_file.json was not uploaded."
@@ -180,6 +305,9 @@ main() {
     check_docker
     ensure_compose
     install_configuration
+    ensure_openssl
+    configure_webhook_certificate
+    configure_firewall
     login_to_ghcr
     apply_compose
     verify_application

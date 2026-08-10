@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Optional, Sequence
 
 from .settings import (
+    CERTIFICATE_SCRIPT_FILE,
     PROJECT_DIR,
     REMOTE_SCRIPT_FILE,
     Settings,
@@ -81,6 +82,7 @@ def configure_server(settings: Settings) -> None:
         log("Copying the desired server configuration...")
         uploads = (
             (REMOTE_SCRIPT_FILE, "configure-remote.sh"),
+            (CERTIFICATE_SCRIPT_FILE, "generate-webhook-certificate.sh"),
             (PROJECT_DIR / "compose.yaml", "compose.yaml"),
             (settings.config_file, "config.ini"),
             (settings.google_credentials_file, "gapi_service_file.json"),
@@ -115,6 +117,7 @@ def _cleanup_remote_files(
 ) -> None:
     names = (
         "configure-remote.sh",
+        "generate-webhook-certificate.sh",
         "compose.yaml",
         "config.ini",
         "gapi_service_file.json",

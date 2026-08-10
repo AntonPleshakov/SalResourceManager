@@ -10,3 +10,4 @@ __pycache__
 *.log*
 config/config.ini
 gapi_service_file.json
+certs
