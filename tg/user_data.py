@@ -35,6 +35,11 @@ SECTION_FIELDS = {
     "resources": RESOURCE_FIELDS,
     "technologies": TECHNOLOGY_FIELDS,
 }
+SECTION_TITLES = {
+    "resources": "ресурсы",
+    "technologies": "технологии",
+    "reminder": "данные из напоминания",
+}
 
 
 def _get_group_tag(bot: TeleBot, user_id: int) -> str | None:
@@ -183,6 +188,40 @@ def _fill_prompt(
     )
 
 
+def _start_fill(
+    callback_query: CallbackQuery,
+    bot: TeleBot,
+    section: str,
+    fields: Sequence[ResourceField],
+    cancel_callback: str,
+) -> None:
+    user_id, chat_id, message_id = get_ids(callback_query)
+    logger.info(
+        "User data fill started user_id=%s username=%s section=%s fields=%s",
+        user_id,
+        get_username(callback_query),
+        section,
+        ",".join(field.name for field in fields),
+    )
+    bot.set_state(user_id, EditUserDataStates.fill_values)
+    bot.add_data(
+        user_id,
+        fill_section=section,
+        fill_field_names=[field.name for field in fields],
+        fill_index=0,
+        fill_values={},
+    )
+
+    keyboard = InlineKeyboardMarkup(row_width=1)
+    keyboard.add(Button("Отмена", cancel_callback).inline())
+    bot.edit_message_text(
+        _fill_prompt(SECTION_TITLES[section], fields, 0),
+        chat_id,
+        message_id,
+        reply_markup=keyboard,
+    )
+
+
 def fill_section(callback_query: CallbackQuery, bot: TeleBot) -> None:
     section = callback_query.data.rsplit("/", maxsplit=1)[-1]
     fields = SECTION_FIELDS.get(section)
@@ -196,28 +235,31 @@ def fill_section(callback_query: CallbackQuery, bot: TeleBot) -> None:
         bot.answer_callback_query(callback_query.id, "Раздел не найден")
         return
 
-    user_id, chat_id, message_id = get_ids(callback_query)
-    logger.info(
-        "User data section fill started user_id=%s username=%s section=%s",
-        user_id,
-        get_username(callback_query),
-        section,
-    )
-    bot.set_state(user_id, EditUserDataStates.fill_values)
-    bot.add_data(user_id, fill_section=section, fill_index=0, fill_values={})
+    _start_fill(callback_query, bot, section, fields, section)
 
-    keyboard = InlineKeyboardMarkup(row_width=1)
-    keyboard.add(Button("Отмена", section).inline())
-    bot.edit_message_text(
-        _fill_prompt(
-            "ресурсы" if section == "resources" else "технологии",
-            fields,
-            0,
-        ),
-        chat_id,
-        message_id,
-        reply_markup=keyboard,
+
+def fill_tracked_fields(callback_query: CallbackQuery, bot: TeleBot) -> None:
+    encoded_indexes = callback_query.data.rsplit("/", maxsplit=1)[-1]
+    try:
+        indexes = {int(value) for value in encoded_indexes.split(",")}
+    except ValueError:
+        indexes = set()
+    if not indexes or any(
+        index < 0 or index >= len(TRACKED_FIELDS) for index in indexes
+    ):
+        logger.warning(
+            "Invalid tracked fields requested by user_id=%s username=%s indexes=%s",
+            callback_query.from_user.id,
+            get_username(callback_query),
+            encoded_indexes,
+        )
+        bot.answer_callback_query(callback_query.id, "Показатели не найдены")
+        return
+
+    fields = tuple(
+        field for index, field in enumerate(TRACKED_FIELDS) if index in indexes
     )
+    _start_fill(callback_query, bot, "reminder", fields, "home")
 
 
 def save_value(message: Message, bot: TeleBot) -> None:
@@ -288,12 +330,24 @@ def save_all_values(message: Message, bot: TeleBot) -> None:
     username = get_username(message)
     with bot.retrieve_data(user_id) as data:
         section = data.get("fill_section")
+        field_names = data.get("fill_field_names")
         index = data.get("fill_index")
         values = data.get("fill_values")
-    fields = SECTION_FIELDS.get(section) if isinstance(section, str) else None
+    if field_names is None:
+        fields = SECTION_FIELDS.get(section) if isinstance(section, str) else None
+    elif (
+        isinstance(field_names, list)
+        and field_names
+        and len(field_names) == len(set(field_names))
+        and all(field_name in EDITABLE_FIELDS for field_name in field_names)
+    ):
+        fields = tuple(EDITABLE_FIELDS[field_name] for field_name in field_names)
+    else:
+        fields = None
 
     if (
         not isinstance(section, str)
+        or section not in SECTION_TITLES
         or fields is None
         or not isinstance(index, int)
         or not 0 <= index < len(fields)
@@ -347,14 +401,11 @@ def save_all_values(message: Message, bot: TeleBot) -> None:
             fill_values=values,
         )
         keyboard = InlineKeyboardMarkup(row_width=1)
-        keyboard.add(Button("Отмена", section).inline())
+        cancel_callback = section if section in SECTION_FIELDS else "home"
+        keyboard.add(Button("Отмена", cancel_callback).inline())
         bot.send_message(
             chat_id,
-            _fill_prompt(
-                "ресурсы" if section == "resources" else "технологии",
-                fields,
-                next_index,
-            ),
+            _fill_prompt(SECTION_TITLES[section], fields, next_index),
             reply_markup=keyboard,
         )
         return
@@ -379,13 +430,19 @@ def save_all_values(message: Message, bot: TeleBot) -> None:
         section,
         len(values),
     )
-    bot.send_message(
-        chat_id,
-        "✅ Все значения раздела сохранены.",
-    )
-    if section == "resources":
+    if section == "reminder":
+        keyboard = InlineKeyboardMarkup(row_width=1)
+        keyboard.add(Button("Назад в меню", "home").inline())
+        bot.send_message(
+            chat_id,
+            "✅ Все данные из напоминания обновлены.",
+            reply_markup=keyboard,
+        )
+    elif section == "resources":
+        bot.send_message(chat_id, "✅ Все значения раздела сохранены.")
         resources_menu(message, bot)
     else:
+        bot.send_message(chat_id, "✅ Все значения раздела сохранены.")
         technologies_menu(message, bot)
 
 
@@ -416,6 +473,13 @@ def register_handlers(bot: TeleBot) -> None:
         fill_section,
         func=empty_filter,
         button=r"user_data/fill/(resources|technologies)",
+        is_private=True,
+        pass_bot=True,
+    )
+    bot.register_callback_query_handler(
+        fill_tracked_fields,
+        func=empty_filter,
+        button=r"user_data/fill/tracked/[0-9,]+",
         is_private=True,
         pass_bot=True,
     )

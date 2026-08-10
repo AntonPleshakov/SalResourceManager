@@ -4,6 +4,8 @@ from decimal import Decimal
 from pathlib import Path
 from types import SimpleNamespace
 
+from telebot.types import CallbackQuery, Chat, Message, User
+
 from config.config import reset_config
 
 reset_config(str(Path(__file__).parents[1] / "config" / "config_template.ini"))
@@ -26,7 +28,14 @@ from resources.war_rules.forging import (
 from resources.war_rules.mounts import calculate_mount_points
 from resources.war_rules.technologies import calculate_technology_points
 from tg.utils import format_points
-from tg.user_data import _get_group_tag, save_all_values
+from tg.user_data import _get_group_tag, fill_tracked_fields, save_all_values
+
+
+def make_callback(data: str) -> CallbackQuery:
+    user = User(42, False, "Tester", username="tester")
+    chat = Chat(42, "private")
+    message = Message(1, user, 0, chat, "text", {"text": "reminder"}, None)
+    return CallbackQuery("callback-1", user, data, "", None, message)
 
 
 def test_user_data_round_trip():
@@ -579,6 +588,91 @@ def test_fill_all_rejects_invalid_value_before_advancing_to_next_field():
     assert bot.data["fill_values"] == {}
     assert "Уровень кузницы" in bot.replies[0]
     assert "between 1 and 35" in bot.replies[0]
+
+
+def test_reminder_fill_starts_with_only_requested_fields():
+    class FakeBot:
+        def __init__(self):
+            self.data = {}
+            self.edited = []
+
+        def set_state(self, _user_id, _state):
+            pass
+
+        def add_data(self, _user_id, **data):
+            self.data.update(data)
+
+        def edit_message_text(
+            self, text, chat_id, message_id, reply_markup=None
+        ):
+            self.edited.append((text, chat_id, message_id, reply_markup))
+
+    bot = FakeBot()
+
+    fill_tracked_fields(
+        make_callback("user_data/fill/tracked/3,10"),
+        bot,
+    )
+
+    assert bot.data["fill_section"] == "reminder"
+    assert bot.data["fill_field_names"] == ["hammers", "extra_mount_chance"]
+    assert "Молотки" in bot.edited[0][0]
+    assert bot.edited[0][3].keyboard[0][0].callback_data == "home"
+
+
+def test_reminder_fill_saves_only_requested_fields(monkeypatch):
+    class FakeUserDataDB:
+        def __init__(self):
+            self.saved = []
+
+        def set_values(self, user_id, username, values):
+            self.saved.append((user_id, username, dict(values)))
+
+    class FakeBot:
+        def __init__(self):
+            self.data = {
+                "fill_section": "reminder",
+                "fill_field_names": ["hammers", "extra_mount_chance"],
+                "fill_index": 0,
+                "fill_values": {},
+            }
+            self.sent = []
+
+        def retrieve_data(self, _user_id):
+            return nullcontext(self.data)
+
+        def add_data(self, _user_id, **data):
+            self.data.update(data)
+
+        def send_message(self, chat_id, text, reply_markup=None):
+            self.sent.append((chat_id, text, reply_markup))
+
+        def delete_state(self, _user_id):
+            pass
+
+    def message(text):
+        return SimpleNamespace(
+            from_user=SimpleNamespace(
+                id=42,
+                username="tester",
+                first_name="Tester",
+            ),
+            chat=SimpleNamespace(id=42),
+            id=1,
+            text=text,
+        )
+
+    database = FakeUserDataDB()
+    monkeypatch.setattr("tg.user_data.get_user_data_db", lambda: database)
+    bot = FakeBot()
+
+    save_all_values(message("1.5"), bot)
+    save_all_values(message("10"), bot)
+
+    assert database.saved == [
+        (42, "tester", {"hammers": 1500, "extra_mount_chance": 10})
+    ]
+    assert bot.sent[-1][2].keyboard[0][0].callback_data == "home"
 
 
 def test_format_points_rounds_and_adds_suffixes():

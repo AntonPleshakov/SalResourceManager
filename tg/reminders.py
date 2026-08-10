@@ -124,14 +124,21 @@ def _reminder_text(
 
 def _reminder_keyboard(field_names: Set[str]) -> InlineKeyboardMarkup:
     keyboard = InlineKeyboardMarkup(row_width=1)
-    if any(field.name in field_names for field in RESOURCE_FIELDS):
+    field_indexes = ",".join(
+        str(index)
+        for index, field in enumerate(TRACKED_FIELDS)
+        if field.name in field_names
+    )
+    if field_indexes:
         keyboard.add(
-            Button("Обновить ресурсы", "user_data/fill/resources").inline()
+            Button(
+                "Обновить данные",
+                f"user_data/fill/tracked/{field_indexes}",
+            ).inline()
         )
-    if any(field.name in field_names for field in TECHNOLOGY_FIELDS):
-        keyboard.add(
-            Button("Обновить технологии", "user_data/fill/technologies").inline()
-        )
+    keyboard.add(Button("Ресурсы", "resources").inline())
+    keyboard.add(Button("Технологии", "technologies").inline())
+    keyboard.add(Button("Назад в меню", "home").inline())
     return keyboard
 
 

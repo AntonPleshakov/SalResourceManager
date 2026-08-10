@@ -12,6 +12,7 @@ from resources.war import WarActivity
 from tg.reminders import (
     ReminderKind,
     ScheduledReminder,
+    _reminder_keyboard,
     _reminder_text,
     next_reminder,
     send_reminder,
@@ -114,6 +115,17 @@ def test_weekly_reminder_mentions_received_resources():
 
     assert "полученные в награду" in text
     assert "за войну и личный турнир" in text
+
+
+def test_reminder_keyboard_has_back_button():
+    keyboard = _reminder_keyboard({"extra_mount_chance", "hammers"})
+
+    assert [button.callback_data for row in keyboard.keyboard for button in row] == [
+        "user_data/fill/tracked/3,10",
+        "resources",
+        "technologies",
+        "home",
+    ]
 
 
 def test_send_reminder_sends_to_every_user_and_continues_after_error(monkeypatch):
@@ -248,5 +260,8 @@ def test_technology_reminder_lists_only_outdated_technologies(monkeypatch):
     assert "Шанс на доп. маунта" in text
     assert "Уровень кузницы" not in text
     assert [button.callback_data for row in keyboard.keyboard for button in row] == [
-        "user_data/fill/technologies"
+        "user_data/fill/tracked/10",
+        "resources",
+        "technologies",
+        "home",
     ]
