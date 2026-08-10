@@ -30,13 +30,23 @@ TECHNOLOGY_FIELDS: Tuple[ResourceField, ...] = (
     ResourceField("mount_summon_cost", "Снижение стоимости призыва маунта (%)"),
     ResourceField("extra_mount_chance", "Шанс на доп. маунта"),
 )
+PET_SETTINGS_FIELDS: Tuple[ResourceField, ...] = (
+    ResourceField("eggs_per_hatch_batch", "Яиц в одном пакете"),
+    ResourceField("max_egg_level", "Максимальный уровень яйца"),
+    ResourceField("hatch_batches_common", "Пакеты Common в день"),
+    ResourceField("hatch_batches_rare", "Пакеты Rare в день"),
+    ResourceField("hatch_batches_epic", "Пакеты Epic в день"),
+    ResourceField("hatch_batches_legendary", "Пакеты Legendary в день"),
+    ResourceField("hatch_batches_ultimate", "Пакеты Ultimate в день"),
+    ResourceField("hatch_batches_mythic", "Пакеты Mythic в день"),
+)
 TRACKED_FIELDS: Tuple[ResourceField, ...] = RESOURCE_FIELDS + TECHNOLOGY_FIELDS
 UPDATED_AT_FIELDS: Dict[str, str] = {
     field.name: f"{field.name}_updated_on" for field in TRACKED_FIELDS
 }
 
 EDITABLE_FIELDS: Dict[str, ResourceField] = {
-    field.name: field for field in TRACKED_FIELDS
+    field.name: field for field in TRACKED_FIELDS + PET_SETTINGS_FIELDS
 }
 THOUSAND_INPUT_FIELDS = frozenset(
     {"mount_keys", "skills", "shells", "hammers"}
@@ -56,6 +66,10 @@ def validate_editable_field_value(field_name: str, value: int) -> int:
         raise ValueError("Mount summon cost reduction must be between 0 and 25")
     if field_name == "extra_mount_chance" and not 0 <= value <= 50:
         raise ValueError("Extra mount chance must be between 0 and 50")
+    if field_name == "eggs_per_hatch_batch" and not 2 <= value <= 4:
+        raise ValueError("Количество яиц в одном пакете должно быть от 2 до 4")
+    if field_name == "max_egg_level" and not 1 <= value <= 6:
+        raise ValueError("Maximum egg level must be between 1 and 6")
     return value
 
 
@@ -96,6 +110,14 @@ class UserData(Parameters):
         extra_egg_chance: int = 0,
         mount_summon_cost: int = 0,
         extra_mount_chance: int = 0,
+        eggs_per_hatch_batch: int = 4,
+        max_egg_level: int = 6,
+        hatch_batches_common: int = 0,
+        hatch_batches_rare: int = 0,
+        hatch_batches_epic: int = 0,
+        hatch_batches_legendary: int = 0,
+        hatch_batches_ultimate: int = 1,
+        hatch_batches_mythic: int = 1,
         mount_keys_updated_on: str = "",
         skills_updated_on: str = "",
         shells_updated_on: str = "",
@@ -166,6 +188,30 @@ class UserData(Parameters):
         )
         self.extra_mount_chance_updated_on = StrParam(
             "Шанс на доп. маунта — обновлено", extra_mount_chance_updated_on
+        )
+        self.eggs_per_hatch_batch = IntParam(
+            "Яиц в одном пакете", eggs_per_hatch_batch
+        )
+        self.max_egg_level = IntParam(
+            "Максимальный уровень яйца", max_egg_level
+        )
+        self.hatch_batches_common = IntParam(
+            "Пакеты Common в день", hatch_batches_common
+        )
+        self.hatch_batches_rare = IntParam(
+            "Пакеты Rare в день", hatch_batches_rare
+        )
+        self.hatch_batches_epic = IntParam(
+            "Пакеты Epic в день", hatch_batches_epic
+        )
+        self.hatch_batches_legendary = IntParam(
+            "Пакеты Legendary в день", hatch_batches_legendary
+        )
+        self.hatch_batches_ultimate = IntParam(
+            "Пакеты Ultimate в день", hatch_batches_ultimate
+        )
+        self.hatch_batches_mythic = IntParam(
+            "Пакеты Mythic в день", hatch_batches_mythic
         )
 
     def get_updated_on(self, field_name: str) -> Optional[date]:

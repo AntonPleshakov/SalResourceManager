@@ -12,6 +12,7 @@ reset_config(str(Path(__file__).parents[1] / "config" / "config_template.ini"))
 
 from db.sqlite.database import SQLiteDatabase
 from db.sqlite.user_data import UserDataDB
+from resources.egg_levels import EGG_LEVELS, EggLevel
 from resources.user_data import (
     EDITABLE_FIELDS,
     UserData,
@@ -26,6 +27,7 @@ from resources.war_rules.forging import (
     weapon_points,
 )
 from resources.war_rules.mounts import calculate_mount_points
+from resources.war_rules.pets import calculate_pet_points, explain_pet_points
 from resources.war_rules.technologies import calculate_technology_points
 from tg.utils import format_points
 from tg.user_data import _get_group_tag, fill_tracked_fields, save_all_values
@@ -73,6 +75,14 @@ def test_user_data_round_trip():
         "extra_egg_chance",
         "mount_summon_cost",
         "extra_mount_chance",
+        "eggs_per_hatch_batch",
+        "max_egg_level",
+        "hatch_batches_common",
+        "hatch_batches_rare",
+        "hatch_batches_epic",
+        "hatch_batches_legendary",
+        "hatch_batches_ultimate",
+        "hatch_batches_mythic",
     }
 
 
@@ -234,6 +244,26 @@ def test_database_rejects_excessive_extra_mount_chance(tmp_path):
         assert str(error) == "Extra mount chance must be between 0 and 50"
     else:
         raise AssertionError("Extra mount chance above 50 must be rejected")
+    connection.close()
+
+
+def test_eggs_per_hatch_batch_accepts_only_two_to_four(tmp_path):
+    connection = SQLiteDatabase(tmp_path / "database.db")
+    database = UserDataDB(connection)
+
+    for value in (1, 5):
+        try:
+            database.set_value(42, "tester", "eggs_per_hatch_batch", value)
+        except ValueError as error:
+            assert str(error) == (
+                "Количество яиц в одном пакете должно быть от 2 до 4"
+            )
+        else:
+            raise AssertionError(f"{value} eggs per batch must be rejected")
+
+    assert database.set_value(
+        42, "tester", "eggs_per_hatch_batch", 2
+    ).eggs_per_hatch_batch.value == 2
     connection.close()
 
 
@@ -506,6 +536,39 @@ def test_war_points_calculator_applies_pet_rule():
 
     assert report.points_by_day == {1: Decimal("468675.0")}
     assert report.total == Decimal("468675.0")
+
+
+def test_pet_rule_uses_batch_size_level_and_daily_batches():
+    user = UserData(
+        user_id=1,
+        eggs_per_hatch_batch=3,
+        max_egg_level=EggLevel.LEGENDARY,
+        hatch_batches_common=1,
+        hatch_batches_rare=2,
+        hatch_batches_epic=3,
+        hatch_batches_legendary=2,
+        hatch_batches_ultimate=99,
+        hatch_batches_mythic=99,
+    )
+
+    details = explain_pet_points(user)
+
+    assert details.repeatable_points == 140_400
+    assert details.consumable_points == 34_560
+    assert calculate_pet_points(user) == 174_960
+    assert any("Legendary" in value for value in details.inputs)
+    assert all("99" not in value for value in details.inputs)
+
+
+def test_egg_points_follow_the_configured_level_scale():
+    assert tuple(level.points for level in EGG_LEVELS) == (
+        720,
+        2_880,
+        5_760,
+        11_520,
+        23_040,
+        46_080,
+    )
 
 
 def test_war_points_calculator_estimates_skill_points():

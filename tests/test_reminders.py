@@ -124,6 +124,7 @@ def test_reminder_keyboard_has_back_button():
         "user_data/fill/tracked/3,10",
         "resources",
         "technologies",
+        "pets",
         "home",
     ]
 
@@ -263,5 +264,6 @@ def test_technology_reminder_lists_only_outdated_technologies(monkeypatch):
         "user_data/fill/tracked/10",
         "resources",
         "technologies",
+        "pets",
         "home",
     ]

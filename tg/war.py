@@ -225,9 +225,10 @@ def personal_war_points(callback_query: CallbackQuery, bot: TeleBot) -> None:
     if user is None:
         keyboard.add(Button("Заполнить ресурсы", "resources").inline())
         keyboard.add(Button("Заполнить технологии", "technologies").inline())
+        keyboard.add(Button("Настроить питомцев", "pets").inline())
         keyboard.add(Button("Назад к очкам войны", "war_menu").inline())
         bot.edit_message_text(
-            "Сначала заполните свои ресурсы и технологии, "
+            "Сначала заполните свои ресурсы, технологии и настройки питомцев, "
             "чтобы бот мог рассчитать очки войны.",
             chat_id,
             message_id,
@@ -240,6 +241,7 @@ def personal_war_points(callback_query: CallbackQuery, bot: TeleBot) -> None:
     )
     keyboard.add(Button("Обновить ресурсы", "resources").inline())
     keyboard.add(Button("Обновить технологии", "technologies").inline())
+    keyboard.add(Button("Настроить питомцев", "pets").inline())
     keyboard.add(Button("Назад к очкам войны", "war_menu").inline())
     bot.edit_message_text(
         _personal_war_points_text(user),

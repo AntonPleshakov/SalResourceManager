@@ -37,7 +37,13 @@ def test_sqlite_databases_write_directly_and_persist(tmp_path):
     databases.user_data.set_values(
         42,
         "player",
-        {"pets": 9, "hammers": 1200},
+        {
+            "pets": 9,
+            "hammers": 1200,
+            "eggs_per_hatch_batch": 3,
+            "max_egg_level": 5,
+            "hatch_batches_ultimate": 2,
+        },
         updated_on=date(2026, 8, 8),
         tag="TAG",
     )
@@ -55,6 +61,9 @@ def test_sqlite_databases_write_directly_and_persist(tmp_path):
         assert user.tag.value == "TAG"
         assert user.pets.value == 9
         assert user.hammers.value == 1200
+        assert user.eggs_per_hatch_batch.value == 3
+        assert user.max_egg_level.value == 5
+        assert user.hatch_batches_ultimate.value == 2
         assert user.get_updated_on("pets") == date(2026, 8, 8)
     finally:
         restored.database.close()

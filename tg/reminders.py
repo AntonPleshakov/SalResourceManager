@@ -138,6 +138,7 @@ def _reminder_keyboard(field_names: Set[str]) -> InlineKeyboardMarkup:
         )
     keyboard.add(Button("Ресурсы", "resources").inline())
     keyboard.add(Button("Технологии", "technologies").inline())
+    keyboard.add(Button("Питомцы", "pets").inline())
     keyboard.add(Button("Назад в меню", "home").inline())
     return keyboard
 

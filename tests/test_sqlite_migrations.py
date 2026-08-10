@@ -25,6 +25,7 @@ def test_initial_migrations_have_one_global_continuous_history():
         "0004_create_user_data",
         "0005_create_war_stages",
         "0006_drop_war_stages",
+        "0007_add_pet_settings",
     ]
     assert all(
         "IF NOT EXISTS" not in migration.path.read_text(encoding="utf-8").upper()
@@ -48,8 +49,8 @@ def test_runner_applies_only_pending_migrations(tmp_path):
         final_version = connection.execute("PRAGMA user_version").fetchone()[0]
 
     assert [migration.version for migration in first_applied] == [1, 2]
-    assert [migration.version for migration in second_applied] == [3, 4, 5, 6]
-    assert final_version == 6
+    assert [migration.version for migration in second_applied] == [3, 4, 5, 6, 7]
+    assert final_version == 7
 
 
 def test_war_stages_table_is_removed_from_final_schema(tmp_path):
@@ -99,7 +100,7 @@ def test_runner_rejects_a_gap_in_migration_versions(tmp_path):
 
 def test_runner_rejects_a_database_from_a_newer_application(tmp_path):
     with sqlite3.connect(tmp_path / "database.db") as connection:
-        connection.execute("PRAGMA user_version = 7")
+        connection.execute("PRAGMA user_version = 8")
 
         with pytest.raises(MigrationError, match="newer than supported"):
             apply_migrations(connection)
