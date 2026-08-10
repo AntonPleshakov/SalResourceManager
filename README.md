@@ -9,8 +9,9 @@
    cp config/config_template.ini config/config.ini
    ```
 
-3. Fill in `config/config.ini` and place the Google service account key in the
-   project root as `gapi_service_file.json`.
+3. Fill in `config/config.ini` and place the Google service account key used
+   for administrative report exports in the project root as
+   `gapi_service_file.json`.
 
 The persistent `data/` directory contains the SQLite database. When running
 Docker on Linux, make sure it is writable by UID `10001` used in the container.
@@ -36,16 +37,19 @@ Stop the bot:
 docker compose down
 ```
 
-## SQLite migration stage 2
+## SQLite storage
 
 Before Telegram polling starts, the application opens or creates
-`data/sal_resources.db` and applies all pending migrations. Application reads
-then use SQLite. Writes go to Google first and SQLite second. Startup does not
-validate the resulting schema or compare SQLite data with Google Sheets.
-
-The database must already contain a successful stage 1 import before this
-version is deployed. An empty SQLite file receives the schema migrations but
-does not receive existing Google data automatically.
+`data/sal_resources.db` and applies all pending migrations. All application
+reads and writes use SQLite.
 
 SQLite schema changes use one global sequence of immutable migrations. See
 `db/sqlite/README.md` for the migration rules.
+
+Google Sheets is not an application database. The administrative "Game data"
+report exports an on-demand snapshot from SQLite through the retained
+`db/gapi` utility package.
+
+Configure its destination with `GAME_DATA_GTABLE_KEY` and
+`USER_DATA_PAGE_NAME`. The service account from `GSERVICE_FILE` must have edit
+access to that spreadsheet.

@@ -8,7 +8,6 @@ from config.config import reset_config
 
 reset_config(str(Path(__file__).parents[1] / "config" / "config_template.ini"))
 
-from db.access_group import ACCESS_GROUP_ID_KEY, AccessGroupDB
 from tg.access import (
     ACCESS_CHECK_FAILED_MESSAGE,
     ACCESS_DENIED_MESSAGE,
@@ -155,66 +154,6 @@ def test_middleware_allows_group_registration_command_before_registration():
     assert result is None
     assert bot.membership_checks == []
     assert bot.replies == []
-
-
-class FakeWorksheetManager:
-    def __init__(self, rows=None):
-        self.rows = list(rows or [])
-        self.header = None
-
-    def ensure_header(self, header):
-        self.header = header
-
-    def fetch(self):
-        pass
-
-    def get_all_values(self):
-        return self.rows
-
-    def update_values(self, rows):
-        self.rows = rows
-
-
-def test_access_group_database_loads_and_updates_group_id():
-    manager = FakeWorksheetManager([[ACCESS_GROUP_ID_KEY, "-100111"]])
-    database = AccessGroupDB(manager)
-
-    assert database.get_group_id() == -100111
-
-    database.set_group_id(-100222)
-
-    assert database.get_group_id() == -100222
-    assert manager.rows == [[ACCESS_GROUP_ID_KEY, "-100222"]]
-
-
-def test_access_group_database_creates_settings_worksheet(monkeypatch):
-    import db.access_group as access_group
-
-    manager = FakeWorksheetManager()
-
-    class FakeSpreadsheet:
-        def __init__(self):
-            self.added_worksheets = []
-
-        def is_worksheet_exist(self, worksheet_name):
-            return False
-
-        def add_worksheet(self, worksheet_name):
-            self.added_worksheets.append(worksheet_name)
-            return manager
-
-    spreadsheet = FakeSpreadsheet()
-    monkeypatch.setattr(
-        access_group,
-        "GSheetsManager",
-        lambda: SimpleNamespace(open=lambda spreadsheet_id: spreadsheet),
-    )
-
-    database = AccessGroupDB()
-
-    assert database.get_group_id() is None
-    assert spreadsheet.added_worksheets == ["Settings"]
-    assert manager.header == [["Setting", "Value"]]
 
 
 class FakeRegistrationBot:

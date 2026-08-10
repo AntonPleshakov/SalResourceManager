@@ -9,10 +9,9 @@ from telebot.types import InlineKeyboardMarkup
 
 from common.datetime_utils import now
 from db.user_data import get_user_data_db
-from db.war_stages import get_war_stages_db
 from logger.app_logger import logger
 from resources.user_data import RESOURCE_FIELDS, TECHNOLOGY_FIELDS, TRACKED_FIELDS
-from resources.war import WarActivity
+from resources.war import WAR_STAGES, WarActivity
 from tg.utils import Button, format_user_identity
 
 
@@ -75,7 +74,7 @@ def _required_field_names(reminder: ScheduledReminder) -> Set[str]:
     if reminder.kind == ReminderKind.WEEKLY_REWARD:
         return {field.name for field in RESOURCE_FIELDS}
 
-    stages = get_war_stages_db().get_stages().get(reminder.war_day, ())
+    stages = WAR_STAGES.get(reminder.war_day, ())
     return {
         resource_name
         for activity in stages
@@ -107,7 +106,7 @@ def _reminder_text(
             text += f"\n\n<b>Не обновлены сегодня:</b>\n{fields}"
         return text
 
-    stages = get_war_stages_db().get_stages().get(reminder.war_day, ())
+    stages = WAR_STAGES.get(reminder.war_day, ())
     stage_titles = ", ".join(activity.title for activity in stages)
     text = (
         f"⏰ <b>Обновите данные после {reminder.war_day}-го дня войны</b>\n\n"

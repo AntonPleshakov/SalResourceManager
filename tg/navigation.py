@@ -1,10 +1,9 @@
 from typing import Union
 
 from telebot import TeleBot
-from telebot.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
+from telebot.types import CallbackQuery, InlineKeyboardMarkup, Message
 
 from db.admins import get_admins_db
-from db.user_data import get_user_data_db
 from logger.app_logger import logger
 from tg.releases import show_unseen_releases
 from tg.utils import Button, get_ids, get_username
@@ -20,9 +19,6 @@ def home(message: Union[Message, CallbackQuery], bot: TeleBot):
     keyboard.add(Button("Ресурсы", "resources").inline())
     keyboard.add(Button("Технологии", "technologies").inline())
     keyboard.add(Button("Очки войны", "war_menu").inline())
-    keyboard.add(
-        InlineKeyboardButton("Игровые данные", url=get_user_data_db().get_url())
-    )
     keyboard.add(Button("Что нового", "releases").inline())
     logger.debug(
         "Opening home menu for user_id=%s username=%s",

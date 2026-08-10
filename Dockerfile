@@ -2,8 +2,7 @@ FROM python:3.13-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    MODE=Release \
-    LOG_TO_GDRIVE=false
+    MODE=Release
 
 WORKDIR /app
 

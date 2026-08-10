@@ -1,3 +1,4 @@
 -r requirements.txt
 
 pytest==7.4.2
+PyDrive2==1.18.0

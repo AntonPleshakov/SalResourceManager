@@ -1,20 +1,32 @@
-"""SQLite-backed admins storage with Google Sheets dual-write."""
+"""SQLite-backed admins storage."""
 
-from typing import Iterable, List, Optional
+from typing import List, Optional
 
-from db.admins import Admin, AdminsDB as GoogleAdminsDB
+from db.admins import Admin
+from logger.app_logger import logger
 
 from .database import SQLiteDatabase
 
 
 class AdminsDB:
-    def __init__(self, database: SQLiteDatabase, google: GoogleAdminsDB):
+    def __init__(self, database: SQLiteDatabase):
         self._database = database
-        self._google = google
 
     def add_admin(self, admin: Admin) -> None:
-        self._google.add_admin(admin)
-        self.replace_all(self._google.get_admins())
+        logger.info(
+            "DB: adding admin user_id=%s username=%s",
+            admin.user_id.value,
+            admin.username.value,
+        )
+
+        def add(connection) -> None:
+            connection.execute(
+                "INSERT INTO admins (user_id, username) VALUES (?, ?) "
+                "ON CONFLICT(user_id) DO UPDATE SET username = excluded.username",
+                (int(admin.user_id.value), str(admin.username.value or "")),
+            )
+
+        self._database.run_in_transaction(add)
 
     def get_admins(self) -> List[Admin]:
         rows = self._database.fetch_all(
@@ -33,26 +45,10 @@ class AdminsDB:
         return self.get_admin(user_id) is not None
 
     def del_admin(self, user_id: int) -> None:
-        self._google.del_admin(user_id)
-        self.replace_all(self._google.get_admins())
-
-    def replace_all(self, admins: Iterable[Admin]) -> None:
-        rows = tuple(
-            sorted(
-                (
-                    int(admin.user_id.value),
-                    str(admin.username.value or ""),
-                )
-                for admin in admins
+        logger.info("DB: deleting admin user_id=%s", user_id)
+        self._database.run_in_transaction(
+            lambda connection: connection.execute(
+                "DELETE FROM admins WHERE user_id = ?",
+                (user_id,),
             )
         )
-
-        def replace(connection) -> None:
-            connection.execute("DELETE FROM admins")
-            if rows:
-                connection.executemany(
-                    "INSERT INTO admins (user_id, username) VALUES (?, ?)",
-                    rows,
-                )
-
-        self._database.run_in_transaction(replace)

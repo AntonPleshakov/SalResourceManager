@@ -16,14 +16,13 @@ The script ensures that:
 - Docker Engine is available and the Compose plugin is installed;
 - `/opt/sal-resource-manager`, `config/`, and `data/` exist;
 - `data/` is owned by UID/GID `10001`;
-- the current `compose.yaml`, application config, and Google credentials are
-  installed with the required permissions;
+- the current `compose.yaml`, application config, and Google report credentials
+  are installed with the required permissions;
 - the configured application image is pulled and Compose is applied;
 - the bot starts successfully and `/app/data` is a writable persistent mount.
 
-During the database migration, this mount stores `sal_resources.db`. This file
-is application state and is not managed or replaced by the server configuration
-script.
+This mount stores `sal_resources.db`. The file is application state and is not
+managed or replaced by the server configuration script.
 
 Docker Engine itself must already be installed. The SSH user must be `root` or
 have passwordless `sudo` access.
@@ -61,7 +60,7 @@ python infra/configure-server.py \
 Options and environment variables:
 
 - `-c path` or `CONFIG_FILE` — application config;
-- `-g path` or `GOOGLE_CREDENTIALS_FILE` — Google service account file;
+- `-g path` or `GOOGLE_CREDENTIALS_FILE` — report service-account file;
 - `-i path` or `SSH_IDENTITY_FILE` — SSH identity override;
 - `-p port` or `SSH_PORT` — SSH port override;
 - `SSH_TARGET` — target when the positional argument is omitted;
@@ -74,14 +73,15 @@ required.
 ## Repeated runs and host replacement
 
 The script compares managed files before replacing them and relies on
-`docker compose up` to reconcile the container. It forces recreation only when
-the mounted application config or Google credentials change.
+`docker compose up` to reconcile the container. It forces recreation when the
+mounted application config or report credentials change.
 
 To prepare a replacement host, add its SSH alias and run the same command. The
-SQLite database is application state and is not copied by this script.
-Starting with stage 2, a replacement host requires a controlled backup and
-restore of `sal_resources.db` before the bot is started. An empty database will
-receive migrations and start without the previously imported application data.
+SQLite database is application state and is not copied by this script. A
+replacement host requires a controlled backup and restore of
+`sal_resources.db` before the bot is started. An empty database receives the
+schema but contains no administrators or user data. War stages are hardcoded in
+the application and do not need to be restored.
 
 Automatic GitHub deployments continue to update only the application image.
 Host directories, permissions, Compose configuration, and secrets are managed

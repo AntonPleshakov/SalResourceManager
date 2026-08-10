@@ -3,7 +3,7 @@ from telebot.types import CallbackQuery, InlineKeyboardMarkup
 
 from db.admins import get_admins_db
 from logger.app_logger import logger
-from tg.admins import add_admin, del_admin, notifications, resource_status
+from tg.admins import add_admin, del_admin, game_data, notifications, resource_status
 from tg.utils import Button, empty_filter, get_ids, get_user_link, get_username
 
 
@@ -19,6 +19,7 @@ def admins_main_menu(callback_query: CallbackQuery, bot: TeleBot):
     keyboard.add(Button("Добавить администраторов", "admins/add_admins").inline())
     keyboard.add(Button("Удалить администратора", "admins/del_admin").inline())
     keyboard.add(Button("Список администраторов", "admins/admins_list").inline())
+    keyboard.add(Button("Игровые данные", "admins/game_data").inline())
     keyboard.add(
         Button(
             "Давно не обновляли данные", "admins/stale_resources"
@@ -66,6 +67,7 @@ def register_handlers(bot: TeleBot):
     )
     add_admin.register_handlers(bot)
     del_admin.register_handlers(bot)
+    game_data.register_handlers(bot)
     notifications.register_handlers(bot)
     resource_status.register_handlers(bot)
     logger.info("Admin handlers registered")

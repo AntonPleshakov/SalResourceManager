@@ -1,3 +1,2 @@
-PyDrive2==1.18.0
 pygsheets==2.0.6
 pyTelegramBotAPI==4.36.0

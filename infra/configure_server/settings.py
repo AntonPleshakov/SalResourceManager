@@ -43,7 +43,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "-g",
         "--google-credentials",
-        help="Google service account JSON file",
+        help="Google service account JSON file used for report export",
     )
     parser.add_argument("-i", "--identity", help="SSH identity override")
     parser.add_argument("-p", "--port", help="SSH port override")

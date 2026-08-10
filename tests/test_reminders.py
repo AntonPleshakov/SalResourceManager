@@ -8,7 +8,7 @@ from config.config import reset_config
 reset_config(str(Path(__file__).parents[1] / "config" / "config_template.ini"))
 
 from resources.user_data import UserData
-from resources.war import DEFAULT_WAR_STAGES, WarActivity
+from resources.war import WarActivity
 from tg.reminders import (
     ReminderKind,
     ScheduledReminder,
@@ -53,15 +53,7 @@ def test_next_reminder_requires_timezone():
         next_reminder(datetime(2026, 8, 3, 12))
 
 
-def test_daily_reminder_mentions_configured_war_stages(monkeypatch):
-    class FakeWarStagesDB:
-        def get_stages(self):
-            return DEFAULT_WAR_STAGES
-
-    monkeypatch.setattr(
-        "tg.reminders.get_war_stages_db", lambda: FakeWarStagesDB()
-    )
-
+def test_daily_reminder_mentions_hardcoded_war_stages():
     text = _reminder_text(
         ScheduledReminder(dt(2026, 8, 5, 13), ReminderKind.DAILY, 1)
     )
@@ -75,18 +67,15 @@ def test_daily_reminder_mentions_configured_war_stages(monkeypatch):
 
 
 def test_daily_reminder_deduplicates_resources_and_keeps_catalog_order(monkeypatch):
-    class FakeWarStagesDB:
-        def get_stages(self):
-            return {
-                3: (
-                    WarActivity.PETS,
-                    WarActivity.MOUNTS,
-                    WarActivity.PETS,
-                )
-            }
-
     monkeypatch.setattr(
-        "tg.reminders.get_war_stages_db", lambda: FakeWarStagesDB()
+        "tg.reminders.WAR_STAGES",
+        {
+            3: (
+                WarActivity.PETS,
+                WarActivity.MOUNTS,
+                WarActivity.PETS,
+            )
+        },
     )
 
     text = _reminder_text(
@@ -100,18 +89,15 @@ def test_daily_reminder_deduplicates_resources_and_keeps_catalog_order(monkeypat
 
 
 def test_daily_reminder_explains_when_no_tracked_field_is_affected(monkeypatch):
-    class FakeWarStagesDB:
-        def get_stages(self):
-            return {
-                2: (
-                    WarActivity.DUNGEONS,
-                    WarActivity.DUNGEONS,
-                    WarActivity.DUNGEONS,
-                )
-            }
-
     monkeypatch.setattr(
-        "tg.reminders.get_war_stages_db", lambda: FakeWarStagesDB()
+        "tg.reminders.WAR_STAGES",
+        {
+            2: (
+                WarActivity.DUNGEONS,
+                WarActivity.DUNGEONS,
+                WarActivity.DUNGEONS,
+            )
+        },
     )
 
     text = _reminder_text(
@@ -169,10 +155,6 @@ def test_daily_reminder_skips_current_user_and_lists_only_missing_resources(
         def get_users(self):
             return [current_user, partial_user]
 
-    class FakeWarStagesDB:
-        def get_stages(self):
-            return DEFAULT_WAR_STAGES
-
     class FakeBot:
         def __init__(self):
             self.calls = []
@@ -181,7 +163,6 @@ def test_daily_reminder_skips_current_user_and_lists_only_missing_resources(
             self.calls.append((user_id, text, reply_markup))
 
     monkeypatch.setattr("tg.reminders.get_user_data_db", lambda: FakeUserDataDB())
-    monkeypatch.setattr("tg.reminders.get_war_stages_db", lambda: FakeWarStagesDB())
     bot = FakeBot()
 
     send_reminder(bot, reminder)
@@ -196,16 +177,6 @@ def test_daily_reminder_is_not_sent_when_day_has_no_tracked_fields(monkeypatch):
         def get_users(self):
             return [UserData(user_id=1, username="tester")]
 
-    class FakeWarStagesDB:
-        def get_stages(self):
-            return {
-                2: (
-                    WarActivity.DUNGEONS,
-                    WarActivity.DUNGEONS,
-                    WarActivity.DUNGEONS,
-                )
-            }
-
     class FakeBot:
         def __init__(self):
             self.calls = []
@@ -214,7 +185,16 @@ def test_daily_reminder_is_not_sent_when_day_has_no_tracked_fields(monkeypatch):
             self.calls.append((args, kwargs))
 
     monkeypatch.setattr("tg.reminders.get_user_data_db", lambda: FakeUserDataDB())
-    monkeypatch.setattr("tg.reminders.get_war_stages_db", lambda: FakeWarStagesDB())
+    monkeypatch.setattr(
+        "tg.reminders.WAR_STAGES",
+        {
+            2: (
+                WarActivity.DUNGEONS,
+                WarActivity.DUNGEONS,
+                WarActivity.DUNGEONS,
+            )
+        },
+    )
     bot = FakeBot()
 
     send_reminder(
@@ -240,16 +220,6 @@ def test_technology_reminder_lists_only_outdated_technologies(monkeypatch):
         def get_users(self):
             return [user]
 
-    class FakeWarStagesDB:
-        def get_stages(self):
-            return {
-                2: (
-                    WarActivity.TECHNOLOGIES,
-                    WarActivity.DUNGEONS,
-                    WarActivity.DUNGEONS,
-                )
-            }
-
     class FakeBot:
         def __init__(self):
             self.calls = []
@@ -258,7 +228,16 @@ def test_technology_reminder_lists_only_outdated_technologies(monkeypatch):
             self.calls.append((args, kwargs))
 
     monkeypatch.setattr("tg.reminders.get_user_data_db", lambda: FakeUserDataDB())
-    monkeypatch.setattr("tg.reminders.get_war_stages_db", lambda: FakeWarStagesDB())
+    monkeypatch.setattr(
+        "tg.reminders.WAR_STAGES",
+        {
+            2: (
+                WarActivity.TECHNOLOGIES,
+                WarActivity.DUNGEONS,
+                WarActivity.DUNGEONS,
+            )
+        },
+    )
     bot = FakeBot()
 
     send_reminder(bot, reminder)

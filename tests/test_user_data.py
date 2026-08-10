@@ -1,5 +1,3 @@
-import importlib
-import sys
 from contextlib import nullcontext
 from datetime import date
 from decimal import Decimal
@@ -10,19 +8,15 @@ from config.config import reset_config
 
 reset_config(str(Path(__file__).parents[1] / "config" / "config_template.ini"))
 
-from db.user_data import UserDataDB
-from db.war_stages import WarStagesDB
+from db.sqlite.database import SQLiteDatabase
+from db.sqlite.user_data import UserDataDB
 from resources.user_data import (
     EDITABLE_FIELDS,
     UserData,
     parse_editable_field_value,
     parse_non_negative_int,
 )
-from resources.war import (
-    DEFAULT_WAR_STAGES,
-    WarActivity,
-    WarPointsCalculator,
-)
+from resources.war import WarActivity, WarPointsCalculator
 from resources.war_rules.forge import calculate_forge_points
 from resources.war_rules.forging import (
     FORGE_WEAPON_CHANCES,
@@ -33,33 +27,6 @@ from resources.war_rules.mounts import calculate_mount_points
 from resources.war_rules.technologies import calculate_technology_points
 from tg.utils import format_points
 from tg.user_data import _get_group_tag, save_all_values
-
-
-class FakeWorksheetManager:
-    def __init__(self, rows=None):
-        self.rows = list(rows or [])
-        self.update_calls = 0
-        self.fetch_error = None
-        self.update_error = None
-        self.add_error = None
-
-    def fetch(self):
-        if self.fetch_error:
-            raise self.fetch_error
-
-    def get_all_values(self):
-        return self.rows
-
-    def add_row(self, row):
-        if self.add_error:
-            raise self.add_error
-        self.rows.append(row)
-
-    def update_values(self, rows):
-        if self.update_error:
-            raise self.update_error
-        self.update_calls += 1
-        self.rows = rows
 
 
 def test_user_data_round_trip():
@@ -136,44 +103,37 @@ def test_group_tag_prefers_chat_member_custom_title(monkeypatch):
     assert _get_group_tag(FakeBot(), 42) == "Офицер"
 
 
-def test_database_creates_and_updates_user():
-    manager = FakeWorksheetManager()
-    database = UserDataDB(manager)
+def test_database_creates_and_updates_user(tmp_path):
+    connection = SQLiteDatabase(tmp_path / "database.db")
+    database = UserDataDB(connection)
 
     created = database.get_or_create(42, "tester")
     updated = database.set_value(
         42, "tester", "pets", 1500, updated_on=date(2026, 8, 2)
     )
 
-    assert created is updated
+    assert created.user_id.value == updated.user_id.value
     assert updated.pets.value == 1500
     assert updated.get_updated_on("pets") == date(2026, 8, 2)
-    assert len(manager.rows) == 1
-    assert UserData.from_row(manager.rows[0]).pets.value == 1500
+    assert database.get_user(42).pets.value == 1500
+    connection.close()
 
 
-def test_database_loads_existing_users():
-    existing = UserData(user_id=42, username="tester", pets=12)
-    database = UserDataDB(FakeWorksheetManager([existing.to_row()]))
+def test_database_loads_existing_users(tmp_path):
+    connection = SQLiteDatabase(tmp_path / "database.db")
+    database = UserDataDB(connection)
+    database.set_value(42, "tester", "pets", 12)
 
     loaded = database.get_user(42)
 
     assert loaded is not None
     assert loaded.pets.value == 12
+    connection.close()
 
 
-def test_database_returns_resource_table_url():
-    database = UserDataDB(
-        FakeWorksheetManager(), "https://docs.google.com/spreadsheets/d/example"
-    )
-
-    assert database.get_url() == "https://docs.google.com/spreadsheets/d/example"
-
-
-def test_database_saves_multiple_fields_in_one_update():
-    existing = UserData(user_id=42, username="tester")
-    manager = FakeWorksheetManager([existing.to_row()])
-    database = UserDataDB(manager)
+def test_database_saves_multiple_fields_in_one_update(tmp_path):
+    connection = SQLiteDatabase(tmp_path / "database.db")
+    database = UserDataDB(connection)
 
     updated = database.set_values(
         42,
@@ -182,13 +142,13 @@ def test_database_saves_multiple_fields_in_one_update():
         updated_on=date(2026, 8, 2),
     )
 
-    assert manager.update_calls == 1
     assert updated.hammers.value == 1500
     assert updated.pets.value == 3
     assert updated.extra_mount_chance.value == 10
     assert updated.get_updated_on("hammers") == date(2026, 8, 2)
     assert updated.get_updated_on("pets") == date(2026, 8, 2)
     assert updated.get_updated_on("extra_mount_chance") == date(2026, 8, 2)
+    connection.close()
 
 
 def test_user_rows_preserve_blank_update_dates():
@@ -199,8 +159,9 @@ def test_user_rows_preserve_blank_update_dates():
     assert restored.get_updated_on("pets") is None
 
 
-def test_updating_technology_marks_its_own_update_date():
-    database = UserDataDB(FakeWorksheetManager())
+def test_updating_technology_marks_its_own_update_date(tmp_path):
+    connection = SQLiteDatabase(tmp_path / "database.db")
+    database = UserDataDB(connection)
 
     user = database.set_value(
         42,
@@ -212,10 +173,12 @@ def test_updating_technology_marks_its_own_update_date():
 
     assert user.get_updated_on("forge_level") == date(2026, 8, 2)
     assert user.get_updated_on("mount_keys") is None
+    connection.close()
 
 
-def test_database_rejects_unknown_forge_level():
-    database = UserDataDB(FakeWorksheetManager())
+def test_database_rejects_unknown_forge_level(tmp_path):
+    connection = SQLiteDatabase(tmp_path / "database.db")
+    database = UserDataDB(connection)
 
     try:
         database.set_value(42, "tester", "forge_level", 36)
@@ -223,10 +186,12 @@ def test_database_rejects_unknown_forge_level():
         assert str(error) == "Forge level must be between 1 and 35"
     else:
         raise AssertionError("Forge level above 35 must be rejected")
+    connection.close()
 
 
-def test_database_rejects_excessive_skill_summon_cost_reduction():
-    database = UserDataDB(FakeWorksheetManager())
+def test_database_rejects_excessive_skill_summon_cost_reduction(tmp_path):
+    connection = SQLiteDatabase(tmp_path / "database.db")
+    database = UserDataDB(connection)
 
     try:
         database.set_value(42, "tester", "skill_summon_cost", 26)
@@ -234,10 +199,12 @@ def test_database_rejects_excessive_skill_summon_cost_reduction():
         assert str(error) == "Skill summon cost reduction must be between 0 and 25"
     else:
         raise AssertionError("Skill summon cost reduction above 25 must be rejected")
+    connection.close()
 
 
-def test_database_rejects_excessive_mount_summon_cost_reduction():
-    database = UserDataDB(FakeWorksheetManager())
+def test_database_rejects_excessive_mount_summon_cost_reduction(tmp_path):
+    connection = SQLiteDatabase(tmp_path / "database.db")
+    database = UserDataDB(connection)
 
     try:
         database.set_value(42, "tester", "mount_summon_cost", 26)
@@ -245,10 +212,12 @@ def test_database_rejects_excessive_mount_summon_cost_reduction():
         assert str(error) == "Mount summon cost reduction must be between 0 and 25"
     else:
         raise AssertionError("Mount summon cost reduction above 25 must be rejected")
+    connection.close()
 
 
-def test_database_rejects_excessive_extra_mount_chance():
-    database = UserDataDB(FakeWorksheetManager())
+def test_database_rejects_excessive_extra_mount_chance(tmp_path):
+    connection = SQLiteDatabase(tmp_path / "database.db")
+    database = UserDataDB(connection)
 
     try:
         database.set_value(42, "tester", "extra_mount_chance", 51)
@@ -256,109 +225,7 @@ def test_database_rejects_excessive_extra_mount_chance():
         assert str(error) == "Extra mount chance must be between 0 and 50"
     else:
         raise AssertionError("Extra mount chance above 50 must be rejected")
-
-
-def test_user_data_reconnects_after_failed_read(monkeypatch):
-    broken_manager = FakeWorksheetManager()
-    broken_database = UserDataDB(broken_manager)
-    broken_manager.fetch_error = ConnectionError()
-    replacement_manager = FakeWorksheetManager([UserData(user_id=42).to_row()])
-    monkeypatch.setattr(
-        broken_database,
-        "_reconnect",
-        lambda: setattr(broken_database, "_manager", replacement_manager),
-    )
-
-    broken_database.fetch()
-
-    assert broken_database.get_user(42) is not None
-
-
-def test_new_user_batch_save_reconnects_before_retrying_add(monkeypatch):
-    broken_manager = FakeWorksheetManager()
-    database = UserDataDB(broken_manager)
-    broken_manager.add_error = ConnectionError()
-    replacement_manager = FakeWorksheetManager()
-    monkeypatch.setattr(
-        database,
-        "_reconnect",
-        lambda: setattr(database, "_manager", replacement_manager),
-    )
-
-    database.set_values(42, "tester", {"pets": 1500})
-
-    assert UserData.from_row(replacement_manager.rows[0]).pets.value == 1500
-
-
-def test_war_stages_reconnect_after_failed_write(monkeypatch):
-    broken_manager = FakeWorksheetManager()
-    broken_database = WarStagesDB(broken_manager)
-    broken_manager.update_error = ConnectionError()
-    replacement_manager = FakeWorksheetManager()
-    monkeypatch.setattr(
-        broken_database,
-        "_reconnect",
-        lambda: setattr(broken_database, "_manager", replacement_manager),
-    )
-
-    broken_database.set_activity(1, 0, WarActivity.PETS)
-
-    assert replacement_manager.rows[0] == ["1", "Питомцы", "Подземелья", "Навыки"]
-
-
-def test_admins_db_reconnects_before_retrying_add(monkeypatch):
-    class FakeSpreadsheet:
-        def get_worksheet(self, _):
-            return FakeWorksheetManager()
-
-    class FakeGSheetsManager:
-        def open(self, _):
-            return FakeSpreadsheet()
-
-    import db.gapi.gsheets_manager as gsheets_manager_module
-
-    monkeypatch.setattr(
-        gsheets_manager_module, "GSheetsManager", FakeGSheetsManager
-    )
-    monkeypatch.delitem(sys.modules, "db.admins", raising=False)
-    admins_module = importlib.import_module("db.admins")
-
-    assert admins_module.admins_db is None
-
-    broken_manager = FakeWorksheetManager()
-    database = admins_module.AdminsDB(broken_manager)
-    broken_manager.add_error = ConnectionError()
-    replacement_manager = FakeWorksheetManager()
-    monkeypatch.setattr(
-        database,
-        "_reconnect",
-        lambda: setattr(database, "_manager", replacement_manager),
-    )
-
-    database.add_admin(admins_module.Admin("alice", 42))
-
-    assert database.get_admin(42).username.value == "alice"
-    assert replacement_manager.rows == [["alice", "42"]]
-
-
-def test_war_stages_are_initialized_and_can_be_changed():
-    manager = FakeWorksheetManager()
-    database = WarStagesDB(manager)
-
-    assert database.get_stages() == DEFAULT_WAR_STAGES
-    database.set_activity(1, 0, WarActivity.PETS)
-
-    assert database.get_stages()[1][0] == WarActivity.PETS
-    assert manager.rows[0] == ["1", "Питомцы", "Подземелья", "Навыки"]
-
-
-def test_war_stages_fetch_does_not_write():
-    manager = FakeWorksheetManager()
-    database = WarStagesDB(manager)
-
-    database.fetch()
-
-    assert manager.update_calls == 0
+    connection.close()
 
 
 def test_forge_chance_matrix_has_35_levels_and_ten_weapon_levels():

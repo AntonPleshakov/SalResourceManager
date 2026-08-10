@@ -1,7 +1,8 @@
 from abc import ABC, abstractmethod
 from typing import Dict, List
 
-from db.gapi.worksheet_manager import Matrix
+
+Matrix = List[List[str]]
 
 
 class Param(ABC):

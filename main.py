@@ -7,13 +7,7 @@ from telebot.types import CallbackQuery, Message
 
 import tg.manager
 from config.config import getconf, getconf_int
-from db.access_group import initialize_access_group_db
-from db.admins import initialize_admins_db
-from db.retry import run_with_backoff
-from db.release_views import initialize_release_views_db
 from db.sqlite.initializer import initialize_sqlite_databases
-from db.user_data import initialize_user_data_db
-from db.war_stages import initialize_war_stages_db
 from logger.app_logger import logger
 from tg.access import GroupAccessMiddleware
 from tg.filters import add_custom_filters
@@ -24,9 +18,6 @@ from tg.utils import empty_filter, get_ids, get_permissions_denied_message, get_
 bot = TeleBot(
     getconf("TOKEN"), parse_mode="HTML", use_class_middlewares=True, threaded=False
 )
-
-STARTUP_RETRY_TIMEOUT_SECONDS = 60
-
 
 class AlwaysAnswerCallbackQueryMiddleware(BaseMiddleware):
     def __init__(self):
@@ -72,25 +63,13 @@ def permission_denied_message(message: Union[Message, CallbackQuery]):
 
 def initialize_databases():
     logger.info("Initializing application databases")
-    admins_db = initialize_admins_db()
-    access_group_db = initialize_access_group_db()
-    release_views_db = initialize_release_views_db()
-    user_data_db = initialize_user_data_db()
-    war_stages_db = initialize_war_stages_db()
-    databases = initialize_sqlite_databases(
-        admins_db,
-        access_group_db,
-        release_views_db,
-        user_data_db,
-        war_stages_db,
-    )
+    databases = initialize_sqlite_databases()
     logger.info(
         "Application databases initialized: admins=%d users=%d "
-        "release_views=%d war_days=%d access_group=%s",
+        "release_views=%d access_group=%s",
         len(databases.admins.get_admins()),
         len(databases.user_data.get_users()),
         databases.release_views.get_users_count(),
-        len(databases.war_stages.get_stages()),
         "configured"
         if databases.access_group.get_group_id() is not None
         else "missing",
@@ -101,10 +80,7 @@ def initialize_databases():
 if __name__ == "__main__":
     logger.info("Starting Sal Resources Manager")
     try:
-        access_group_db = run_with_backoff(
-            initialize_databases,
-            timeout_seconds=STARTUP_RETRY_TIMEOUT_SECONDS,
-        )
+        access_group_db = initialize_databases()
     except Exception:
         logger.exception(
             "Startup initialization failed; Sal Resources Manager is exiting"

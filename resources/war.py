@@ -2,6 +2,7 @@ from collections import Counter
 from dataclasses import dataclass
 from decimal import Decimal
 from enum import Enum
+from types import MappingProxyType
 from typing import Dict, Iterable, Mapping, Sequence, Tuple
 
 from resources.user_data import UserData
@@ -49,13 +50,16 @@ class WarActivity(str, Enum):
 
 WarStage = Tuple[WarActivity, WarActivity, WarActivity]
 
-DEFAULT_WAR_STAGES: Dict[int, WarStage] = {
-    1: (WarActivity.FORGING, WarActivity.DUNGEONS, WarActivity.SKILLS),
-    2: (WarActivity.FORGE, WarActivity.TECHNOLOGIES, WarActivity.MOUNTS),
-    3: (WarActivity.FORGING, WarActivity.SKILLS, WarActivity.PETS),
-    4: (WarActivity.FORGE, WarActivity.DUNGEONS, WarActivity.MOUNTS),
-    5: (WarActivity.FORGING, WarActivity.PETS, WarActivity.TECHNOLOGIES),
-}
+WAR_STAGES: Mapping[int, WarStage] = MappingProxyType(
+    {
+        1: (WarActivity.FORGING, WarActivity.DUNGEONS, WarActivity.SKILLS),
+        2: (WarActivity.FORGE, WarActivity.TECHNOLOGIES, WarActivity.MOUNTS),
+        3: (WarActivity.FORGING, WarActivity.SKILLS, WarActivity.PETS),
+        4: (WarActivity.FORGE, WarActivity.DUNGEONS, WarActivity.MOUNTS),
+        5: (WarActivity.FORGING, WarActivity.PETS, WarActivity.TECHNOLOGIES),
+    }
+)
+
 
 @dataclass(frozen=True)
 class WarPointsReport:

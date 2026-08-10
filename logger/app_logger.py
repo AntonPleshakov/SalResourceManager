@@ -1,5 +1,4 @@
 import logging
-import os
 import sys
 
 from config.config import getconf
@@ -12,11 +11,6 @@ class _MaxLevelFilter(logging.Filter):
 
     def filter(self, record: logging.LogRecord) -> bool:
         return record.levelno <= self._maximum_level
-
-
-def _gdrive_logging_enabled() -> bool:
-    value = os.getenv("LOG_TO_GDRIVE", "false")
-    return value.strip().lower() in {"1", "true", "yes", "on"}
 
 
 def _build_logger() -> logging.Logger:
@@ -45,17 +39,6 @@ def _build_logger() -> logging.Logger:
     result.addHandler(stdout_handler)
     result.addHandler(stderr_handler)
 
-    if _gdrive_logging_enabled():
-        from .RotatingGDriveHandler import RotatingGDriveHandler
-
-        file_handler = RotatingGDriveHandler(
-            getconf("LOG_FILE_NAME"), max_bytes=100_000, backup_count=5
-        )
-        file_handler._sal_managed = True
-        file_handler.setLevel(logging.DEBUG)
-        file_handler.setFormatter(formatter)
-        result.addHandler(file_handler)
-        result.info("Google Drive log persistence enabled")
     return result
 
 

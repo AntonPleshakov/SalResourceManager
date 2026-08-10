@@ -1,16 +1,15 @@
-"""SQLite-backed release-view storage with Google Sheets dual-write."""
+"""SQLite-backed release-view storage."""
 
-from typing import Dict, Mapping, Optional
+from typing import Dict, Optional
 
-from db.release_views import ReleaseViewsDB as GoogleReleaseViewsDB
+from logger.app_logger import logger
 
 from .database import SQLiteDatabase
 
 
 class ReleaseViewsDB:
-    def __init__(self, database: SQLiteDatabase, google: GoogleReleaseViewsDB):
+    def __init__(self, database: SQLiteDatabase):
         self._database = database
-        self._google = google
 
     def get_last_seen_version(self, user_id: int) -> Optional[str]:
         row = self._database.fetch_one(
@@ -34,35 +33,27 @@ class ReleaseViewsDB:
         }
 
     def update_username(self, user_id: int, username: str) -> None:
-        self._google.update_username(user_id, username)
-        self.replace_all(self._google.get_users())
-
-    def mark_seen(self, user_id: int, username: str, version: str) -> None:
-        self._google.mark_seen(user_id, username, version)
-        self.replace_all(self._google.get_users())
-
-    def replace_all(
-        self,
-        release_views: Mapping[int, tuple[str, str]],
-    ) -> None:
-        rows = tuple(
-            sorted(
-                (
-                    int(user_id),
-                    str(username or ""),
-                    str(version),
-                )
-                for user_id, (username, version) in release_views.items()
+        self._database.run_in_transaction(
+            lambda connection: connection.execute(
+                "UPDATE release_views SET username = ? WHERE user_id = ?",
+                (str(username or ""), int(user_id)),
             )
         )
 
-        def replace(connection) -> None:
-            connection.execute("DELETE FROM release_views")
-            if rows:
-                connection.executemany(
-                    "INSERT INTO release_views "
-                    "(user_id, username, last_seen_version) VALUES (?, ?, ?)",
-                    rows,
-                )
-
-        self._database.run_in_transaction(replace)
+    def mark_seen(self, user_id: int, username: str, version: str) -> None:
+        self._database.run_in_transaction(
+            lambda connection: connection.execute(
+                "INSERT INTO release_views "
+                "(user_id, username, last_seen_version) VALUES (?, ?, ?) "
+                "ON CONFLICT(user_id) DO UPDATE SET "
+                "username = excluded.username, "
+                "last_seen_version = excluded.last_seen_version",
+                (int(user_id), str(username or ""), str(version)),
+            )
+        )
+        logger.info(
+            "DB: marked release version=%s as seen by user_id=%s username=%s",
+            version,
+            user_id,
+            username,
+        )

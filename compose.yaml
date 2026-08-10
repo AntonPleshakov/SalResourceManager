@@ -9,7 +9,6 @@ services:
 
     environment:
       MODE: ${MODE:-Release}
-      LOG_TO_GDRIVE: ${LOG_TO_GDRIVE:-false}
 
     volumes:
       - ${CONFIG_FILE:-./config/config.ini}:/app/config/config.ini:ro

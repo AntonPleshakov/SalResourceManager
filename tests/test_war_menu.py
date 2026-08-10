@@ -7,7 +7,7 @@ from config.config import reset_config
 reset_config(str(Path(__file__).parents[1] / "config" / "config_template.ini"))
 
 from resources.user_data import UserData
-from resources.war import DEFAULT_WAR_STAGES, WarActivity, WarPointsCalculator
+from resources.war import WAR_STAGES, WarActivity, WarPointsCalculator
 from tg.navigation import home
 from tg.utils import format_points
 from tg.war import (
@@ -54,14 +54,6 @@ class FakeUserDataDB:
     def get_users(self):
         return [self.user] if self.user is not None else []
 
-    def get_url(self):
-        return "https://example.test/resources"
-
-
-class FakeWarStagesDB:
-    def get_stages(self):
-        return DEFAULT_WAR_STAGES
-
 
 def callback_data(markup):
     return [button.callback_data for row in markup.keyboard for button in row]
@@ -69,7 +61,6 @@ def callback_data(markup):
 
 def test_home_contains_single_war_points_menu(monkeypatch):
     monkeypatch.setattr("tg.navigation.show_unseen_releases", lambda *_: False)
-    monkeypatch.setattr("tg.navigation.get_user_data_db", lambda: FakeUserDataDB())
     monkeypatch.setattr(
         "tg.navigation.get_admins_db",
         lambda: type("Admins", (), {"is_admin": lambda self, user_id: False})(),
@@ -112,12 +103,11 @@ def test_personal_war_calculator_uses_requesting_users_data(monkeypatch):
         extra_mount_chance=10,
     )
     monkeypatch.setattr("tg.war.get_user_data_db", lambda: FakeUserDataDB(user))
-    monkeypatch.setattr("tg.war.get_war_stages_db", lambda: FakeWarStagesDB())
     bot = FakeBot()
 
     personal_war_points(make_callback(user.user_id.value), bot)
 
-    expected = WarPointsCalculator().calculate([user], DEFAULT_WAR_STAGES)
+    expected = WarPointsCalculator().calculate([user], WAR_STAGES)
     text, _, _, markup = bot.edited[0]
     assert "Калькулятор очков войны" in text
     first_day_points = expected.points_by_day[1]
@@ -140,7 +130,6 @@ def test_personal_war_calculator_uses_requesting_users_data(monkeypatch):
 def test_personal_war_details_menu_lists_every_configured_activity(monkeypatch):
     user = UserData(user_id=42, username="tester", forge_level=1)
     monkeypatch.setattr("tg.war.get_user_data_db", lambda: FakeUserDataDB(user))
-    monkeypatch.setattr("tg.war.get_war_stages_db", lambda: FakeWarStagesDB())
     bot = FakeBot()
 
     personal_war_details_menu(
@@ -164,7 +153,6 @@ def test_personal_war_activity_details_explain_resources_and_formula(monkeypatch
         hammers=300,
     )
     monkeypatch.setattr("tg.war.get_user_data_db", lambda: FakeUserDataDB(user))
-    monkeypatch.setattr("tg.war.get_war_stages_db", lambda: FakeWarStagesDB())
     bot = FakeBot()
 
     personal_war_activity_details(
@@ -188,7 +176,6 @@ def test_personal_war_activity_details_explain_resources_and_formula(monkeypatch
 def test_forge_details_explain_level_change_between_war_days(monkeypatch):
     user = UserData(user_id=42, username="tester", forge_level=10)
     monkeypatch.setattr("tg.war.get_user_data_db", lambda: FakeUserDataDB(user))
-    monkeypatch.setattr("tg.war.get_war_stages_db", lambda: FakeWarStagesDB())
     bot = FakeBot()
 
     personal_war_activity_details(
@@ -207,7 +194,6 @@ def test_forge_details_explain_level_change_between_war_days(monkeypatch):
 def test_maximum_war_points_returns_to_war_menu(monkeypatch):
     user = UserData(user_id=42, username="tester")
     monkeypatch.setattr("tg.war.get_user_data_db", lambda: FakeUserDataDB(user))
-    monkeypatch.setattr("tg.war.get_war_stages_db", lambda: FakeWarStagesDB())
     bot = FakeBot()
 
     public_war_points(make_callback(data="war"), bot)

@@ -4,19 +4,21 @@ from telebot import TeleBot, formatting
 from telebot.types import CallbackQuery, InlineKeyboardMarkup
 
 from db.user_data import get_user_data_db
-from db.war_stages import get_war_stages_db
 from logger.app_logger import logger
 from resources.user_data import UserData
-from resources.war import WarActivity, WarPointsCalculator
+from resources.war import WAR_STAGES, WarActivity, WarPointsCalculator
 from resources.war_rules.forge import explain_forge_occurrences
 from tg.utils import Button, empty_filter, format_points, get_ids, get_username
 
 
 def _war_points_text() -> str:
-    stages = get_war_stages_db().get_stages()
     users = get_user_data_db().get_users()
-    logger.info("Calculating war points users=%d days=%d", len(users), len(stages))
-    report = WarPointsCalculator().calculate(users, stages)
+    logger.info(
+        "Calculating war points users=%d days=%d",
+        len(users),
+        len(WAR_STAGES),
+    )
+    report = WarPointsCalculator().calculate(users, WAR_STAGES)
     logger.info("War points calculated")
     lines = [
         "<b>Максимальные очки войны</b>",
@@ -24,7 +26,7 @@ def _war_points_text() -> str:
         "",
     ]
     for day, points in report.points_by_day.items():
-        activities = ", ".join(activity.title for activity in stages[day])
+        activities = ", ".join(activity.title for activity in WAR_STAGES[day])
         lines.append(f"День {day}: <b>{format_points(points)}</b> — {activities}")
     lines.extend(
         [
@@ -46,9 +48,8 @@ def _war_points_text() -> str:
 
 
 def _personal_war_points_text(user: UserData) -> str:
-    stages = get_war_stages_db().get_stages()
     logger.info("Calculating personal war points user_id=%s", user.user_id.value)
-    report = WarPointsCalculator().calculate([user], stages)
+    report = WarPointsCalculator().calculate([user], WAR_STAGES)
     lines = [
         "<b>Калькулятор очков войны</b>",
         "<i>Максимум по каждому дню</i>",
@@ -110,8 +111,7 @@ def _activity_occurrences(stages, selected_activity: WarActivity) -> int:
 def _personal_war_activity_details_text(
     user: UserData, activity: WarActivity
 ) -> str:
-    stages = get_war_stages_db().get_stages()
-    occurrences = _activity_occurrences(stages, activity)
+    occurrences = _activity_occurrences(WAR_STAGES, activity)
     calculator = WarPointsCalculator()
     details = calculator.calculate_details(user, [activity])[activity]
     occurrence_points = calculator.calculate_occurrence_points(
@@ -122,7 +122,7 @@ def _personal_war_activity_details_text(
     total_points = sum(occurrence_points)
     lines = [
         f"<b>{activity.title}</b>",
-        f"Дни войны: {_activity_days(stages, activity)}",
+        f"Дни войны: {_activity_days(WAR_STAGES, activity)}",
         *(
             f"Появление {index}: <b>{format_points(points)}</b>"
             for index, points in enumerate(occurrence_points, start=1)
@@ -258,9 +258,8 @@ def personal_war_details_menu(
         personal_war_points(callback_query, bot)
         return
 
-    stages = get_war_stages_db().get_stages()
-    activities = _configured_activities(stages)
-    report = WarPointsCalculator().calculate([user], stages)
+    activities = _configured_activities(WAR_STAGES)
+    report = WarPointsCalculator().calculate([user], WAR_STAGES)
     keyboard = InlineKeyboardMarkup(row_width=1)
     for activity in activities:
         keyboard.add(
@@ -304,8 +303,7 @@ def personal_war_activity_details(
         )
         return
 
-    stages = get_war_stages_db().get_stages()
-    if activity not in _configured_activities(stages):
+    if activity not in _configured_activities(WAR_STAGES):
         bot.answer_callback_query(
             callback_query.id,
             "Активность не используется в текущей войне",
