@@ -227,6 +227,7 @@ apply_compose() {
 }
 
 verify_application() {
+    local restart_count
     local status
     local logs
 
@@ -244,12 +245,29 @@ verify_application() {
             return
         fi
 
+        restart_count="$(
+            docker inspect --format '{{.RestartCount}}' \
+                "$CONTAINER_NAME" 2>/dev/null || true
+        )"
+        if [[ "$status" == "restarting" || "$status" == "exited" ||
+            "$status" == "dead" ||
+            "$restart_count" =~ ^[1-9][0-9]*$ ]]; then
+            stop_failed_application
+        fi
+
         sleep 2
     done
 
+    stop_failed_application
+}
+
+stop_failed_application() {
     log "Application failed to complete startup. Recent logs:"
     docker logs "$CONTAINER_NAME" --tail 100 2>&1 || true
-    exit 1
+    if docker stop "$CONTAINER_NAME" >/dev/null 2>&1; then
+        log "Stopped the failed application to prevent a restart loop."
+    fi
+    fail "Application startup verification failed."
 }
 
 verify_storage() {
