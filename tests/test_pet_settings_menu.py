@@ -80,8 +80,8 @@ def test_pets_menu_shows_current_settings_and_edit_actions(monkeypatch):
     text, _, _, markup = bot.edited[0]
     assert "<b>Питомцы</b>" in text
     assert "Яиц в одном пакете: <b>4</b>" in text
-    assert "💜 Mythic / Мифическое" in text
-    assert "❤️ Ultimate / Высшее" in text
+    assert "🟣 Mythic / Мифическое" in text
+    assert "🔴 Ultimate / Максимальное" in text
     assert "Пакетов в день: <b>2</b>" in text
     assert callback_data(markup) == [
         "user_data/edit/eggs_per_hatch_batch",
@@ -100,12 +100,12 @@ def test_max_egg_level_is_selected_by_bilingual_colored_names(monkeypatch):
     markup = bot.edited[0][3]
     labels = [button.text for row in markup.keyboard for button in row]
     assert labels[:6] == [
-        "💜 Mythic / Мифическое ✓",
-        "❤️ Ultimate / Высшее",
-        "💛 Legendary / Легендарное",
-        "💚 Epic / Эпическое",
-        "💙 Rare / Редкое",
-        "🩶 Common / Обычное",
+        "🟣 Mythic / Мифическое ✓",
+        "🔴 Ultimate / Максимальное",
+        "🟡 Legendary / Легендарное",
+        "🟢 Epic / Эпическое",
+        "🔵 Rare / Редкое",
+        "⚪ Common / Обычное",
     ]
 
 

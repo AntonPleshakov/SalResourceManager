@@ -92,7 +92,17 @@ def load_webhook_settings() -> WebhookSettings:
     return settings
 
 
+def disable_uvicorn_access_log() -> None:
+    # pyTelegramBotAPI does not expose Uvicorn's access_log option. Its
+    # listener calls uvicorn.run() with the default logging configuration, so
+    # adjust that configuration before the listener is created.
+    from uvicorn.config import LOGGING_CONFIG
+
+    LOGGING_CONFIG["loggers"]["uvicorn.access"]["level"] = "WARNING"
+
+
 def serve_webhook(bot: TeleBot, settings: WebhookSettings) -> None:
+    disable_uvicorn_access_log()
     bot.run_webhooks(
         listen=settings.listen,
         port=settings.port,

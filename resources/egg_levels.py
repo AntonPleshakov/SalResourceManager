@@ -27,19 +27,19 @@ class EggLevel(IntEnum):
             EggLevel.RARE: "Редкое",
             EggLevel.EPIC: "Эпическое",
             EggLevel.LEGENDARY: "Легендарное",
-            EggLevel.ULTIMATE: "Высшее",
+            EggLevel.ULTIMATE: "Максимальное",
             EggLevel.MYTHIC: "Мифическое",
         }[self]
 
     @property
     def color_icon(self) -> str:
         return {
-            EggLevel.COMMON: "🩶",
-            EggLevel.RARE: "💙",
-            EggLevel.EPIC: "💚",
-            EggLevel.LEGENDARY: "💛",
-            EggLevel.ULTIMATE: "❤️",
-            EggLevel.MYTHIC: "💜",
+            EggLevel.COMMON: "⚪",
+            EggLevel.RARE: "🔵",
+            EggLevel.EPIC: "🟢",
+            EggLevel.LEGENDARY: "🟡",
+            EggLevel.ULTIMATE: "🔴",
+            EggLevel.MYTHIC: "🟣",
         }[self]
 
     @property

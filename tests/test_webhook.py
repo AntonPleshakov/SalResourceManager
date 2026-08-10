@@ -5,6 +5,7 @@ import pytest
 
 from tg.webhook import (
     build_webhook_settings,
+    disable_uvicorn_access_log,
     generate_webhook_secret_token,
     serve_webhook,
 )
@@ -87,3 +88,14 @@ def test_serve_webhook_registers_and_starts_listener():
         max_connections=1,
         drop_pending_updates=False,
     )
+
+
+def test_uvicorn_access_log_is_disabled(monkeypatch):
+    from uvicorn.config import LOGGING_CONFIG
+
+    access_logger = LOGGING_CONFIG["loggers"]["uvicorn.access"]
+    monkeypatch.setitem(access_logger, "level", "INFO")
+
+    disable_uvicorn_access_log()
+
+    assert access_logger["level"] == "WARNING"
