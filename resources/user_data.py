@@ -143,7 +143,7 @@ class UserData(Parameters):
         self.account_id = IntParam("Игровой аккаунт ID", account_id)
         self.user_id = IntParam("Telegram ID", user_id)
         self.username = StrParam("Telegram username", username)
-        self.tag = StrParam("Игровой nickname", tag)
+        self.tag = StrParam("Имя игрового аккаунта", tag)
         self.mount_keys = IntParam("Ключи маунтов", mount_keys)
         self.mount_keys_updated_on = StrParam(
             "Ключи маунтов — обновлено", mount_keys_updated_on

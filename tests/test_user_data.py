@@ -62,7 +62,7 @@ def test_user_data_round_trip():
     assert restored == original
     assert restored.tag.value == "Лидер"
     header = original.params_views()
-    assert header[header.index("Telegram username") + 1] == "Игровой nickname"
+    assert header[header.index("Telegram username") + 1] == "Имя игрового аккаунта"
     assert set(EDITABLE_FIELDS) == {
         "mount_keys",
         "skills",

@@ -140,7 +140,7 @@ class UserDataDB:
         except Exception as error:
             if "UNIQUE constraint failed" in str(error):
                 raise ValueError(
-                    "Игровой аккаунт с таким nickname уже существует"
+                    "Игровой аккаунт с таким именем уже существует"
                 ) from error
             raise
         logger.info(
@@ -187,7 +187,7 @@ class UserDataDB:
         except Exception as error:
             if "UNIQUE constraint failed" in str(error):
                 raise ValueError(
-                    "Игровой аккаунт с таким nickname уже существует"
+                    "Игровой аккаунт с таким именем уже существует"
                 ) from error
             raise
         if not changed:
@@ -210,23 +210,14 @@ class UserDataDB:
             ).fetchone()
             if row is None or owned is None:
                 raise ValueError("Игровой аккаунт не найден")
+            if row[0] == account_id:
+                raise ValueError("Активный аккаунт нельзя удалить")
             connection.execute(
                 "DELETE FROM user_data WHERE account_id = ?", (account_id,)
             )
             connection.execute(
                 "DELETE FROM game_accounts WHERE account_id = ?", (account_id,)
             )
-            if row[0] == account_id:
-                replacement = connection.execute(
-                    "SELECT account_id FROM game_accounts WHERE user_id = ? "
-                    "ORDER BY account_id LIMIT 1",
-                    (user_id,),
-                ).fetchone()
-                connection.execute(
-                    "UPDATE telegram_users SET active_game_account_id = ? "
-                    "WHERE user_id = ?",
-                    (None if replacement is None else replacement[0], user_id),
-                )
 
         self._database.run_in_transaction(delete)
         logger.info(
@@ -300,9 +291,9 @@ class UserDataDB:
     def _validate_tag(tag: str) -> str:
         normalized = " ".join((tag or "").split())
         if not normalized:
-            raise ValueError("Nickname не может быть пустым")
+            raise ValueError("Имя аккаунта не может быть пустым")
         if len(normalized) > 64:
-            raise ValueError("Nickname не может быть длиннее 64 символов")
+            raise ValueError("Имя аккаунта не может быть длиннее 64 символов")
         return normalized
 
     @staticmethod

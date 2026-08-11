@@ -37,7 +37,7 @@ def get_active_user_or_prompt(
     keyboard.add(Button("Назад в меню", "home").inline())
     text = (
         "<b>Сначала добавьте игровой аккаунт</b>\n\n"
-        "Ресурсы и очки хранятся отдельно для каждого игрового nickname."
+        "Ресурсы и очки хранятся отдельно для каждого игрового аккаунта."
     )
     if isinstance(message, CallbackQuery):
         bot.edit_message_text(text, chat_id, message_id, reply_markup=keyboard)
