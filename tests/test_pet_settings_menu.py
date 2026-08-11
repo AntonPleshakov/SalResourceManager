@@ -84,6 +84,7 @@ def test_pets_menu_shows_current_settings_and_edit_actions(monkeypatch):
     assert "🔴 Ultimate / Максимальное" in text
     assert "Пакетов в день: <b>2</b>" in text
     assert callback_data(markup) == [
+        "accounts/pets",
         "user_data/edit/eggs_per_hatch_batch",
         "pets/max_level",
         "pets/batches",

@@ -14,7 +14,8 @@ from resources.user_data import (
     ResourceField,
     parse_editable_field_value,
 )
-from tg.user_data import editing, pets, resources, technologies
+from tg.user_data import accounts, editing, pets, resources, technologies
+from tg.user_data.accounts import GameAccountStates, accounts_menu
 from tg.user_data.common import (
     _get_group_tag,
     section_menu as _section_menu,
@@ -45,6 +46,7 @@ from tg.user_data.technologies import technologies_menu
 
 def register_handlers(bot: TeleBot) -> None:
     logger.debug("Registering user data handlers")
+    accounts.register_handlers(bot)
     resources.register_handlers(bot)
     technologies.register_handlers(bot)
     pets.register_handlers(bot)
@@ -56,6 +58,7 @@ __all__ = [
     "EGG_LEVELS",
     "EggLevel",
     "EditUserDataStates",
+    "GameAccountStates",
     "PET_SETTINGS_FIELDS",
     "RESOURCE_FIELDS",
     "ResourceField",
@@ -70,6 +73,7 @@ __all__ = [
     "_start_fill",
     "_value_input_hint",
     "change_hatch_batch_count",
+    "accounts_menu",
     "fill_section",
     "fill_tracked_fields",
     "get_access_group_db",

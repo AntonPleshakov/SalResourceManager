@@ -16,6 +16,7 @@ def _personal_war_points_text(user: UserData) -> str:
     report = WarPointsCalculator().calculate([user], war.WAR_STAGES)
     lines = [
         "<b>Калькулятор очков войны</b>",
+        f"Игровой аккаунт: <b>{formatting.escape_html(user.tag.value)}</b>",
         "<i>Максимум по каждому дню</i>",
         "",
     ]
@@ -85,6 +86,7 @@ def _personal_war_activity_details_text(
     total_points = sum(occurrence_points)
     lines = [
         f"<b>{activity.title}</b>",
+        f"Игровой аккаунт: <b>{formatting.escape_html(user.tag.value)}</b>",
         f"Дни войны: {_activity_days(war.WAR_STAGES, activity)}",
         *(
             f"Появление {index}: <b>{format_points(points)}</b>"
@@ -153,6 +155,11 @@ def personal_war_points(callback_query: CallbackQuery, bot: TeleBot) -> None:
     user = war.get_user_data_db().get_user(user_id)
     keyboard = InlineKeyboardMarkup(row_width=1)
     if user is None:
+        keyboard.add(
+            Button(
+                "Добавить или выбрать аккаунт", "accounts/war_calculator"
+            ).inline()
+        )
         keyboard.add(Button("Заполнить ресурсы", "resources").inline())
         keyboard.add(Button("Заполнить технологии", "technologies").inline())
         keyboard.add(Button("Настроить питомцев", "pets").inline())
@@ -166,6 +173,9 @@ def personal_war_points(callback_query: CallbackQuery, bot: TeleBot) -> None:
         )
         return
 
+    keyboard.add(
+        Button("Сменить игровой аккаунт", "accounts/war_calculator").inline()
+    )
     keyboard.add(Button("Подробный расчёт", "war_calculator/details").inline())
     keyboard.add(Button("Обновить ресурсы", "resources").inline())
     keyboard.add(Button("Обновить технологии", "technologies").inline())
@@ -202,6 +212,7 @@ def personal_war_details_menu(
     keyboard.add(Button("Назад к отчёту по дням", "war_calculator").inline())
     bot.edit_message_text(
         "<b>Подробный расчёт</b>\n\n"
+        f"Игровой аккаунт: <b>{formatting.escape_html(user.tag.value)}</b>\n\n"
         "Выберите активность, чтобы увидеть использованные ресурсы и формулу.",
         chat_id,
         message_id,

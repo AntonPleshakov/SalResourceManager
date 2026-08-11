@@ -16,6 +16,7 @@ def home(message: Union[Message, CallbackQuery], bot: TeleBot):
         return
 
     keyboard = InlineKeyboardMarkup(row_width=1)
+    keyboard.add(Button("Игровые аккаунты", "accounts").inline())
     keyboard.add(Button("Ресурсы", "resources").inline())
     keyboard.add(Button("Технологии", "technologies").inline())
     keyboard.add(Button("Питомцы", "pets").inline())

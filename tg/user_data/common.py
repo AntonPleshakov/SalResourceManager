@@ -1,7 +1,7 @@
 from decimal import Decimal
 from typing import Sequence, Union
 
-from telebot import TeleBot
+from telebot import TeleBot, formatting
 from telebot.types import CallbackQuery, InlineKeyboardMarkup, Message
 
 from logger.app_logger import logger
@@ -13,6 +13,37 @@ from resources.user_data import (
 )
 import tg.user_data as user_data
 from tg.utils import Button, format_points, get_ids, get_username
+
+
+def get_active_user_or_prompt(
+    message: Union[Message, CallbackQuery], bot: TeleBot, return_to: str = "home"
+):
+    user_id, chat_id, message_id = get_ids(message)
+    database = user_data.get_user_data_db()
+    if not hasattr(database, "get_active_account"):
+        return database.get_or_create(user_id, get_username(message))
+    account = database.get_active_account(user_id)
+    if account is not None:
+        user = database.get_or_create(user_id, get_username(message))
+        if user is not None:
+            return user
+
+    keyboard = InlineKeyboardMarkup(row_width=1)
+    keyboard.add(
+        Button(
+            "➕ Добавить игровой аккаунт", f"accounts/add/{return_to}"
+        ).inline()
+    )
+    keyboard.add(Button("Назад в меню", "home").inline())
+    text = (
+        "<b>Сначала добавьте игровой аккаунт</b>\n\n"
+        "Ресурсы и очки хранятся отдельно для каждого игрового nickname."
+    )
+    if isinstance(message, CallbackQuery):
+        bot.edit_message_text(text, chat_id, message_id, reply_markup=keyboard)
+    else:
+        bot.send_message(chat_id, text, reply_markup=keyboard)
+    return None
 
 
 def _get_group_tag(bot: TeleBot, user_id: int) -> str | None:
@@ -48,7 +79,6 @@ def section_menu(
 ) -> None:
     user_id, chat_id, message_id = get_ids(message)
     username = get_username(message)
-    tag = user_data._get_group_tag(bot, user_id)
     logger.debug(
         "Opening user data section=%s for user_id=%s username=%s",
         section,
@@ -56,7 +86,9 @@ def section_menu(
         username,
     )
     bot.delete_state(user_id)
-    user = user_data.get_user_data_db().get_or_create(user_id, username, tag)
+    user = get_active_user_or_prompt(message, bot, section)
+    if user is None:
+        return
 
     value_lines = []
     for field in fields:
@@ -72,11 +104,18 @@ def section_menu(
             line += f" <i>(обновлено: {updated_label})</i>"
         value_lines.append(line)
     values = "\n".join(value_lines)
-    text = f"<b>{title}</b>\n\n{values}\n\nВыберите показатель для изменения."
+    text = (
+        f"<b>{title}</b>\n"
+        f"Игровой аккаунт: <b>{formatting.escape_html(user.tag.value)}</b>\n\n"
+        f"{values}\n\nВыберите показатель для изменения."
+    )
     if notice:
         text = f"{notice}\n\n{text}"
 
     keyboard = InlineKeyboardMarkup(row_width=1)
+    keyboard.add(
+        Button("Сменить игровой аккаунт", f"accounts/{section}").inline()
+    )
     keyboard.add(
         Button("Заполнить все", f"user_data/fill/{section}").inline()
     )

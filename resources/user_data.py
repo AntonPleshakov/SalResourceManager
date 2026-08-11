@@ -14,6 +14,15 @@ class ResourceField:
     title: str
 
 
+@dataclass(frozen=True)
+class GameAccount:
+    account_id: int
+    user_id: int
+    username: str
+    tag: str
+    is_active: bool = False
+
+
 RESOURCE_FIELDS: Tuple[ResourceField, ...] = (
     ResourceField("mount_keys", "Ключи маунтов"),
     ResourceField("skills", "Билетики навыков"),
@@ -96,6 +105,7 @@ def parse_editable_field_value(field_name: str, value: str) -> int:
 class UserData(Parameters):
     def __init__(
         self,
+        account_id: int = 0,
         user_id: int = 0,
         username: str = "",
         tag: str = "",
@@ -130,9 +140,10 @@ class UserData(Parameters):
         mount_summon_cost_updated_on: str = "",
         extra_mount_chance_updated_on: str = "",
     ):
+        self.account_id = IntParam("Игровой аккаунт ID", account_id)
         self.user_id = IntParam("Telegram ID", user_id)
-        self.username = StrParam("Пользователь", username)
-        self.tag = StrParam("Тег", tag)
+        self.username = StrParam("Telegram username", username)
+        self.tag = StrParam("Игровой nickname", tag)
         self.mount_keys = IntParam("Ключи маунтов", mount_keys)
         self.mount_keys_updated_on = StrParam(
             "Ключи маунтов — обновлено", mount_keys_updated_on

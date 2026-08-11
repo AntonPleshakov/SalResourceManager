@@ -70,6 +70,7 @@ def test_home_contains_single_war_points_menu(monkeypatch):
     home(make_callback().message, bot)
 
     buttons = callback_data(bot.sent[0][2])
+    assert "accounts" in buttons
     assert "pets" in buttons
     assert "war_menu" in buttons
     assert "releases" in buttons
@@ -215,6 +216,7 @@ def test_personal_war_calculator_prompts_when_data_is_missing(monkeypatch):
     text, _, _, markup = bot.edited[0]
     assert "заполните свои ресурсы" in text
     assert callback_data(markup) == [
+        "accounts/war_calculator",
         "resources",
         "technologies",
         "pets",

@@ -1,6 +1,7 @@
+import sqlite3
 from typing import Sequence
 
-from telebot import TeleBot
+from telebot import TeleBot, formatting
 from telebot.handler_backends import State, StatesGroup
 from telebot.types import CallbackQuery, InlineKeyboardMarkup, Message
 
@@ -14,13 +15,20 @@ from resources.user_data import (
     parse_editable_field_value,
 )
 import tg.user_data as user_data
-from tg.user_data.common import value_input_hint
+from tg.user_data.common import get_active_user_or_prompt, value_input_hint
 from tg.utils import Button, empty_filter, get_ids, get_username
 
 
 class EditUserDataStates(StatesGroup):
     value = State()
     fill_values = State()
+
+
+def _active_account(user_id: int):
+    try:
+        return user_data.get_user_data_db().get_active_account(user_id)
+    except (AttributeError, RuntimeError, sqlite3.ProgrammingError):
+        return None
 
 
 SECTION_FIELDS = {
@@ -57,6 +65,16 @@ def request_value(callback_query: CallbackQuery, bot: TeleBot) -> None:
     else:
         section = "pets"
     user_id, chat_id, message_id = get_ids(callback_query)
+    account = _active_account(user_id)
+    if account is None:
+        try:
+            accounts = user_data.get_user_data_db().get_accounts(user_id)
+        except (AttributeError, RuntimeError, sqlite3.ProgrammingError):
+            accounts = None
+        if accounts == []:
+            destination = section if section in SECTION_FIELDS else "home"
+            get_active_user_or_prompt(callback_query, bot, destination)
+            return
     logger.info(
         "User data edit started user_id=%s username=%s field=%s",
         user_id,
@@ -64,12 +82,23 @@ def request_value(callback_query: CallbackQuery, bot: TeleBot) -> None:
         field_name,
     )
     bot.set_state(user_id, EditUserDataStates.value)
-    bot.add_data(user_id, field_name=field_name, section=section)
+    bot.add_data(
+        user_id,
+        field_name=field_name,
+        section=section,
+        account_id=None if account is None else account.account_id,
+    )
 
     keyboard = InlineKeyboardMarkup(row_width=1)
     keyboard.add(Button("Отмена", section).inline())
+    account_line = (
+        ""
+        if account is None
+        else "Игровой аккаунт: "
+        f"<b>{formatting.escape_html(account.tag)}</b>\n\n"
+    )
     bot.edit_message_text(
-        f"Введите новое значение для «{field.title}».\n"
+        f"{account_line}Введите новое значение для «{field.title}».\n"
         f"{value_input_hint(field)}",
         chat_id,
         message_id,
@@ -78,11 +107,20 @@ def request_value(callback_query: CallbackQuery, bot: TeleBot) -> None:
 
 
 def _fill_prompt(
-    section: str, fields: Sequence[ResourceField], index: int
+    section: str,
+    fields: Sequence[ResourceField],
+    index: int,
+    account_tag: str = "",
 ) -> str:
     field = fields[index]
+    account_line = (
+        f"Игровой аккаунт: <b>{formatting.escape_html(account_tag)}</b>\n\n"
+        if account_tag
+        else ""
+    )
     return (
         f"<b>Заполнение: {section} ({index + 1}/{len(fields)})</b>\n\n"
+        f"{account_line}"
         f"Введите значение для «{field.title}».\n"
         f"{value_input_hint(field)}"
     )
@@ -96,6 +134,16 @@ def _start_fill(
     cancel_callback: str,
 ) -> None:
     user_id, chat_id, message_id = get_ids(callback_query)
+    account = _active_account(user_id)
+    if account is None:
+        try:
+            accounts = user_data.get_user_data_db().get_accounts(user_id)
+        except (AttributeError, RuntimeError, sqlite3.ProgrammingError):
+            accounts = None
+        if accounts == []:
+            destination = section if section in SECTION_FIELDS else "home"
+            get_active_user_or_prompt(callback_query, bot, destination)
+            return
     logger.info(
         "User data fill started user_id=%s username=%s section=%s fields=%s",
         user_id,
@@ -110,12 +158,19 @@ def _start_fill(
         fill_field_names=[field.name for field in fields],
         fill_index=0,
         fill_values={},
+        account_id=None if account is None else account.account_id,
+        fill_account_tag="" if account is None else account.tag,
     )
 
     keyboard = InlineKeyboardMarkup(row_width=1)
     keyboard.add(Button("Отмена", cancel_callback).inline())
     bot.edit_message_text(
-        _fill_prompt(SECTION_TITLES[section], fields, 0),
+        _fill_prompt(
+            SECTION_TITLES[section],
+            fields,
+            0,
+            "" if account is None else account.tag,
+        ),
         chat_id,
         message_id,
         reply_markup=keyboard,
@@ -168,6 +223,7 @@ def save_value(message: Message, bot: TeleBot) -> None:
     with bot.retrieve_data(user_id) as data:
         field_name = data.get("field_name")
         section = data.get("section")
+        account_id = data.get("account_id")
 
     field = EDITABLE_FIELDS.get(field_name)
     if field is None or section not in {"resources", "technologies", "pets"}:
@@ -199,8 +255,11 @@ def save_value(message: Message, bot: TeleBot) -> None:
         return
 
     try:
+        account_kwargs = (
+            {"account_id": account_id} if isinstance(account_id, int) else {}
+        )
         user_data.get_user_data_db().set_value(
-            user_id, username, field_name, value
+            user_id, username, field_name, value, **account_kwargs
         )
     except ValueError as error:
         logger.warning(
@@ -235,6 +294,8 @@ def save_all_values(message: Message, bot: TeleBot) -> None:
         field_names = data.get("fill_field_names")
         index = data.get("fill_index")
         values = data.get("fill_values")
+        account_id = data.get("account_id")
+        account_tag = data.get("fill_account_tag")
     if field_names is None:
         fields = SECTION_FIELDS.get(section) if isinstance(section, str) else None
     elif (
@@ -308,13 +369,23 @@ def save_all_values(message: Message, bot: TeleBot) -> None:
         keyboard.add(Button("Отмена", cancel_callback).inline())
         bot.send_message(
             chat_id,
-            _fill_prompt(SECTION_TITLES[section], fields, next_index),
+            _fill_prompt(
+                SECTION_TITLES[section],
+                fields,
+                next_index,
+                account_tag if isinstance(account_tag, str) else "",
+            ),
             reply_markup=keyboard,
         )
         return
 
     try:
-        user_data.get_user_data_db().set_values(user_id, username, values)
+        account_kwargs = (
+            {"account_id": account_id} if isinstance(account_id, int) else {}
+        )
+        user_data.get_user_data_db().set_values(
+            user_id, username, values, **account_kwargs
+        )
     except ValueError as error:
         logger.warning(
             "Rejected user data section user_id=%s username=%s section=%s reason=%s",

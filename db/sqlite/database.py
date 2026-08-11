@@ -22,6 +22,7 @@ class SQLiteDatabase:
             check_same_thread=False,
         )
         try:
+            self._connection.execute("PRAGMA foreign_keys = ON")
             self._connection.execute("PRAGMA busy_timeout = 30000")
             self._connection.execute("PRAGMA journal_mode = WAL")
             self._connection.execute("PRAGMA synchronous = FULL")
