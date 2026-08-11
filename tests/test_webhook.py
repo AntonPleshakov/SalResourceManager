@@ -1,3 +1,4 @@
+import logging
 from pathlib import Path
 from unittest.mock import Mock
 
@@ -5,8 +6,9 @@ import pytest
 
 from tg.webhook import (
     build_webhook_settings,
-    disable_uvicorn_access_log,
+    configure_uvicorn_logging,
     generate_webhook_secret_token,
+    InvalidHTTPRequestWarningFilter,
     serve_webhook,
 )
 
@@ -90,12 +92,45 @@ def test_serve_webhook_registers_and_starts_listener():
     )
 
 
-def test_uvicorn_access_log_is_disabled(monkeypatch):
+def test_uvicorn_logging_is_configured(monkeypatch):
     from uvicorn.config import LOGGING_CONFIG
 
     access_logger = LOGGING_CONFIG["loggers"]["uvicorn.access"]
+    default_handler = LOGGING_CONFIG["handlers"]["default"]
     monkeypatch.setitem(access_logger, "level", "INFO")
+    monkeypatch.setitem(default_handler, "filters", [])
 
-    disable_uvicorn_access_log()
+    configure_uvicorn_logging()
+    configure_uvicorn_logging()
 
     assert access_logger["level"] == "WARNING"
+    assert default_handler["filters"] == ["invalid_http_request"]
+    assert LOGGING_CONFIG["filters"]["invalid_http_request"] == {
+        "()": InvalidHTTPRequestWarningFilter,
+    }
+
+
+def test_invalid_http_request_filter_only_drops_expected_warning():
+    log_filter = InvalidHTTPRequestWarningFilter()
+
+    malformed_request = logging.LogRecord(
+        "uvicorn.error",
+        logging.WARNING,
+        __file__,
+        1,
+        "Invalid HTTP request received.",
+        (),
+        None,
+    )
+    other_warning = logging.LogRecord(
+        "uvicorn.error",
+        logging.WARNING,
+        __file__,
+        1,
+        "Another warning",
+        (),
+        None,
+    )
+
+    assert log_filter.filter(malformed_request) is False
+    assert log_filter.filter(other_warning) is True

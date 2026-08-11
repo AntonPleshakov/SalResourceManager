@@ -1,3 +1,4 @@
+import logging
 import re
 import secrets
 from dataclasses import dataclass
@@ -10,6 +11,18 @@ from config.config import getconf, getconf_int, getconf_path
 
 
 _SECRET_TOKEN_PATTERN = re.compile(r"^[A-Za-z0-9_-]{1,256}$")
+_INVALID_HTTP_REQUEST_MESSAGE = "Invalid HTTP request received."
+
+
+class InvalidHTTPRequestWarningFilter(logging.Filter):
+    """Drop malformed-request noise from clients scanning the public port."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        return not (
+            record.name == "uvicorn.error"
+            and record.levelno == logging.WARNING
+            and record.getMessage() == _INVALID_HTTP_REQUEST_MESSAGE
+        )
 
 
 @dataclass(frozen=True)
@@ -92,17 +105,24 @@ def load_webhook_settings() -> WebhookSettings:
     return settings
 
 
-def disable_uvicorn_access_log() -> None:
+def configure_uvicorn_logging() -> None:
     # pyTelegramBotAPI does not expose Uvicorn's access_log option. Its
     # listener calls uvicorn.run() with the default logging configuration, so
     # adjust that configuration before the listener is created.
     from uvicorn.config import LOGGING_CONFIG
 
     LOGGING_CONFIG["loggers"]["uvicorn.access"]["level"] = "WARNING"
+    LOGGING_CONFIG.setdefault("filters", {})["invalid_http_request"] = {
+        "()": InvalidHTTPRequestWarningFilter,
+    }
+    default_handler = LOGGING_CONFIG["handlers"]["default"]
+    handler_filters = default_handler.setdefault("filters", [])
+    if "invalid_http_request" not in handler_filters:
+        handler_filters.append("invalid_http_request")
 
 
 def serve_webhook(bot: TeleBot, settings: WebhookSettings) -> None:
-    disable_uvicorn_access_log()
+    configure_uvicorn_logging()
     bot.run_webhooks(
         listen=settings.listen,
         port=settings.port,
