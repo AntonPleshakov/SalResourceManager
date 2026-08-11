@@ -19,7 +19,7 @@ services:
       - ./certs:/app/certs:ro
       - ./data:/app/data
 
-    mem_limit: 512m
+    mem_limit: 256m
     cpus: 0.50
 
     logging:
