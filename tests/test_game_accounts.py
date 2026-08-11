@@ -8,9 +8,9 @@ from config.config import reset_config
 
 reset_config(str(Path(__file__).parents[1] / "config" / "config_template.ini"))
 
-from db.sqlite.database import SQLiteDatabase
-from db.sqlite.migration_runner import MIGRATIONS_DIR, apply_migrations
-from db.sqlite.user_data import UserDataDB
+from db.database import Database
+from db.migration_runner import MIGRATIONS_DIR, apply_migrations
+from db.user_data import UserDataDB
 from tg.user_data.accounts import accounts_menu, select_account
 
 
@@ -46,7 +46,7 @@ def callback_data(markup):
 
 
 def test_resources_are_isolated_and_active_account_can_be_switched(tmp_path):
-    connection = SQLiteDatabase(tmp_path / "database.db")
+    connection = Database(tmp_path / "database.db")
     database = UserDataDB(connection)
 
     first = database.add_account(42, "telegram_user", "Main")
@@ -80,7 +80,7 @@ def test_resources_are_isolated_and_active_account_can_be_switched(tmp_path):
 def test_account_selector_returns_to_resource_screen_after_switch(
     tmp_path, monkeypatch
 ):
-    connection = SQLiteDatabase(tmp_path / "database.db")
+    connection = Database(tmp_path / "database.db")
     database = UserDataDB(connection)
     first = database.add_account(42, "telegram_user", "Main")
     second = database.add_account(42, "telegram_user", "Alt")
@@ -107,7 +107,7 @@ def test_account_selector_returns_to_resource_screen_after_switch(
 
 
 def test_game_accounts_can_be_renamed_and_deleted(tmp_path):
-    connection = SQLiteDatabase(tmp_path / "database.db")
+    connection = Database(tmp_path / "database.db")
     database = UserDataDB(connection)
     first = database.add_account(42, "telegram_user", "Main")
     second = database.add_account(42, "telegram_user", "Alt")
@@ -128,7 +128,7 @@ def test_game_accounts_can_be_renamed_and_deleted(tmp_path):
 
 
 def test_account_operations_cannot_access_another_telegram_users_account(tmp_path):
-    connection = SQLiteDatabase(tmp_path / "database.db")
+    connection = Database(tmp_path / "database.db")
     database = UserDataDB(connection)
     чужой = database.add_account(7, "other", "Other")
 
@@ -167,7 +167,7 @@ def test_migration_turns_existing_user_data_into_first_game_account(tmp_path):
             (42, "telegram_user", "OldHero", 11, 12, 13, 14, 15, 16, 7, 8, 9, 10, 11),
         )
 
-    connection = SQLiteDatabase(database_path)
+    connection = Database(database_path)
     database = UserDataDB(connection)
     migrated = database.get_user(42)
 

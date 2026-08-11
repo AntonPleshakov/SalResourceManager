@@ -3,7 +3,7 @@ from typing import Tuple, Union
 
 from telebot.types import CallbackQuery, InlineKeyboardButton, KeyboardButton, Message
 
-from db.admins import get_admins_db
+from db.initializer import get_admins_db
 
 
 def get_user_link(user_id: int, name: str) -> str:

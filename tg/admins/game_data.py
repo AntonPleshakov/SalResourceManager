@@ -3,7 +3,7 @@
 from telebot import TeleBot
 from telebot.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup
 
-from db.user_data import get_user_data_db
+from db.initializer import get_user_data_db
 from logger.app_logger import logger
 from reports.game_data import GameDataReport
 from tg.utils import Button, empty_filter, get_ids, get_username

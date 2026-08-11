@@ -1,19 +1,15 @@
-"""Apply SQLite migrations and activate table storages."""
+"""Create and expose the application's database storages."""
 
 import atexit
 from dataclasses import dataclass
 from pathlib import Path
 
 from config.config import getconf_path
-from db.access_group import set_access_group_db
-from db.admins import set_admins_db
-from db.release_views import set_release_views_db
-from db.user_data import set_user_data_db
 from logger.app_logger import logger
 
 from .access_group import AccessGroupDB
 from .admins import AdminsDB
-from .database import SQLiteDatabase
+from .database import Database
 from .release_views import ReleaseViewsDB
 from .user_data import UserDataDB
 
@@ -22,18 +18,22 @@ DEFAULT_DATABASE_PATH = "data/sal_resources.db"
 
 
 @dataclass(frozen=True)
-class SQLiteDatabases:
-    database: SQLiteDatabase
+class Databases:
+    database: Database
     admins: AdminsDB
     access_group: AccessGroupDB
     release_views: ReleaseViewsDB
     user_data: UserDataDB
 
 
-def initialize_sqlite_databases(
+_databases: Databases | None = None
+
+
+def initialize_database(
     *,
     database_path: Path | None = None,
-) -> SQLiteDatabases:
+) -> Databases:
+    global _databases
     database_path = database_path or getconf_path(
         "SQLITE_DB_PATH",
         DEFAULT_DATABASE_PATH,
@@ -45,27 +45,43 @@ def initialize_sqlite_databases(
         database_path,
     )
     try:
-        database = SQLiteDatabase(database_path)
-        databases = SQLiteDatabases(
+        database = Database(database_path)
+        databases = Databases(
             database=database,
             admins=AdminsDB(database),
             access_group=AccessGroupDB(database),
             release_views=ReleaseViewsDB(database),
             user_data=UserDataDB(database),
         )
-        _activate(databases)
     except Exception:
         if database is not None:
             database.close()
         raise
 
+    _databases = databases
     atexit.register(database.close)
-    logger.info("SQLite databases activated")
+    logger.info("Database storages initialized")
     return databases
 
 
-def _activate(databases: SQLiteDatabases) -> None:
-    set_admins_db(databases.admins)
-    set_access_group_db(databases.access_group)
-    set_release_views_db(databases.release_views)
-    set_user_data_db(databases.user_data)
+def get_databases() -> Databases:
+    if _databases is None:
+        logger.error("DB requested before initialization")
+        raise RuntimeError("Database has not been initialized")
+    return _databases
+
+
+def get_admins_db() -> AdminsDB:
+    return get_databases().admins
+
+
+def get_access_group_db() -> AccessGroupDB:
+    return get_databases().access_group
+
+
+def get_release_views_db() -> ReleaseViewsDB:
+    return get_databases().release_views
+
+
+def get_user_data_db() -> UserDataDB:
+    return get_databases().user_data

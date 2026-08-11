@@ -3,7 +3,7 @@ from typing import Union
 from telebot import TeleBot
 from telebot.types import CallbackQuery, InlineKeyboardMarkup, Message
 
-from db.admins import get_admins_db
+from db.initializer import get_admins_db
 from logger.app_logger import logger
 from tg.releases import show_unseen_releases
 from tg.utils import Button, get_ids, get_username

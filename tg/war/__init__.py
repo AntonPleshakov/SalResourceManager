@@ -1,7 +1,7 @@
 from telebot import TeleBot
 from telebot.types import CallbackQuery, InlineKeyboardMarkup
 
-from db.user_data import get_user_data_db
+from db.initializer import get_user_data_db
 from logger.app_logger import logger
 from resources.user_data import UserData
 from resources.war import WAR_STAGES, WarActivity, WarPointsCalculator

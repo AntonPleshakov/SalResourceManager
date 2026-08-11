@@ -3,7 +3,7 @@ from typing import Sequence, Union
 from telebot import TeleBot, formatting
 from telebot.types import CallbackQuery, InlineKeyboardMarkup, Message
 
-from db.release_views import get_release_views_db
+from db.initializer import get_release_views_db
 from logger.app_logger import logger
 from resources.releases import CURRENT_VERSION, RELEASES, Release, unseen_releases
 from tg.utils import Button, empty_filter, get_ids, get_username

@@ -1,16 +1,16 @@
 # SQLite migrations
 
-`initializer.py` is the permanent SQLite startup entry point. It opens the
-database, applies pending migrations, and activates the table storages. It is
-not renamed between migration phases.
+`initializer.py` is the application database startup entry point. It opens the
+database, applies pending migrations, and exposes the table storages.
 
-Each logical storage has its own module: `admins.py`, `access_group.py`,
-`release_views.py`, and `user_data.py`. Shared connection and transaction
+The application uses SQLite directly; there is no interchangeable database
+interface layer. Each logical storage has its own module: `admins.py`,
+`access_group.py`, `release_views.py`, and `user_data.py`. Shared connection and transaction
 handling live in `database.py`. War stages are application constants and are
 not stored in SQLite.
 
 The SQLite database has one global, linear migration history. Migration files
-live in `migrations/` and use the format `NNNN_description.sql`, starting at
+live in `sqlite/migrations/` and use the format `NNNN_description.sql`, starting at
 `0001` without gaps.
 
 Each migration is one immutable logical change and may affect one or several

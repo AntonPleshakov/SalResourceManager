@@ -28,5 +28,5 @@ docker compose logs -f bot
 
 ## Data
 
-SQLite data is stored in `data/`. See [`db/sqlite/README.md`](db/sqlite/README.md)
+SQLite data is stored in `data/`. See [`db/README.md`](db/README.md)
 for migrations. Google Sheets is used only for on-demand report exports.

@@ -4,7 +4,7 @@ from telebot import TeleBot
 from telebot.custom_filters import SimpleCustomFilter, AdvancedCustomFilter, StateFilter
 from telebot.types import CallbackQuery
 
-from db.admins import get_admins_db
+from db.initializer import get_admins_db
 from logger.app_logger import logger
 
 

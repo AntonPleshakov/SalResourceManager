@@ -1,7 +1,6 @@
 from telebot import TeleBot
 
-from db.access_group import get_access_group_db
-from db.user_data import get_user_data_db
+from db.initializer import get_access_group_db, get_user_data_db
 from logger.app_logger import logger
 from resources.egg_levels import EGG_LEVELS, EggLevel
 from resources.user_data import (

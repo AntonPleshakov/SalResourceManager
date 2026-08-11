@@ -3,6 +3,7 @@ from pathlib import Path
 from telebot.types import CallbackQuery, Chat, Message, User
 
 from config.config import getconf, reset_config
+from pygsheets.exceptions import WorksheetNotFound
 
 reset_config(str(Path(__file__).parents[1] / "config" / "config_template.ini"))
 
@@ -14,14 +15,19 @@ from tg.admins.game_data import export_game_data
 
 class FakeWorksheet:
     def __init__(self):
-        self.header = None
+        self.cleared = False
         self.values = None
+        self.start = None
+        self.extend = None
+        self.frozen_rows = 0
 
-    def ensure_header(self, header):
-        self.header = header
+    def clear(self):
+        self.cleared = True
 
-    def update_values(self, values):
+    def update_values(self, start, values, extend=False):
+        self.start = start
         self.values = values
+        self.extend = extend
 
 
 class FakeSpreadsheet:
@@ -30,28 +36,25 @@ class FakeSpreadsheet:
         self.exists = exists
         self.requested_worksheet = None
         self.added_worksheet = None
+        self.url = "https://docs.google.test/report"
 
-    def is_worksheet_exist(self, worksheet_name):
-        return self.exists
-
-    def get_worksheet(self, worksheet_name):
+    def worksheet_by_title(self, worksheet_name):
         self.requested_worksheet = worksheet_name
+        if not self.exists:
+            raise WorksheetNotFound(worksheet_name)
         return self.worksheet
 
     def add_worksheet(self, worksheet_name):
         self.added_worksheet = worksheet_name
         return self.worksheet
 
-    def get_url(self):
-        return "https://docs.google.test/report"
 
-
-class FakeSheets:
+class FakeClient:
     def __init__(self, spreadsheet):
         self.spreadsheet = spreadsheet
         self.opened_key = None
 
-    def open(self, spreadsheet_key):
+    def open_by_key(self, spreadsheet_key):
         self.opened_key = spreadsheet_key
         return self.spreadsheet
 
@@ -90,15 +93,18 @@ def callback_data(markup):
 def test_report_replaces_google_worksheet_with_sqlite_snapshot():
     worksheet = FakeWorksheet()
     spreadsheet = FakeSpreadsheet(worksheet)
-    sheets = FakeSheets(spreadsheet)
+    client = FakeClient(spreadsheet)
     users = [UserData(user_id=42, username="player", pets=7)]
 
-    url = GameDataReport(sheets).export(users)
+    url = GameDataReport(client).export(users)
 
-    assert sheets.opened_key == getconf("GAME_DATA_GTABLE_KEY")
+    assert client.opened_key == getconf("GAME_DATA_GTABLE_KEY")
     assert spreadsheet.requested_worksheet == getconf("USER_DATA_PAGE_NAME")
-    assert worksheet.header == GameDataReport.HEADER
-    assert worksheet.values == [users[0].to_row()]
+    assert worksheet.cleared
+    assert worksheet.start == "A1"
+    assert worksheet.values == GameDataReport.HEADER + [users[0].to_row()]
+    assert worksheet.extend
+    assert worksheet.frozen_rows == 1
     assert url == "https://docs.google.test/report"
 
 
@@ -106,10 +112,10 @@ def test_report_creates_missing_worksheet():
     worksheet = FakeWorksheet()
     spreadsheet = FakeSpreadsheet(worksheet, exists=False)
 
-    GameDataReport(FakeSheets(spreadsheet)).export([])
+    GameDataReport(FakeClient(spreadsheet)).export([])
 
     assert spreadsheet.added_worksheet == getconf("USER_DATA_PAGE_NAME")
-    assert worksheet.values == []
+    assert worksheet.values == GameDataReport.HEADER
 
 
 def test_admin_menu_contains_game_data_report(monkeypatch):

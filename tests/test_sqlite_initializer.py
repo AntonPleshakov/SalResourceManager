@@ -1,15 +1,18 @@
 import sqlite3
 from datetime import date
 
-from db.access_group import get_access_group_db
-from db.admins import Admin, get_admins_db
-from db.release_views import get_release_views_db
-from db.sqlite.initializer import initialize_sqlite_databases
-from db.user_data import get_user_data_db
+from db.admins import Admin
+from db.initializer import (
+    get_access_group_db,
+    get_admins_db,
+    get_release_views_db,
+    get_user_data_db,
+    initialize_database,
+)
 
 
 def test_initializer_applies_migrations_and_activates_databases(tmp_path):
-    databases = initialize_sqlite_databases(
+    databases = initialize_database(
         database_path=tmp_path / "sal_resources.db"
     )
     try:
@@ -27,7 +30,7 @@ def test_initializer_applies_migrations_and_activates_databases(tmp_path):
 
 def test_sqlite_databases_write_directly_and_persist(tmp_path):
     database_path = tmp_path / "sal_resources.db"
-    databases = initialize_sqlite_databases(database_path=database_path)
+    databases = initialize_database(database_path=database_path)
     databases.admins.add_admin(Admin("first", 1))
     databases.admins.add_admin(Admin("second", 2))
     databases.admins.del_admin(1)
@@ -49,7 +52,7 @@ def test_sqlite_databases_write_directly_and_persist(tmp_path):
     )
     databases.database.close()
 
-    restored = initialize_sqlite_databases(database_path=database_path)
+    restored = initialize_database(database_path=database_path)
     try:
         assert [admin.user_id.value for admin in restored.admins.get_admins()] == [2]
         assert restored.access_group.get_group_id() == -100123
@@ -71,11 +74,11 @@ def test_sqlite_databases_write_directly_and_persist(tmp_path):
 
 def test_initializer_does_not_validate_existing_schema(tmp_path):
     database_path = tmp_path / "sal_resources.db"
-    databases = initialize_sqlite_databases(database_path=database_path)
+    databases = initialize_database(database_path=database_path)
     databases.database.close()
     with sqlite3.connect(database_path) as connection:
         connection.execute("DROP TABLE admins")
         connection.execute("CREATE TABLE admins (wrong_column TEXT)")
 
-    restored = initialize_sqlite_databases(database_path=database_path)
+    restored = initialize_database(database_path=database_path)
     restored.database.close()

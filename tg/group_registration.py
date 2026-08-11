@@ -1,8 +1,7 @@
 from telebot import TeleBot
 from telebot.types import Message
 
-from db.access_group import get_access_group_db
-from db.admins import get_admins_db
+from db.initializer import get_access_group_db, get_admins_db
 from logger.app_logger import logger
 from tg.utils import get_username
 

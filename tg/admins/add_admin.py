@@ -9,7 +9,8 @@ from telebot.types import (
     ReplyKeyboardMarkup,
 )
 
-from db.admins import Admin, get_admins_db
+from db.admins import Admin
+from db.initializer import get_admins_db
 from logger.app_logger import logger
 from tg.navigation import home
 from tg.utils import Button, empty_filter, get_ids, get_user_link, get_username

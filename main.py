@@ -7,7 +7,7 @@ from telebot.types import CallbackQuery, Message
 
 import tg.manager
 from config.config import getconf, getconf_int
-from db.sqlite.initializer import initialize_sqlite_databases
+from db.initializer import initialize_database
 from logger.app_logger import logger
 from tg.access import GroupAccessMiddleware
 from tg.filters import add_custom_filters
@@ -69,7 +69,7 @@ def permission_denied_message(message: Union[Message, CallbackQuery]):
 
 def initialize_databases():
     logger.info("Initializing application databases")
-    databases = initialize_sqlite_databases()
+    databases = initialize_database()
     logger.info(
         "Application databases initialized: admins=%d users=%d "
         "release_views=%d access_group=%s",

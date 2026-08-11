@@ -8,7 +8,7 @@ from telebot import TeleBot
 from telebot.types import InlineKeyboardMarkup
 
 from common.datetime_utils import now
-from db.user_data import get_user_data_db
+from db.initializer import get_user_data_db
 from logger.app_logger import logger
 from resources.user_data import RESOURCE_FIELDS, TECHNOLOGY_FIELDS, TRACKED_FIELDS
 from resources.war import WAR_STAGES, WarActivity

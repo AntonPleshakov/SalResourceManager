@@ -6,8 +6,7 @@ from telebot.handler_backends import State, StatesGroup
 from telebot.types import CallbackQuery, InlineKeyboardMarkup, Message
 
 from common.datetime_utils import now
-from db.access_group import get_access_group_db
-from db.user_data import get_user_data_db
+from db.initializer import get_access_group_db, get_user_data_db
 from logger.app_logger import logger
 from resources.user_data import TRACKED_FIELDS, ResourceField, UserData
 from tg.utils import (

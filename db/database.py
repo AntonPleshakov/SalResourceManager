@@ -1,4 +1,4 @@
-"""SQLite connection, transactions, and migrations."""
+"""Application database connection and transaction handling."""
 
 import sqlite3
 import threading
@@ -11,7 +11,7 @@ from .migration_runner import apply_migrations
 T = TypeVar("T")
 
 
-class SQLiteDatabase:
+class Database:
     def __init__(self, database_path: Path):
         self.database_path = database_path.resolve()
         self.database_path.parent.mkdir(parents=True, exist_ok=True)

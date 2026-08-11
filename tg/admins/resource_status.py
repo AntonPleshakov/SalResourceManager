@@ -6,7 +6,7 @@ from telebot.types import CallbackQuery, InlineKeyboardMarkup
 
 from common.datetime_utils import now
 from config.config import getconf_int
-from db.user_data import get_user_data_db
+from db.initializer import get_user_data_db
 from logger.app_logger import logger
 from resources.user_data import TRACKED_FIELDS, UserData
 from tg.utils import (

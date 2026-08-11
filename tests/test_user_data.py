@@ -10,8 +10,8 @@ from config.config import reset_config
 
 reset_config(str(Path(__file__).parents[1] / "config" / "config_template.ini"))
 
-from db.sqlite.database import SQLiteDatabase
-from db.sqlite.user_data import UserDataDB
+from db.database import Database
+from db.user_data import UserDataDB
 from resources.egg_levels import EGG_LEVELS, EggLevel
 from resources.user_data import (
     EDITABLE_FIELDS,
@@ -123,7 +123,7 @@ def test_group_tag_prefers_chat_member_custom_title(monkeypatch):
 
 
 def test_database_creates_and_updates_user(tmp_path):
-    connection = SQLiteDatabase(tmp_path / "database.db")
+    connection = Database(tmp_path / "database.db")
     database = UserDataDB(connection)
 
     created = database.get_or_create(42, "tester")
@@ -139,7 +139,7 @@ def test_database_creates_and_updates_user(tmp_path):
 
 
 def test_database_loads_existing_users(tmp_path):
-    connection = SQLiteDatabase(tmp_path / "database.db")
+    connection = Database(tmp_path / "database.db")
     database = UserDataDB(connection)
     database.set_value(42, "tester", "pets", 12)
 
@@ -151,7 +151,7 @@ def test_database_loads_existing_users(tmp_path):
 
 
 def test_database_saves_multiple_fields_in_one_update(tmp_path):
-    connection = SQLiteDatabase(tmp_path / "database.db")
+    connection = Database(tmp_path / "database.db")
     database = UserDataDB(connection)
 
     updated = database.set_values(
@@ -179,7 +179,7 @@ def test_user_rows_preserve_blank_update_dates():
 
 
 def test_updating_technology_marks_its_own_update_date(tmp_path):
-    connection = SQLiteDatabase(tmp_path / "database.db")
+    connection = Database(tmp_path / "database.db")
     database = UserDataDB(connection)
 
     user = database.set_value(
@@ -196,7 +196,7 @@ def test_updating_technology_marks_its_own_update_date(tmp_path):
 
 
 def test_database_rejects_unknown_forge_level(tmp_path):
-    connection = SQLiteDatabase(tmp_path / "database.db")
+    connection = Database(tmp_path / "database.db")
     database = UserDataDB(connection)
 
     try:
@@ -209,7 +209,7 @@ def test_database_rejects_unknown_forge_level(tmp_path):
 
 
 def test_database_rejects_excessive_skill_summon_cost_reduction(tmp_path):
-    connection = SQLiteDatabase(tmp_path / "database.db")
+    connection = Database(tmp_path / "database.db")
     database = UserDataDB(connection)
 
     try:
@@ -222,7 +222,7 @@ def test_database_rejects_excessive_skill_summon_cost_reduction(tmp_path):
 
 
 def test_database_rejects_excessive_mount_summon_cost_reduction(tmp_path):
-    connection = SQLiteDatabase(tmp_path / "database.db")
+    connection = Database(tmp_path / "database.db")
     database = UserDataDB(connection)
 
     try:
@@ -235,7 +235,7 @@ def test_database_rejects_excessive_mount_summon_cost_reduction(tmp_path):
 
 
 def test_database_rejects_excessive_extra_mount_chance(tmp_path):
-    connection = SQLiteDatabase(tmp_path / "database.db")
+    connection = Database(tmp_path / "database.db")
     database = UserDataDB(connection)
 
     try:
@@ -248,7 +248,7 @@ def test_database_rejects_excessive_extra_mount_chance(tmp_path):
 
 
 def test_eggs_per_hatch_batch_accepts_only_two_to_four(tmp_path):
-    connection = SQLiteDatabase(tmp_path / "database.db")
+    connection = Database(tmp_path / "database.db")
     database = UserDataDB(connection)
 
     for value in (1, 5):

@@ -2,7 +2,7 @@ import sqlite3
 
 import pytest
 
-from db.sqlite.migration_runner import (
+from db.migration_runner import (
     MIGRATIONS_DIR,
     MigrationError,
     apply_migrations,

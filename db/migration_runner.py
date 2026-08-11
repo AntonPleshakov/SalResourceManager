@@ -9,7 +9,7 @@ from typing import Tuple
 from logger.app_logger import logger
 
 
-MIGRATIONS_DIR = Path(__file__).with_name("migrations")
+MIGRATIONS_DIR = Path(__file__).with_name("sqlite") / "migrations"
 MIGRATION_NAME = re.compile(r"(?P<version>\d{4})_(?P<name>[a-z0-9_]+)\.sql")
 TRANSACTION_STATEMENTS = frozenset({"BEGIN", "COMMIT", "END", "ROLLBACK"})
 
