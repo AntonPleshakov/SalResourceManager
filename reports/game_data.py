@@ -32,6 +32,7 @@ class GameDataReport:
         rows = self.HEADER + [self._escape_formulas(user.to_row()) for user in users]
         worksheet.clear()
         worksheet.update_values("A1", rows, extend=True)
+        worksheet.show_dimensions(1, worksheet.cols, dimension="COLUMNS")
         worksheet.frozen_rows = len(self.HEADER)
         logger.info("Game data report exported: users=%d", len(users))
         return spreadsheet.url

@@ -19,6 +19,8 @@ class FakeWorksheet:
         self.values = None
         self.start = None
         self.extend = None
+        self.cols = 26
+        self.shown_dimensions = []
         self.frozen_rows = 0
 
     def clear(self):
@@ -28,6 +30,9 @@ class FakeWorksheet:
         self.start = start
         self.values = values
         self.extend = extend
+
+    def show_dimensions(self, start, end=None, dimension="ROWS"):
+        self.shown_dimensions.append((start, end, dimension))
 
 
 class FakeSpreadsheet:
@@ -104,6 +109,7 @@ def test_report_replaces_google_worksheet_with_sqlite_snapshot():
     assert worksheet.start == "A1"
     assert worksheet.values == GameDataReport.HEADER + [users[0].to_row()]
     assert worksheet.extend
+    assert worksheet.shown_dimensions == [(1, worksheet.cols, "COLUMNS")]
     assert worksheet.frozen_rows == 1
     assert url == "https://docs.google.test/report"
 
@@ -129,6 +135,11 @@ def test_admin_menu_contains_game_data_report(monkeypatch):
 
     markup = bot.edits[0][1]["reply_markup"]
     assert "admins/game_data" in callback_data(markup)
+    assert any(
+        button.text == "Выгрузить данные в Google Таблицу"
+        for row in markup.keyboard
+        for button in row
+    )
 
 
 def test_game_data_callback_exports_and_shows_url(monkeypatch):

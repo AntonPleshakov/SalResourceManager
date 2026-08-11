@@ -19,7 +19,7 @@ def admins_main_menu(callback_query: CallbackQuery, bot: TeleBot):
     keyboard.add(Button("Добавить администраторов", "admins/add_admins").inline())
     keyboard.add(Button("Удалить администратора", "admins/del_admin").inline())
     keyboard.add(Button("Список администраторов", "admins/admins_list").inline())
-    keyboard.add(Button("Игровые данные", "admins/game_data").inline())
+    keyboard.add(Button("Выгрузить данные в Google Таблицу", "admins/game_data").inline())
     keyboard.add(
         Button(
             "Давно не обновляли данные", "admins/stale_resources"
