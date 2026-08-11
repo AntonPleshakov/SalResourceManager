@@ -1,4 +1,10 @@
 from telebot import TeleBot
+from telebot.types import (
+    BotCommand,
+    BotCommandScopeAllPrivateChats,
+    Message,
+    ReplyKeyboardRemove,
+)
 
 from tg import admins
 from tg import group_registration
@@ -10,8 +16,62 @@ from tg.utils import empty_filter
 from logger.app_logger import logger
 
 
+VISIBLE_COMMANDS = (
+    BotCommand("start", "Открыть бота"),
+    BotCommand("menu", "Открыть главное меню"),
+)
+
+
+def _has_active_state(message: Message, bot: TeleBot) -> bool:
+    return bot.get_state(message.from_user.id, message.chat.id) is not None
+
+
+def open_menu_command(message: Message, bot: TeleBot) -> None:
+    if _has_active_state(message, bot):
+        bot.send_message(
+            message.chat.id,
+            "Текущее действие отменено.",
+            reply_markup=ReplyKeyboardRemove(),
+        )
+    home(message, bot)
+
+
+def cancel_command(message: Message, bot: TeleBot) -> None:
+    if not _has_active_state(message, bot):
+        bot.reply_to(message, "Сейчас нет активного действия.")
+        return
+    bot.send_message(
+        message.chat.id,
+        "Текущее действие отменено.",
+        reply_markup=ReplyKeyboardRemove(),
+    )
+    home(message, bot)
+
+
+def configure_commands(bot: TeleBot) -> None:
+    try:
+        bot.set_my_commands(
+            list(VISIBLE_COMMANDS),
+            scope=BotCommandScopeAllPrivateChats(),
+        )
+    except Exception as error:
+        logger.warning("Unable to configure Telegram commands: %s", error)
+
+
 def register_handlers(bot: TeleBot):
     logger.debug("Registering Telegram command and callback handlers")
+    bot.register_message_handler(
+        open_menu_command,
+        commands=["start", "menu"],
+        chat_types=["private"],
+        pass_bot=True,
+    )
+    bot.register_message_handler(
+        cancel_command,
+        commands=["cancel"],
+        chat_types=["private"],
+        pass_bot=True,
+    )
     group_registration.register_handlers(bot)
     user_data.register_handlers(bot)
     war.register_handlers(bot)

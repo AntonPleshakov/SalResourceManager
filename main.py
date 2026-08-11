@@ -98,6 +98,7 @@ if __name__ == "__main__":
     add_custom_filters(bot)
     bot.setup_middleware(GroupAccessMiddleware(bot, access_group_db))
     tg.manager.register_handlers(bot)
+    tg.manager.configure_commands(bot)
     bot.register_message_handler(
         permission_denied_message, chat_types=["private"], is_admin=False
     )
