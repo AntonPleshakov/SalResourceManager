@@ -2,17 +2,22 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from enum import Enum
 from threading import Event, Thread
-from typing import Callable, Iterable, Optional, Set
+from typing import Callable, Optional, Sequence, Set, Tuple
 
-from telebot import TeleBot
+from telebot import TeleBot, formatting
 from telebot.types import InlineKeyboardMarkup
 
 from common.datetime_utils import now
 from db.initializer import get_user_data_db
 from logger.app_logger import logger
-from resources.user_data import RESOURCE_FIELDS, TECHNOLOGY_FIELDS, TRACKED_FIELDS
+from resources.user_data import (
+    RESOURCE_FIELDS,
+    TECHNOLOGY_FIELDS,
+    TRACKED_FIELDS,
+    UserData,
+)
 from resources.war import WAR_STAGES, WarActivity
-from tg.utils import Button, format_user_identity
+from tg.utils import Button, format_user_identity, group_user_accounts
 
 
 class ReminderKind(str, Enum):
@@ -82,29 +87,13 @@ def _required_field_names(reminder: ScheduledReminder) -> Set[str]:
     }
 
 
-def _reminder_text(
-    reminder: ScheduledReminder,
-    resource_names: Optional[Iterable[str]] = None,
-) -> str:
-    required_names = (
-        set(resource_names)
-        if resource_names is not None
-        else _required_field_names(reminder)
-    )
-    field_titles = [
-        field.title for field in TRACKED_FIELDS if field.name in required_names
-    ]
-
+def _reminder_intro(reminder: ScheduledReminder) -> str:
     if reminder.kind == ReminderKind.WEEKLY_REWARD:
-        text = (
+        return (
             "🎁 <b>Недельные награды</b>\n\n"
             "Не забудьте обновить ресурсы, полученные в награду "
             "за войну и личный турнир."
         )
-        if field_titles:
-            fields = "\n".join(f"• {title}" for title in field_titles)
-            text += f"\n\n<b>Не обновлены сегодня:</b>\n{fields}"
-        return text
 
     stages = WAR_STAGES.get(reminder.war_day, ())
     stage_titles = ", ".join(activity.title for activity in stages)
@@ -114,16 +103,57 @@ def _reminder_text(
     )
     if stage_titles:
         text += f"\n\nЭтапы дня: {stage_titles}."
-    if field_titles:
-        fields = "\n".join(f"• {title}" for title in field_titles)
-        text += f"\n\n<b>Не обновлены сегодня:</b>\n{fields}"
-    else:
-        text += "\n\nДля этих этапов нет отслеживаемых показателей."
     return text
 
 
-def _reminder_keyboard(field_names: Set[str]) -> InlineKeyboardMarkup:
+def _account_reminder_text(
+    reminder: ScheduledReminder,
+    account_fields: Sequence[Tuple[UserData, Set[str]]],
+) -> str:
+    blocks = []
+    for index, (user, field_names) in enumerate(account_fields, start=1):
+        tag = str(user.tag.value).strip() or f"Аккаунт {index}"
+        fields = "\n".join(
+            f"• {field.title}"
+            for field in TRACKED_FIELDS
+            if field.name in field_names
+        )
+        blocks.append(f"<b>{formatting.escape_html(tag)}</b>\n{fields}")
+    return (
+        f"{_reminder_intro(reminder)}\n\n<b>Не обновлены сегодня:</b>\n\n"
+        + "\n\n".join(blocks)
+    )
+
+
+def _reminder_keyboard(
+    field_names: Set[str],
+    account_fields: Optional[Sequence[Tuple[UserData, Set[str]]]] = None,
+    multiple_accounts: bool = False,
+) -> InlineKeyboardMarkup:
     keyboard = InlineKeyboardMarkup(row_width=1)
+    if multiple_accounts and account_fields is not None:
+        resource_names = {field.name for field in RESOURCE_FIELDS}
+        technology_names = {field.name for field in TECHNOLOGY_FIELDS}
+        for index, (user, missing_names) in enumerate(account_fields, start=1):
+            tag = str(user.tag.value).strip() or f"Аккаунт {index}"
+            account_id = user.account_id.value
+            if missing_names & resource_names:
+                keyboard.add(
+                    Button(
+                        f"Ресурсы · {tag}",
+                        f"accounts/select/resources/{account_id}",
+                    ).inline()
+                )
+            if missing_names & technology_names:
+                keyboard.add(
+                    Button(
+                        f"Технологии · {tag}",
+                        f"accounts/select/technologies/{account_id}",
+                    ).inline()
+                )
+        keyboard.add(Button("Назад в меню", "home").inline())
+        return keyboard
+
     field_indexes = ",".join(
         str(index)
         for index, field in enumerate(TRACKED_FIELDS)
@@ -152,26 +182,47 @@ def send_reminder(bot: TeleBot, reminder: ScheduledReminder) -> None:
         "Sending resource reminder kind=%s war_day=%s recipients=%d resources=%d",
         reminder.kind.value,
         reminder.war_day,
-        len(users),
+        len(group_user_accounts(users)),
         len(required_names),
     )
-    for user in users:
-        user_id = user.user_id.value
-        missing_names = {
-            resource_name
-            for resource_name in required_names
-            if user.get_updated_on(resource_name) != reminder.time.date()
-        }
-        if not missing_names:
+    for user_id, accounts in group_user_accounts(users).items():
+        account_fields = [
+            (
+                user,
+                {
+                    resource_name
+                    for resource_name in required_names
+                    if user.get_updated_on(resource_name) != reminder.time.date()
+                },
+            )
+            for user in accounts
+        ]
+        account_fields = [
+            (user, missing_names)
+            for user, missing_names in account_fields
+            if missing_names
+        ]
+        if not account_fields:
             skipped += 1
             logger.debug(
                 "Resource reminder skipped for user_id=%s username=%s: all resources are current",
                 user_id,
-                format_user_identity(user.username.value, user.tag.value),
+                format_user_identity(
+                    accounts[0].username.value, accounts[0].tag.value
+                ),
             )
             continue
-        text = _reminder_text(reminder, missing_names)
-        keyboard = _reminder_keyboard(missing_names)
+        missing_names = {
+            field_name
+            for _, account_missing_names in account_fields
+            for field_name in account_missing_names
+        }
+        text = _account_reminder_text(reminder, account_fields)
+        keyboard = _reminder_keyboard(
+            missing_names,
+            account_fields if len(accounts) > 1 else None,
+            multiple_accounts=len(accounts) > 1,
+        )
         try:
             bot.send_message(user_id, text, reply_markup=keyboard)
             sent += 1
@@ -179,7 +230,9 @@ def send_reminder(bot: TeleBot, reminder: ScheduledReminder) -> None:
             logger.warning(
                 "Unable to send resource reminder to user_id=%s username=%s: %s",
                 user_id,
-                format_user_identity(user.username.value, user.tag.value),
+                format_user_identity(
+                    accounts[0].username.value, accounts[0].tag.value
+                ),
                 error,
             )
     logger.info(

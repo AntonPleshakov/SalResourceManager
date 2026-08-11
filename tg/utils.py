@@ -1,9 +1,10 @@
 from decimal import Decimal, ROUND_HALF_UP
-from typing import Tuple, Union
+from typing import Dict, Iterable, List, Tuple, Union
 
 from telebot.types import CallbackQuery, InlineKeyboardButton, KeyboardButton, Message
 
 from db.initializer import get_admins_db
+from resources.user_data import UserData
 
 
 def get_user_link(user_id: int, name: str) -> str:
@@ -35,6 +36,13 @@ def get_username(message: Union[Message, CallbackQuery]) -> str:
 
 def format_user_identity(username: str, tag: str = "") -> str:
     return f"{username} ({tag})" if tag else username
+
+
+def group_user_accounts(users: Iterable[UserData]) -> Dict[int, List[UserData]]:
+    grouped: Dict[int, List[UserData]] = {}
+    for user in users:
+        grouped.setdefault(user.user_id.value, []).append(user)
+    return grouped
 
 
 def format_points(value: Decimal) -> str:

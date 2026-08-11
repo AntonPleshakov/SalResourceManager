@@ -93,6 +93,45 @@ def test_standard_notification_skips_users_with_current_resources(monkeypatch):
     assert bot.calls == []
 
 
+def test_standard_notification_combines_multiple_accounts(monkeypatch):
+    users = [
+        UserData(account_id=11, user_id=1, username="one", tag="Alpha"),
+        UserData(account_id=22, user_id=1, username="one", tag="Beta"),
+    ]
+    monkeypatch.setattr(
+        "tg.admins.notifications.get_user_data_db",
+        lambda: FakeUserDataDB(users),
+    )
+
+    class FakeBot:
+        def __init__(self):
+            self.calls = []
+
+        def send_message(self, user_id, text, reply_markup):
+            self.calls.append((user_id, text, reply_markup))
+
+    bot = FakeBot()
+
+    result = send_standard_notification(bot)
+
+    assert result == BroadcastResult(sent=1, failed=0)
+    assert len(bot.calls) == 1
+    assert "<b>Alpha</b>" in bot.calls[0][1]
+    assert "<b>Beta</b>" in bot.calls[0][1]
+    callback_data = [
+        button.callback_data
+        for row in bot.calls[0][2].keyboard
+        for button in row
+    ]
+    assert callback_data == [
+        "accounts/select/resources/11",
+        "accounts/select/technologies/11",
+        "accounts/select/resources/22",
+        "accounts/select/technologies/22",
+        "home",
+    ]
+
+
 def test_custom_notification_escapes_text_and_mentions_every_user():
     users = [
         UserData(user_id=1, username="one"),
@@ -108,6 +147,20 @@ def test_custom_notification_escapes_text_and_mentions_every_user():
     assert "Admin &amp; owner" in combined
     assert '<a href="tg://user?id=1">one</a>' in combined
     assert '<a href="tg://user?id=2">&lt;Two&gt;</a>' in combined
+
+
+def test_custom_notification_mentions_user_once_for_multiple_accounts():
+    users = [
+        UserData(account_id=11, user_id=1, username="one", tag="Alpha"),
+        UserData(account_id=22, user_id=1, username="one", tag="Beta"),
+    ]
+
+    combined = "\n".join(
+        build_custom_notification_messages("Проверка", "Admin", users)
+    )
+
+    assert combined.count('tg://user?id=1') == 1
+    assert "one (Alpha, Beta)" in combined
 
 
 def test_custom_notification_splits_long_mention_list():
@@ -195,3 +248,30 @@ def test_custom_private_notification_is_sent_to_every_user(monkeypatch):
     assert "Личный &lt;текст&gt;" in bot.calls[0][1]
     assert "Admin &amp; owner" in bot.calls[0][1]
     assert "tg://user?id=" not in bot.calls[0][1]
+
+
+def test_custom_private_notification_is_sent_once_for_multiple_accounts(
+    monkeypatch,
+):
+    users = [
+        UserData(account_id=11, user_id=1, username="one", tag="Alpha"),
+        UserData(account_id=22, user_id=1, username="one", tag="Beta"),
+    ]
+    monkeypatch.setattr(
+        "tg.admins.notifications.get_user_data_db",
+        lambda: FakeUserDataDB(users),
+    )
+
+    class FakeBot:
+        def __init__(self):
+            self.calls = []
+
+        def send_message(self, user_id, text, disable_notification):
+            self.calls.append((user_id, text, disable_notification))
+
+    bot = FakeBot()
+
+    result = send_custom_private_notification(bot, "Текст", "Admin")
+
+    assert result == BroadcastResult(sent=1, failed=0)
+    assert [call[0] for call in bot.calls] == [1]

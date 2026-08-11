@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Iterable, List
+from typing import Iterable, List, Sequence, Tuple
 
 from telebot import TeleBot, formatting
 from telebot.handler_backends import State, StatesGroup
@@ -8,13 +8,20 @@ from telebot.types import CallbackQuery, InlineKeyboardMarkup, Message
 from common.datetime_utils import now
 from db.initializer import get_access_group_db, get_user_data_db
 from logger.app_logger import logger
-from resources.user_data import TRACKED_FIELDS, ResourceField, UserData
+from resources.user_data import (
+    RESOURCE_FIELDS,
+    TECHNOLOGY_FIELDS,
+    TRACKED_FIELDS,
+    ResourceField,
+    UserData,
+)
 from tg.utils import (
     Button,
     empty_filter,
     format_user_identity,
     get_ids,
     get_username,
+    group_user_accounts,
 )
 
 
@@ -38,8 +45,34 @@ class BroadcastResult:
     failed: int
 
 
-def _update_keyboard() -> InlineKeyboardMarkup:
+def _update_keyboard(
+    account_fields: Sequence[Tuple[UserData, Sequence[ResourceField]]] = (),
+    multiple_accounts: bool = False,
+) -> InlineKeyboardMarkup:
     keyboard = InlineKeyboardMarkup(row_width=1)
+    if multiple_accounts:
+        resource_names = {field.name for field in RESOURCE_FIELDS}
+        technology_names = {field.name for field in TECHNOLOGY_FIELDS}
+        for index, (user, fields) in enumerate(account_fields, start=1):
+            tag = str(user.tag.value).strip() or f"Аккаунт {index}"
+            field_names = {field.name for field in fields}
+            if field_names & resource_names:
+                keyboard.add(
+                    Button(
+                        f"Ресурсы · {tag}",
+                        f"accounts/select/resources/{user.account_id.value}",
+                    ).inline()
+                )
+            if field_names & technology_names:
+                keyboard.add(
+                    Button(
+                        f"Технологии · {tag}",
+                        f"accounts/select/technologies/{user.account_id.value}",
+                    ).inline()
+                )
+        keyboard.add(Button("Назад в меню", "home").inline())
+        return keyboard
+
     keyboard.add(
         Button("Обновить ресурсы", "user_data/fill/resources").inline(),
         Button("Обновить технологии", "user_data/fill/technologies").inline(),
@@ -52,28 +85,60 @@ def _standard_notification_text(fields: Iterable[ResourceField]) -> str:
     return f"{STANDARD_NOTIFICATION_TEXT}\n\n<b>Не обновлены сегодня:</b>\n{titles}"
 
 
+def _standard_notification_text_for_accounts(
+    account_fields: Sequence[Tuple[UserData, Sequence[ResourceField]]],
+    multiple_accounts: bool,
+) -> str:
+    if not multiple_accounts:
+        return _standard_notification_text(account_fields[0][1])
+
+    blocks = []
+    for index, (user, fields) in enumerate(account_fields, start=1):
+        tag = str(user.tag.value).strip() or f"Аккаунт {index}"
+        titles = "\n".join(f"• {field.title}" for field in fields)
+        blocks.append(f"<b>{formatting.escape_html(tag)}</b>\n{titles}")
+    return (
+        f"{STANDARD_NOTIFICATION_TEXT}\n\n<b>Не обновлены сегодня:</b>\n\n"
+        + "\n\n".join(blocks)
+    )
+
+
 def send_standard_notification(bot: TeleBot) -> BroadcastResult:
-    keyboard = _update_keyboard()
     sent = 0
     failed = 0
     skipped = 0
     users = get_user_data_db().get_users()
     notification_date = now().date()
-    logger.info("Starting standard admin notification recipients=%d", len(users))
-    for user in users:
-        user_id = user.user_id.value
-        missing_fields = [
-            field
-            for field in TRACKED_FIELDS
-            if user.get_updated_on(field.name) != notification_date
+    grouped_users = group_user_accounts(users)
+    logger.info(
+        "Starting standard admin notification recipients=%d", len(grouped_users)
+    )
+    for user_id, accounts in grouped_users.items():
+        account_fields = [
+            (
+                user,
+                [
+                    field
+                    for field in TRACKED_FIELDS
+                    if user.get_updated_on(field.name) != notification_date
+                ],
+            )
+            for user in accounts
         ]
-        if not missing_fields:
+        account_fields = [
+            (user, fields) for user, fields in account_fields if fields
+        ]
+        if not account_fields:
             skipped += 1
             continue
+        multiple_accounts = len(accounts) > 1
+        keyboard = _update_keyboard(account_fields, multiple_accounts)
         try:
             bot.send_message(
                 user_id,
-                _standard_notification_text(missing_fields),
+                _standard_notification_text_for_accounts(
+                    account_fields, multiple_accounts
+                ),
                 reply_markup=keyboard,
             )
             sent += 1
@@ -82,7 +147,9 @@ def send_standard_notification(bot: TeleBot) -> BroadcastResult:
             logger.warning(
                 "Unable to send admin notification to user_id=%s username=%s: %s",
                 user_id,
-                format_user_identity(user.username.value, user.tag.value),
+                format_user_identity(
+                    accounts[0].username.value, accounts[0].tag.value
+                ),
                 error,
             )
     logger.info(
@@ -94,9 +161,17 @@ def send_standard_notification(bot: TeleBot) -> BroadcastResult:
     return BroadcastResult(sent, failed)
 
 
-def _user_mention(user: UserData) -> str:
+def _user_mention(accounts: Sequence[UserData]) -> str:
+    user = accounts[0]
+    tags = list(
+        dict.fromkeys(
+            str(account.tag.value).strip()
+            for account in accounts
+            if str(account.tag.value).strip()
+        )
+    )
     name = format_user_identity(
-        user.username.value or str(user.user_id.value), user.tag.value
+        user.username.value or str(user.user_id.value), ", ".join(tags)
     )
     escaped_name = formatting.escape_html(name)
     return f'<a href="tg://user?id={user.user_id.value}">{escaped_name}</a>'
@@ -128,7 +203,10 @@ def build_custom_notification_messages(
         raise ValueError("Notification text is too long")
 
     header = _custom_notification_header(clean_text, admin_name)
-    mentions = [_user_mention(user) for user in users]
+    mentions = [
+        _user_mention(accounts)
+        for accounts in group_user_accounts(users).values()
+    ]
     if not mentions:
         return [header]
 
@@ -163,10 +241,11 @@ def send_custom_notification(
         raise RuntimeError("Access group is not registered")
 
     users = get_user_data_db().get_users()
+    recipient_count = len(group_user_accounts(users))
     messages = build_custom_notification_messages(text, admin_name, users)
     logger.info(
         "Starting custom group notification recipients=%d chunks=%d",
-        len(users),
+        recipient_count,
         len(messages),
     )
     sent = 0
@@ -203,9 +282,11 @@ def send_custom_private_notification(
     sent = 0
     failed = 0
     users = get_user_data_db().get_users()
-    logger.info("Starting custom private notification recipients=%d", len(users))
-    for user in users:
-        user_id = user.user_id.value
+    grouped_users = group_user_accounts(users)
+    logger.info(
+        "Starting custom private notification recipients=%d", len(grouped_users)
+    )
+    for user_id, accounts in grouped_users.items():
         try:
             bot.send_message(user_id, message, disable_notification=False)
             sent += 1
@@ -214,7 +295,9 @@ def send_custom_private_notification(
             logger.warning(
                 "Unable to send custom private notification to user_id=%s username=%s: %s",
                 user_id,
-                format_user_identity(user.username.value, user.tag.value),
+                format_user_identity(
+                    accounts[0].username.value, accounts[0].tag.value
+                ),
                 error,
             )
     logger.info("Custom private notification sent=%s failed=%s", sent, failed)

@@ -12,8 +12,9 @@ from resources.war import WarActivity
 from tg.reminders import (
     ReminderKind,
     ScheduledReminder,
+    _account_reminder_text,
     _reminder_keyboard,
-    _reminder_text,
+    _required_field_names,
     next_reminder,
     send_reminder,
 )
@@ -21,6 +22,14 @@ from tg.reminders import (
 
 def dt(year: int, month: int, day: int, hour: int = 0) -> datetime:
     return datetime(year, month, day, hour, tzinfo=timezone.utc)
+
+
+def account_reminder_text(reminder: ScheduledReminder) -> str:
+    user = UserData(account_id=1, user_id=1, tag="Alpha")
+    return _account_reminder_text(
+        reminder,
+        [(user, _required_field_names(reminder))],
+    )
 
 
 @pytest.mark.parametrize(
@@ -55,7 +64,7 @@ def test_next_reminder_requires_timezone():
 
 
 def test_daily_reminder_mentions_hardcoded_war_stages():
-    text = _reminder_text(
+    text = account_reminder_text(
         ScheduledReminder(dt(2026, 8, 5, 13), ReminderKind.DAILY, 1)
     )
 
@@ -79,7 +88,7 @@ def test_daily_reminder_deduplicates_resources_and_keeps_catalog_order(monkeypat
         },
     )
 
-    text = _reminder_text(
+    text = account_reminder_text(
         ScheduledReminder(dt(2026, 8, 7, 13), ReminderKind.DAILY, 3)
     )
 
@@ -89,27 +98,8 @@ def test_daily_reminder_deduplicates_resources_and_keeps_catalog_order(monkeypat
     assert text.index("• Питомцы") < text.index("• Необъединённые маунты")
 
 
-def test_daily_reminder_explains_when_no_tracked_field_is_affected(monkeypatch):
-    monkeypatch.setattr(
-        "tg.reminders.WAR_STAGES",
-        {
-            2: (
-                WarActivity.DUNGEONS,
-                WarActivity.DUNGEONS,
-                WarActivity.DUNGEONS,
-            )
-        },
-    )
-
-    text = _reminder_text(
-        ScheduledReminder(dt(2026, 8, 6, 13), ReminderKind.DAILY, 2)
-    )
-
-    assert "нет отслеживаемых показателей" in text
-
-
 def test_weekly_reminder_mentions_received_resources():
-    text = _reminder_text(
+    text = account_reminder_text(
         ScheduledReminder(dt(2026, 8, 3, 13), ReminderKind.WEEKLY_REWARD)
     )
 
@@ -152,6 +142,46 @@ def test_send_reminder_sends_to_every_user_and_continues_after_error(monkeypatch
     )
 
     assert [call[0] for call in bot.calls] == [1, 2]
+
+
+def test_reminder_combines_multiple_accounts_into_one_message(monkeypatch):
+    users = [
+        UserData(account_id=11, user_id=1, username="one", tag="Alpha"),
+        UserData(account_id=22, user_id=1, username="one", tag="Beta"),
+    ]
+
+    class FakeUserDataDB:
+        def get_users(self):
+            return users
+
+    class FakeBot:
+        def __init__(self):
+            self.calls = []
+
+        def send_message(self, user_id, text, reply_markup):
+            self.calls.append((user_id, text, reply_markup))
+
+    monkeypatch.setattr("tg.reminders.get_user_data_db", lambda: FakeUserDataDB())
+    bot = FakeBot()
+
+    send_reminder(
+        bot,
+        ScheduledReminder(dt(2026, 8, 3, 13), ReminderKind.WEEKLY_REWARD),
+    )
+
+    assert len(bot.calls) == 1
+    assert bot.calls[0][0] == 1
+    assert "<b>Alpha</b>" in bot.calls[0][1]
+    assert "<b>Beta</b>" in bot.calls[0][1]
+    assert [
+        button.callback_data
+        for row in bot.calls[0][2].keyboard
+        for button in row
+    ] == [
+        "accounts/select/resources/11",
+        "accounts/select/resources/22",
+        "home",
+    ]
 
 
 def test_daily_reminder_skips_current_user_and_lists_only_missing_resources(
