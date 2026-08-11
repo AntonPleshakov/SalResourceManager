@@ -7,6 +7,7 @@ from telebot.types import (
     KeyboardButtonRequestUsers,
     Message,
     ReplyKeyboardMarkup,
+    ReplyKeyboardRemove,
 )
 
 from db.admins import Admin
@@ -21,6 +22,9 @@ class AddAdminStates(StatesGroup):
     add_admin = State()
 
 
+CANCEL_ADD_ADMINS_TEXT = "Отмена"
+
+
 def add_admins(callback_query: CallbackQuery, bot: TeleBot):
     user_id, chat_id, message_id = get_ids(callback_query)
     logger.info(
@@ -33,18 +37,39 @@ def add_admins(callback_query: CallbackQuery, bot: TeleBot):
     )
     keyboard = ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
     keyboard.add(KeyboardButton(text="Выбрать пользователей", request_users=request))
-    keyboard.add(Button("Отмена", "admins").reply())
+    keyboard.add(Button(CANCEL_ADD_ADMINS_TEXT, "admins").reply())
     bot.delete_message(chat_id, message_id)
     bot.send_message(
         chat_id,
-        formatting.escape_html("Выберите пользователей, которым нужно дать права администратора."),
+        formatting.escape_html(
+            "Выберите пользователей, которым нужно дать права администратора."
+        ),
         reply_markup=keyboard,
     )
     bot.set_state(user_id, AddAdminStates.share_users)
 
 
+def cancel_add_admins(message: Message, bot: TeleBot):
+    user_id, chat_id, _ = get_ids(message)
+    logger.info(
+        "Admin addition cancelled by user_id=%s username=%s",
+        user_id,
+        get_username(message),
+    )
+    bot.delete_state(user_id)
+    bot.send_message(
+        chat_id,
+        "Добавление администраторов отменено.",
+        reply_markup=ReplyKeyboardRemove(),
+    )
+    home(message, bot)
+
+
 def add_admins_confirmation(message: Message, bot: TeleBot):
-    new_admins = [Admin(user.username or str(user.user_id), user.user_id) for user in message.users_shared.users]
+    new_admins = [
+        Admin(user.username or str(user.user_id), user.user_id)
+        for user in message.users_shared.users
+    ]
     user_id, chat_id, message_id = get_ids(message)
     logger.info(
         "Admin selection received requester_id=%s username=%s selected=%d",
@@ -54,7 +79,15 @@ def add_admins_confirmation(message: Message, bot: TeleBot):
     )
     bot.set_state(user_id, AddAdminStates.add_admin)
     bot.add_data(user_id, new_admins=new_admins)
-    links = [get_user_link(admin.user_id.value, admin.username.value) for admin in new_admins]
+    bot.send_message(
+        chat_id,
+        "Пользователи выбраны.",
+        reply_markup=ReplyKeyboardRemove(),
+    )
+    links = [
+        get_user_link(admin.user_id.value, admin.username.value)
+        for admin in new_admins
+    ]
     keyboard = InlineKeyboardMarkup()
     keyboard.row(Button("Да", "approved").inline())
     keyboard.row(Button("Нет", "admins").inline())
@@ -108,6 +141,15 @@ def register_handlers(bot: TeleBot):
         func=empty_filter,
         button="admins/add_admins",
         is_private=True,
+        is_admin=True,
+        pass_bot=True,
+    )
+    bot.register_message_handler(
+        cancel_add_admins,
+        func=lambda message: message.text == CANCEL_ADD_ADMINS_TEXT,
+        content_types=["text"],
+        chat_types=["private"],
+        state=AddAdminStates.share_users,
         is_admin=True,
         pass_bot=True,
     )
