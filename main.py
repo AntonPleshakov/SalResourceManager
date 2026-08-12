@@ -32,9 +32,10 @@ bot = TeleBot(
 
 
 class AlwaysAnswerCallbackQueryMiddleware(BaseMiddleware):
-    def __init__(self):
+    def __init__(self, telegram_bot: TeleBot):
         super().__init__()
         self.update_types = ["callback_query"]
+        self._bot = telegram_bot
 
     def pre_process(self, message: CallbackQuery, data: dict) -> None:
         logger.debug(
@@ -42,15 +43,16 @@ class AlwaysAnswerCallbackQueryMiddleware(BaseMiddleware):
             message.from_user.id,
             get_username(message),
         )
+        try:
+            self._bot.answer_callback_query(message.id)
+        except telebot.apihelper.ApiTelegramException as error:
+            logger.info("Unable to answer callback query: %s", error)
         return None
 
     def post_process(
         self, message: CallbackQuery, data: dict, exception: BaseException | None
-    ):
-        try:
-            bot.answer_callback_query(message.id)
-        except telebot.apihelper.ApiTelegramException as error:
-            logger.info("Unable to answer callback query: %s", error)
+    ) -> None:
+        pass
 
 
 class UserFacingErrorMiddleware(BaseMiddleware):
@@ -152,7 +154,7 @@ if __name__ == "__main__":
         is_private=True,
         is_admin=False,
     )
-    bot.setup_middleware(AlwaysAnswerCallbackQueryMiddleware())
+    bot.setup_middleware(AlwaysAnswerCallbackQueryMiddleware(bot))
     bot.setup_middleware(UserFacingErrorMiddleware(bot))
     bot.exception_handler = BotExceptionHandler()
     reminder_scheduler = ReminderScheduler(bot, getconf_int("REMINDER_HOUR", 13))

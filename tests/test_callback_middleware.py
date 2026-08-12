@@ -21,23 +21,31 @@ class FakeBot:
     def __init__(self, fail=False):
         self.fail = fail
         self.sent = []
+        self.answers = []
 
     def send_message(self, chat_id, text, reply_markup=None):
         if self.fail:
             raise RuntimeError("bot was blocked")
         self.sent.append((chat_id, text, reply_markup))
 
+    def answer_callback_query(self, callback_query_id):
+        self.answers.append(callback_query_id)
 
-def test_callback_middleware_pre_process_is_a_noop():
+
+def test_callback_middleware_answers_before_handler_runs():
     message = make_message()
     user = message.from_user
     callback_query = CallbackQuery(
         "callback-1", user, "admins", "", None, message
     )
 
-    result = AlwaysAnswerCallbackQueryMiddleware().pre_process(callback_query, {})
+    bot = FakeBot()
+    result = AlwaysAnswerCallbackQueryMiddleware(bot).pre_process(
+        callback_query, {}
+    )
 
     assert result is None
+    assert bot.answers == ["callback-1"]
 
 
 def test_user_is_notified_about_unexpected_handler_error():

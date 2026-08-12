@@ -396,6 +396,12 @@ def send_standard_notification_confirmed(
         notifications_menu(callback_query, bot)
         return
 
+    _, chat_id, message_id = get_ids(callback_query)
+    bot.edit_message_text(
+        "Отправляю уведомления…",
+        chat_id,
+        message_id,
+    )
     result = send_standard_notification(bot, plan)
     bot.answer_callback_query(
         callback_query.id,
@@ -493,6 +499,12 @@ def send_custom_group_notification_confirmed(
         get_username(callback_query),
         len(text),
     )
+    _, chat_id, message_id = get_ids(callback_query)
+    bot.edit_message_text(
+        "Отправляю уведомление в группу…",
+        chat_id,
+        message_id,
+    )
 
     try:
         result = send_custom_notification(bot, text, admin_name)
@@ -500,10 +512,15 @@ def send_custom_group_notification_confirmed(
         logger.warning(
             "Custom group notification rejected: access group is not configured"
         )
-        bot.answer_callback_query(
-            callback_query.id,
-            "Группа не зарегистрирована",
-            show_alert=True,
+        keyboard = InlineKeyboardMarkup(row_width=1)
+        keyboard.add(
+            Button("Назад к уведомлениям", "admins/notifications").inline()
+        )
+        bot.edit_message_text(
+            "Не удалось отправить уведомление: группа не зарегистрирована.",
+            chat_id,
+            message_id,
+            reply_markup=keyboard,
         )
         return
 
@@ -525,6 +542,12 @@ def send_custom_private_notification_confirmed(
         user_id,
         get_username(callback_query),
         len(text),
+    )
+    _, chat_id, message_id = get_ids(callback_query)
+    bot.edit_message_text(
+        "Отправляю личные уведомления…",
+        chat_id,
+        message_id,
     )
     result = send_custom_private_notification(bot, text, admin_name)
     bot.answer_callback_query(

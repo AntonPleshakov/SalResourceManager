@@ -16,6 +16,11 @@ def export_game_data(callback_query: CallbackQuery, bot: TeleBot) -> None:
         user_id,
         get_username(callback_query),
     )
+    bot.edit_message_text(
+        "Формирую игровые данные…",
+        chat_id,
+        message_id,
+    )
     try:
         url = GameDataReport().export(get_user_data_db().get_users())
     except Exception as error:
@@ -24,10 +29,13 @@ def export_game_data(callback_query: CallbackQuery, bot: TeleBot) -> None:
             user_id,
             error,
         )
-        bot.answer_callback_query(
-            callback_query.id,
-            "Не удалось обновить игровые данные",
-            show_alert=True,
+        keyboard = InlineKeyboardMarkup(row_width=1)
+        keyboard.add(Button("Назад к администраторам", "admins").inline())
+        bot.edit_message_text(
+            "Не удалось сформировать игровые данные. Попробуйте ещё раз позже.",
+            chat_id,
+            message_id,
+            reply_markup=keyboard,
         )
         return
 

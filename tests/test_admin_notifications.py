@@ -1,3 +1,4 @@
+from contextlib import nullcontext
 from datetime import date, datetime, timezone
 from pathlib import Path
 
@@ -17,8 +18,11 @@ from tg.admins.notifications import (
     build_custom_notification_messages,
     confirm_standard_notification,
     send_custom_notification,
+    send_custom_group_notification_confirmed,
     send_custom_private_notification,
+    send_custom_private_notification_confirmed,
     send_standard_notification,
+    send_standard_notification_confirmed,
 )
 
 
@@ -42,6 +46,26 @@ class FakeUserDataDB:
 
     def get_users(self):
         return self._users
+
+
+class NotificationFlowBot:
+    def __init__(self, data):
+        self.data = data
+        self.edited = []
+        self.answers = []
+        self.deleted_states = []
+
+    def retrieve_data(self, user_id):
+        return nullcontext(self.data)
+
+    def edit_message_text(self, *args, **kwargs):
+        self.edited.append((args, kwargs))
+
+    def answer_callback_query(self, *args, **kwargs):
+        self.answers.append((args, kwargs))
+
+    def delete_state(self, user_id):
+        self.deleted_states.append(user_id)
 
 
 def test_standard_notification_is_sent_to_every_user(monkeypatch):
@@ -225,6 +249,67 @@ def test_prepared_standard_notification_does_not_read_users_again(monkeypatch):
 
     assert result == BroadcastResult(sent=1, failed=0)
     assert [call[0] for call in bot.calls] == [1]
+
+
+def test_standard_notification_shows_progress_before_sending(monkeypatch):
+    plan = build_standard_notification_plan(
+        [UserData(user_id=1, username="outdated")],
+        date(2026, 8, 2),
+    )
+    sent_plans = []
+    monkeypatch.setattr(
+        "tg.admins.notifications.send_standard_notification",
+        lambda bot, prepared_plan: (
+            sent_plans.append(prepared_plan)
+            or BroadcastResult(sent=1, failed=0)
+        ),
+    )
+    bot = NotificationFlowBot({"standard_notification_plan": plan})
+
+    send_standard_notification_confirmed(
+        make_callback("admins/notifications/send_standard"), bot
+    )
+
+    assert bot.edited[0][0][0] == "Отправляю уведомления…"
+    assert sent_plans == [plan]
+    assert bot.edited[-1][0][0] == "Уведомления пользователям"
+
+
+def test_custom_notifications_show_progress_before_sending(monkeypatch):
+    group_calls = []
+    private_calls = []
+    monkeypatch.setattr(
+        "tg.admins.notifications.send_custom_notification",
+        lambda bot, text, admin_name: (
+            group_calls.append((text, admin_name))
+            or BroadcastResult(sent=1, failed=0)
+        ),
+    )
+    monkeypatch.setattr(
+        "tg.admins.notifications.send_custom_private_notification",
+        lambda bot, text, admin_name: (
+            private_calls.append((text, admin_name))
+            or BroadcastResult(sent=1, failed=0)
+        ),
+    )
+
+    group_bot = NotificationFlowBot(
+        {"notification_text": "Текст", "admin_name": "Admin"}
+    )
+    send_custom_group_notification_confirmed(
+        make_callback("admins/notifications/send_custom_group"), group_bot
+    )
+    private_bot = NotificationFlowBot(
+        {"notification_text": "Текст", "admin_name": "Admin"}
+    )
+    send_custom_private_notification_confirmed(
+        make_callback("admins/notifications/send_custom_private"), private_bot
+    )
+
+    assert group_bot.edited[0][0][0] == "Отправляю уведомление в группу…"
+    assert private_bot.edited[0][0][0] == "Отправляю личные уведомления…"
+    assert group_calls == [("Текст", "Admin")]
+    assert private_calls == [("Текст", "Admin")]
 
 
 def test_custom_notification_escapes_text_and_mentions_every_user():

@@ -161,7 +161,8 @@ def test_game_data_callback_exports_and_shows_url(monkeypatch):
     export_game_data(make_callback(), bot)
 
     assert exported == users
-    markup = bot.edits[0][1]["reply_markup"]
+    assert bot.edits[0][0][0] == "Формирую игровые данные…"
+    markup = bot.edits[1][1]["reply_markup"]
     assert markup.keyboard[0][0].url == "https://docs.google.test/report"
     assert callback_data(markup) == ["admins"]
 
@@ -180,10 +181,7 @@ def test_game_data_callback_reports_export_failure(monkeypatch):
 
     export_game_data(make_callback(), bot)
 
-    assert bot.edits == []
-    assert bot.answers == [
-        (
-            ("callback-1", "Не удалось обновить игровые данные"),
-            {"show_alert": True},
-        )
-    ]
+    assert bot.edits[0][0][0] == "Формирую игровые данные…"
+    assert "Не удалось сформировать" in bot.edits[1][0][0]
+    assert callback_data(bot.edits[1][1]["reply_markup"]) == ["admins"]
+    assert bot.answers == []
