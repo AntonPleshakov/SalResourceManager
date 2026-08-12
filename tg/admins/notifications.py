@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from datetime import date
 from typing import Iterable, List, Sequence, Tuple
 
 from telebot import TeleBot, formatting
@@ -10,8 +11,6 @@ from db.initializer import get_access_group_db, get_user_data_db
 from logger.app_logger import logger
 from resources.user_data import (
     RESOURCE_FIELDS,
-    TECHNOLOGY_FIELDS,
-    TRACKED_FIELDS,
     ResourceField,
     UserData,
 )
@@ -27,7 +26,7 @@ from tg.utils import (
 
 STANDARD_NOTIFICATION_TEXT = (
     "📢 <b>Сообщение от администратора</b>\n\n"
-    "Пожалуйста, обновите все ресурсы и технологии."
+    "Пожалуйста, обновите ресурсы."
 )
 MAX_CUSTOM_TEXT_LENGTH = 3_000
 MAX_TELEGRAM_MESSAGE_LENGTH = 4_096
@@ -45,38 +44,39 @@ class BroadcastResult:
     failed: int
 
 
+@dataclass(frozen=True)
+class StandardNotificationRecipient:
+    user_id: int
+    identity: str
+    text: str
+    keyboard: InlineKeyboardMarkup
+
+
+@dataclass(frozen=True)
+class StandardNotificationPlan:
+    recipients: Tuple[StandardNotificationRecipient, ...]
+    skipped: int
+
+
 def _update_keyboard(
     account_fields: Sequence[Tuple[UserData, Sequence[ResourceField]]] = (),
     multiple_accounts: bool = False,
 ) -> InlineKeyboardMarkup:
     keyboard = InlineKeyboardMarkup(row_width=1)
     if multiple_accounts:
-        resource_names = {field.name for field in RESOURCE_FIELDS}
-        technology_names = {field.name for field in TECHNOLOGY_FIELDS}
         for index, (user, fields) in enumerate(account_fields, start=1):
             tag = str(user.tag.value).strip() or f"Аккаунт {index}"
-            field_names = {field.name for field in fields}
-            if field_names & resource_names:
+            if fields:
                 keyboard.add(
                     Button(
                         f"Ресурсы · {tag}",
                         f"accounts/select/resources/{user.account_id.value}",
                     ).inline()
                 )
-            if field_names & technology_names:
-                keyboard.add(
-                    Button(
-                        f"Технологии · {tag}",
-                        f"accounts/select/technologies/{user.account_id.value}",
-                    ).inline()
-                )
         keyboard.add(Button("Назад в меню", "home").inline())
         return keyboard
 
-    keyboard.add(
-        Button("Обновить ресурсы", "user_data/fill/resources").inline(),
-        Button("Обновить технологии", "user_data/fill/technologies").inline(),
-    )
+    keyboard.add(Button("Обновить ресурсы", "user_data/fill/resources").inline())
     return keyboard
 
 
@@ -103,23 +103,19 @@ def _standard_notification_text_for_accounts(
     )
 
 
-def send_standard_notification(bot: TeleBot) -> BroadcastResult:
-    sent = 0
-    failed = 0
+def build_standard_notification_plan(
+    users: Iterable[UserData], notification_date: date
+) -> StandardNotificationPlan:
+    recipients = []
     skipped = 0
-    users = get_user_data_db().get_users()
-    notification_date = now().date()
     grouped_users = group_user_accounts(users)
-    logger.info(
-        "Starting standard admin notification recipients=%d", len(grouped_users)
-    )
     for user_id, accounts in grouped_users.items():
         account_fields = [
             (
                 user,
                 [
                     field
-                    for field in TRACKED_FIELDS
+                    for field in RESOURCE_FIELDS
                     if user.get_updated_on(field.name) != notification_date
                 ],
             )
@@ -132,31 +128,56 @@ def send_standard_notification(bot: TeleBot) -> BroadcastResult:
             skipped += 1
             continue
         multiple_accounts = len(accounts) > 1
-        keyboard = _update_keyboard(account_fields, multiple_accounts)
-        try:
-            bot.send_message(
-                user_id,
-                _standard_notification_text_for_accounts(
+        recipients.append(
+            StandardNotificationRecipient(
+                user_id=user_id,
+                identity=format_user_identity(
+                    accounts[0].username.value, accounts[0].tag.value
+                ),
+                text=_standard_notification_text_for_accounts(
                     account_fields, multiple_accounts
                 ),
-                reply_markup=keyboard,
+                keyboard=_update_keyboard(account_fields, multiple_accounts),
+            )
+        )
+    return StandardNotificationPlan(tuple(recipients), skipped)
+
+
+def send_standard_notification(
+    bot: TeleBot, plan: StandardNotificationPlan | None = None
+) -> BroadcastResult:
+    if plan is None:
+        plan = build_standard_notification_plan(
+            get_user_data_db().get_users(), now().date()
+        )
+
+    sent = 0
+    failed = 0
+    logger.info(
+        "Starting standard admin notification recipients=%d",
+        len(plan.recipients),
+    )
+    for recipient in plan.recipients:
+        try:
+            bot.send_message(
+                recipient.user_id,
+                recipient.text,
+                reply_markup=recipient.keyboard,
             )
             sent += 1
         except Exception as error:
             failed += 1
             logger.warning(
                 "Unable to send admin notification to user_id=%s username=%s: %s",
-                user_id,
-                format_user_identity(
-                    accounts[0].username.value, accounts[0].tag.value
-                ),
+                recipient.user_id,
+                recipient.identity,
                 error,
             )
     logger.info(
         "Standard admin notification sent=%s failed=%s skipped=%s",
         sent,
         failed,
-        skipped,
+        plan.skipped,
     )
     return BroadcastResult(sent, failed)
 
@@ -329,14 +350,26 @@ def confirm_standard_notification(
     callback_query: CallbackQuery, bot: TeleBot
 ) -> None:
     user_id, chat_id, message_id = get_ids(callback_query)
-    bot.set_state(user_id, NotificationStates.standard_confirmation)
-    keyboard = InlineKeyboardMarkup(row_width=1)
-    keyboard.add(
-        Button("Отправить всем", "admins/notifications/send_standard").inline(),
-        Button("Отмена", "admins/notifications").inline(),
+    plan = build_standard_notification_plan(
+        get_user_data_db().get_users(), now().date()
     )
+    bot.set_state(user_id, NotificationStates.standard_confirmation)
+    bot.add_data(user_id, standard_notification_plan=plan)
+    keyboard = InlineKeyboardMarkup(row_width=1)
+    if plan.recipients:
+        keyboard.add(
+            Button(
+                "Отправить уведомление",
+                "admins/notifications/send_standard",
+            ).inline()
+        )
+    keyboard.add(Button("Отмена", "admins/notifications").inline())
     bot.edit_message_text(
-        f"<b>Будет отправлено:</b>\n\n{STANDARD_NOTIFICATION_TEXT}",
+        "<b>Попросить обновить данные?</b>\n\n"
+        "Уведомление получат пользователи, у которых не все данные "
+        "обновлены сегодня.\n\n"
+        f"Получателей: <b>{len(plan.recipients)}</b>\n"
+        f"Уже обновили данные: <b>{plan.skipped}</b>",
         chat_id,
         message_id,
         reply_markup=keyboard,
@@ -351,7 +384,19 @@ def send_standard_notification_confirmed(
         callback_query.from_user.id,
         get_username(callback_query),
     )
-    result = send_standard_notification(bot)
+    user_id, _, _ = get_ids(callback_query)
+    with bot.retrieve_data(user_id) as data:
+        plan = data.get("standard_notification_plan")
+    if not isinstance(plan, StandardNotificationPlan):
+        bot.answer_callback_query(
+            callback_query.id,
+            "Не удалось найти список получателей",
+            show_alert=True,
+        )
+        notifications_menu(callback_query, bot)
+        return
+
+    result = send_standard_notification(bot, plan)
     bot.answer_callback_query(
         callback_query.id,
         f"Доставлено: {result.sent}, ошибок: {result.failed}",

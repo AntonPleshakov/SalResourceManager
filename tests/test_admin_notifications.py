@@ -2,6 +2,7 @@ from datetime import date, datetime, timezone
 from pathlib import Path
 
 import pytest
+from telebot.types import CallbackQuery, Chat, Message, User
 
 from config.config import reset_config
 
@@ -12,11 +13,27 @@ from tg.admins.notifications import (
     MAX_CUSTOM_TEXT_LENGTH,
     STANDARD_NOTIFICATION_TEXT,
     BroadcastResult,
+    build_standard_notification_plan,
     build_custom_notification_messages,
+    confirm_standard_notification,
     send_custom_notification,
     send_custom_private_notification,
     send_standard_notification,
 )
+
+
+def make_callback(data: str = "admins/notifications/standard") -> CallbackQuery:
+    user = User(42, False, "Admin", username="admin")
+    message = Message(
+        1,
+        user,
+        0,
+        Chat(42, "private"),
+        "text",
+        {"text": "menu"},
+        None,
+    )
+    return CallbackQuery("callback-1", user, data, "", None, message)
 
 
 class FakeUserDataDB:
@@ -50,10 +67,14 @@ def test_standard_notification_is_sent_to_every_user(monkeypatch):
     assert [call[0] for call in bot.calls] == [1, 2]
     assert all(call[1].startswith(STANDARD_NOTIFICATION_TEXT) for call in bot.calls)
     assert "Не обновлены сегодня:" in bot.calls[0][1]
-    assert len(bot.calls[0][2].keyboard) == 2
+    assert [
+        button.callback_data
+        for row in bot.calls[0][2].keyboard
+        for button in row
+    ] == ["user_data/fill/resources"]
 
 
-def test_standard_notification_skips_users_with_current_resources(monkeypatch):
+def test_standard_notification_ignores_stale_technologies(monkeypatch):
     user = UserData(user_id=1, username="current")
     for field_name in (
         "mount_keys",
@@ -62,11 +83,6 @@ def test_standard_notification_skips_users_with_current_resources(monkeypatch):
         "hammers",
         "pets",
         "unmerged_mounts",
-        "forge_level",
-        "skill_summon_cost",
-        "extra_egg_chance",
-        "mount_summon_cost",
-        "extra_mount_chance",
     ):
         user.mark_updated(field_name, date(2026, 8, 2))
     monkeypatch.setattr(
@@ -125,11 +141,90 @@ def test_standard_notification_combines_multiple_accounts(monkeypatch):
     ]
     assert callback_data == [
         "accounts/select/resources/11",
-        "accounts/select/technologies/11",
         "accounts/select/resources/22",
-        "accounts/select/technologies/22",
         "home",
     ]
+
+
+def test_standard_notification_confirmation_is_compact_and_uses_snapshot(
+    monkeypatch,
+):
+    notification_date = date(2026, 8, 2)
+    needs_update = UserData(user_id=1, username="outdated")
+    current = UserData(user_id=2, username="current")
+    for field in (
+        "mount_keys",
+        "skills",
+        "shells",
+        "hammers",
+        "pets",
+        "unmerged_mounts",
+    ):
+        current.mark_updated(field, notification_date)
+    monkeypatch.setattr(
+        "tg.admins.notifications.get_user_data_db",
+        lambda: FakeUserDataDB([needs_update, current]),
+    )
+    monkeypatch.setattr(
+        "tg.admins.notifications.now",
+        lambda: datetime(2026, 8, 2, tzinfo=timezone.utc),
+    )
+
+    class FakeBot:
+        def __init__(self):
+            self.data = {}
+            self.edited = []
+
+        def set_state(self, user_id, state):
+            pass
+
+        def add_data(self, user_id, **kwargs):
+            self.data.update(kwargs)
+
+        def edit_message_text(self, *args, **kwargs):
+            self.edited.append((args, kwargs))
+
+    bot = FakeBot()
+
+    confirm_standard_notification(make_callback(), bot)
+
+    text = bot.edited[0][0][0]
+    markup = bot.edited[0][1]["reply_markup"]
+    assert "у которых не все данные обновлены сегодня" in text
+    assert "Получателей: <b>1</b>" in text
+    assert "Уже обновили данные: <b>1</b>" in text
+    assert STANDARD_NOTIFICATION_TEXT not in text
+    assert [
+        button.text for row in markup.keyboard for button in row
+    ] == ["Отправить уведомление", "Отмена"]
+    plan = bot.data["standard_notification_plan"]
+    assert len(plan.recipients) == 1
+    assert plan.skipped == 1
+
+
+def test_prepared_standard_notification_does_not_read_users_again(monkeypatch):
+    plan = build_standard_notification_plan(
+        [UserData(user_id=1, username="outdated")],
+        date(2026, 8, 2),
+    )
+    monkeypatch.setattr(
+        "tg.admins.notifications.get_user_data_db",
+        lambda: (_ for _ in ()).throw(AssertionError("unexpected reload")),
+    )
+
+    class FakeBot:
+        def __init__(self):
+            self.calls = []
+
+        def send_message(self, user_id, text, reply_markup):
+            self.calls.append((user_id, text, reply_markup))
+
+    bot = FakeBot()
+
+    result = send_standard_notification(bot, plan)
+
+    assert result == BroadcastResult(sent=1, failed=0)
+    assert [call[0] for call in bot.calls] == [1]
 
 
 def test_custom_notification_escapes_text_and_mentions_every_user():
