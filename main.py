@@ -3,7 +3,7 @@ from typing import Union
 import telebot.apihelper
 from telebot import ExceptionHandler, TeleBot
 from telebot.handler_backends import BaseMiddleware
-from telebot.types import CallbackQuery, Message
+from telebot.types import CallbackQuery, InlineKeyboardMarkup, Message
 
 import tg.manager
 from config.config import getconf, getconf_int
@@ -12,7 +12,13 @@ from logger.app_logger import logger
 from tg.access import GroupAccessMiddleware
 from tg.filters import add_custom_filters
 from tg.reminders import ReminderScheduler
-from tg.utils import empty_filter, get_ids, get_permissions_denied_message, get_username
+from tg.utils import (
+    Button,
+    empty_filter,
+    get_ids,
+    get_permissions_denied_message,
+    get_username,
+)
 from tg.webhook import load_webhook_settings, serve_webhook
 
 
@@ -45,6 +51,44 @@ class AlwaysAnswerCallbackQueryMiddleware(BaseMiddleware):
             bot.answer_callback_query(message.id)
         except telebot.apihelper.ApiTelegramException as error:
             logger.info("Unable to answer callback query: %s", error)
+
+
+class UserFacingErrorMiddleware(BaseMiddleware):
+    def __init__(self, telegram_bot: TeleBot):
+        super().__init__()
+        self.update_types = ["message", "callback_query"]
+        self._bot = telegram_bot
+
+    def pre_process(
+        self, update: Union[Message, CallbackQuery], data: dict
+    ) -> None:
+        return None
+
+    def post_process(
+        self,
+        update: Union[Message, CallbackQuery],
+        data: dict,
+        exception: BaseException | None,
+    ) -> None:
+        if exception is None:
+            return
+
+        user_id, chat_id, _ = get_ids(update)
+        keyboard = InlineKeyboardMarkup(row_width=1)
+        keyboard.add(Button("Вернуться в меню", "home").inline())
+        try:
+            self._bot.send_message(
+                chat_id,
+                "Не удалось выполнить действие из-за неожиданной ошибки. "
+                "Вернитесь в меню и попробуйте снова.",
+                reply_markup=keyboard,
+            )
+        except Exception as notification_error:
+            logger.warning(
+                "Unable to notify user_id=%s about Telegram processing error: %s",
+                user_id,
+                notification_error,
+            )
 
 
 class BotExceptionHandler(ExceptionHandler):
@@ -109,6 +153,7 @@ if __name__ == "__main__":
         is_admin=False,
     )
     bot.setup_middleware(AlwaysAnswerCallbackQueryMiddleware())
+    bot.setup_middleware(UserFacingErrorMiddleware(bot))
     bot.exception_handler = BotExceptionHandler()
     reminder_scheduler = ReminderScheduler(bot, getconf_int("REMINDER_HOUR", 13))
     reminder_scheduler.start()
