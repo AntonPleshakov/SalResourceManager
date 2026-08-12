@@ -14,6 +14,7 @@ from tg.user_data import (
     pets_menu,
     save_max_egg_level,
 )
+from tg.user_data.pets import confirm_max_egg_level
 
 
 def make_callback(data: str) -> CallbackQuery:
@@ -110,7 +111,7 @@ def test_max_egg_level_is_selected_by_bilingual_colored_names(monkeypatch):
     ]
 
 
-def test_lowering_max_level_clears_unavailable_daily_batches(monkeypatch):
+def test_lowering_max_level_warns_before_clearing_daily_batches(monkeypatch):
     database = configure(
         monkeypatch,
         UserData(
@@ -124,10 +125,58 @@ def test_lowering_max_level_clears_unavailable_daily_batches(monkeypatch):
 
     save_max_egg_level(make_callback("pets/max_level/4"), bot)
 
+    assert database.user.max_egg_level.value == 6
+    assert database.user.hatch_batches_ultimate.value == 3
+    assert database.user.hatch_batches_mythic.value == 2
+    text, _, _, markup = bot.edited[-1]
+    assert "Будут обнулены" in text
+    assert "Mythic / Мифическое: <b>2 пакета</b>" in text
+    assert "Ultimate / Максимальное: <b>3 пакета</b>" in text
+    assert callback_data(markup) == [
+        "pets/max_level/confirm/4",
+        "pets/max_level",
+    ]
+
+
+def test_confirming_lower_max_level_clears_unavailable_daily_batches(
+    monkeypatch,
+):
+    database = configure(
+        monkeypatch,
+        UserData(
+            user_id=42,
+            username="tester",
+            hatch_batches_ultimate=3,
+            hatch_batches_mythic=2,
+        ),
+    )
+    bot = FakeBot()
+
+    confirm_max_egg_level(make_callback("pets/max_level/confirm/4"), bot)
+
     assert database.user.max_egg_level.value == 4
     assert database.user.hatch_batches_ultimate.value == 0
     assert database.user.hatch_batches_mythic.value == 0
     assert "Legendary / Легендарное" in bot.edited[-1][0]
+
+
+def test_lowering_max_level_without_batch_data_saves_immediately(monkeypatch):
+    database = configure(
+        monkeypatch,
+        UserData(
+            user_id=42,
+            username="tester",
+            hatch_batches_ultimate=0,
+            hatch_batches_mythic=0,
+        ),
+    )
+    bot = FakeBot()
+
+    save_max_egg_level(make_callback("pets/max_level/4"), bot)
+
+    assert database.user.max_egg_level.value == 4
+    assert "Legendary / Легендарное" in bot.edited[-1][0]
+    assert "Будут обнулены" not in bot.edited[-1][0]
 
 
 def test_daily_batch_editor_changes_each_level_independently(monkeypatch):

@@ -4,7 +4,7 @@ from telebot import TeleBot, formatting
 from telebot.types import CallbackQuery, InlineKeyboardMarkup, Message
 
 from logger.app_logger import logger
-from resources.egg_levels import EGG_LEVELS, EggLevel
+from resources.egg_levels import EGG_LEVELS, EggLevel, format_hatch_batch_count
 from resources.user_data import PET_SETTINGS_FIELDS
 import tg.user_data as user_data
 from tg.user_data.common import get_active_user_or_prompt
@@ -88,19 +88,33 @@ def max_egg_level_menu(callback_query: CallbackQuery, bot: TeleBot) -> None:
     )
 
 
-def save_max_egg_level(callback_query: CallbackQuery, bot: TeleBot) -> None:
-    user_id, _, _ = get_ids(callback_query)
+def _selected_egg_level(callback_query: CallbackQuery, bot: TeleBot):
     try:
-        level = EggLevel(int(callback_query.data.rsplit("/", maxsplit=1)[-1]))
+        return EggLevel(int(callback_query.data.rsplit("/", maxsplit=1)[-1]))
     except ValueError:
         bot.answer_callback_query(
             callback_query.id, "Уровень яйца не найден", show_alert=True
         )
-        return
+        return None
 
+
+def _cleared_batch_counts(user, level: EggLevel):
+    return [
+        (candidate, getattr(user, candidate.batch_field_name).value)
+        for candidate in EGG_LEVELS
+        if candidate > level
+        and getattr(user, candidate.batch_field_name).value > 0
+    ]
+
+
+def _apply_max_egg_level(
+    callback_query: CallbackQuery, bot: TeleBot, level: EggLevel
+) -> None:
+    user_id, _, _ = get_ids(callback_query)
     user = get_active_user_or_prompt(callback_query, bot, "pets")
     if user is None:
         return
+
     values = {"max_egg_level": level.value}
     values.update(
         {
@@ -120,6 +134,51 @@ def save_max_egg_level(callback_query: CallbackQuery, bot: TeleBot) -> None:
         bot,
         f"✅ Максимальный уровень: <b>{level.label}</b> — сохранён.",
     )
+
+
+def save_max_egg_level(callback_query: CallbackQuery, bot: TeleBot) -> None:
+    level = _selected_egg_level(callback_query, bot)
+    if level is None:
+        return
+
+    user = get_active_user_or_prompt(callback_query, bot, "pets")
+    if user is None:
+        return
+    cleared_batches = _cleared_batch_counts(user, level)
+    if level < EggLevel(user.max_egg_level.value) and cleared_batches:
+        _, chat_id, message_id = get_ids(callback_query)
+        cleared_lines = "\n".join(
+            f"• {candidate.label}: <b>{format_hatch_batch_count(count)}</b>"
+            for candidate, count in reversed(cleared_batches)
+        )
+        keyboard = InlineKeyboardMarkup(row_width=1)
+        keyboard.add(
+            Button(
+                "Понизить и обнулить",
+                f"pets/max_level/confirm/{level.value}",
+            ).inline()
+        )
+        keyboard.add(Button("Отмена", "pets/max_level").inline())
+        bot.edit_message_text(
+            "⚠️ <b>Понизить максимальный уровень яйца?</b>\n\n"
+            f"Новый уровень: <b>{level.label}</b>\n\n"
+            "Будут обнулены настройки пакетов более высоких уровней:\n"
+            f"{cleared_lines}\n\n"
+            "Это действие нельзя отменить.",
+            chat_id,
+            message_id,
+            reply_markup=keyboard,
+        )
+        return
+
+    _apply_max_egg_level(callback_query, bot, level)
+
+
+def confirm_max_egg_level(callback_query: CallbackQuery, bot: TeleBot) -> None:
+    level = _selected_egg_level(callback_query, bot)
+    if level is None:
+        return
+    _apply_max_egg_level(callback_query, bot, level)
 
 
 def hatch_batches_menu(callback_query: CallbackQuery, bot: TeleBot) -> None:
@@ -210,6 +269,13 @@ def register_handlers(bot: TeleBot) -> None:
         save_max_egg_level,
         func=empty_filter,
         button=r"pets/max_level/[1-6]",
+        is_private=True,
+        pass_bot=True,
+    )
+    bot.register_callback_query_handler(
+        confirm_max_egg_level,
+        func=empty_filter,
+        button=r"pets/max_level/confirm/[1-6]",
         is_private=True,
         pass_bot=True,
     )
