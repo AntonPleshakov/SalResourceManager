@@ -64,28 +64,34 @@ THOUSAND_INPUT_FIELDS = frozenset(
 
 def validate_editable_field_value(field_name: str, value: int) -> int:
     if field_name not in EDITABLE_FIELDS:
-        raise ValueError(f"Unknown user data field: {field_name}")
+        raise ValueError(f"Показатель не найден: {field_name}")
     if not isinstance(value, int) or value < 0:
-        raise ValueError("Resource value must be a non-negative integer")
+        raise ValueError("Нужно ввести целое неотрицательное число")
     if field_name == "forge_level" and not 1 <= value <= 35:
-        raise ValueError("Forge level must be between 1 and 35")
+        raise ValueError("Уровень кузницы должен быть от 1 до 35")
     if field_name == "skill_summon_cost" and not 0 <= value <= 25:
-        raise ValueError("Skill summon cost reduction must be between 0 and 25")
+        raise ValueError(
+            "Снижение стоимости призыва навыков должно быть от 0 до 25%"
+        )
     if field_name == "mount_summon_cost" and not 0 <= value <= 25:
-        raise ValueError("Mount summon cost reduction must be between 0 and 25")
+        raise ValueError(
+            "Снижение стоимости призыва маунта должно быть от 0 до 25%"
+        )
     if field_name == "extra_mount_chance" and not 0 <= value <= 50:
-        raise ValueError("Extra mount chance must be between 0 and 50")
+        raise ValueError(
+            "Шанс на дополнительного маунта должен быть от 0 до 50%"
+        )
     if field_name == "eggs_per_hatch_batch" and not 2 <= value <= 4:
         raise ValueError("Количество яиц в одном пакете должно быть от 2 до 4")
     if field_name == "max_egg_level" and not 1 <= value <= 6:
-        raise ValueError("Maximum egg level must be between 1 and 6")
+        raise ValueError("Уровень яйца должен быть от 1 до 6")
     return value
 
 
 def parse_non_negative_int(value: str) -> int:
     normalized = value.strip().replace(" ", "").replace("_", "")
     if not normalized.isdigit():
-        raise ValueError("Value must be a non-negative integer")
+        raise ValueError("Нужно ввести целое неотрицательное число")
     return int(normalized)
 
 
@@ -95,10 +101,13 @@ def parse_editable_field_value(field_name: str, value: str) -> int:
         return validate_editable_field_value(field_name, parsed)
 
     normalized = value.strip().replace(",", ".")
-    if not re.fullmatch(r"\d+(?:\.\d)?", normalized):
-        raise ValueError("Value must be a non-negative number with one decimal place")
+    if not re.fullmatch(r"\d+(?:\.\d{1,3})?", normalized):
+        raise ValueError(
+            "Нужно ввести неотрицательное число не более чем с тремя "
+            "знаками после запятой или точки"
+        )
     whole, _, fraction = normalized.partition(".")
-    parsed = int(whole) * 1_000 + int(fraction or "0") * 100
+    parsed = int(whole) * 1_000 + int((fraction or "0").ljust(3, "0"))
     return validate_editable_field_value(field_name, parsed)
 
 
@@ -228,7 +237,7 @@ class UserData(Parameters):
     def get_updated_on(self, field_name: str) -> Optional[date]:
         parameter_name = UPDATED_AT_FIELDS.get(field_name)
         if parameter_name is None:
-            raise ValueError(f"Unknown user data field: {field_name}")
+            raise ValueError(f"Показатель не найден: {field_name}")
         value = getattr(self, parameter_name).value
         if not value:
             return None
@@ -240,5 +249,5 @@ class UserData(Parameters):
     def mark_updated(self, field_name: str, updated_on: date) -> None:
         parameter_name = UPDATED_AT_FIELDS.get(field_name)
         if parameter_name is None:
-            raise ValueError(f"Unknown user data field: {field_name}")
+            raise ValueError(f"Показатель не найден: {field_name}")
         getattr(self, parameter_name).value = updated_on.isoformat()

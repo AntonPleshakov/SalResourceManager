@@ -132,6 +132,16 @@ def section_menu(
 def value_input_hint(field: ResourceField) -> str:
     if field.name == "eggs_per_hatch_batch":
         return "Введите целое число от 2 до 4."
+    if field.name == "forge_level":
+        return "Введите целое число от 1 до 35."
+    if field.name in {"skill_summon_cost", "mount_summon_cost"}:
+        return "Введите целое число от 0 до 25 (%)."
+    if field.name == "extra_mount_chance":
+        return "Введите целое число от 0 до 50 (%)."
     if field.name in THOUSAND_INPUT_FIELDS:
-        return "Введите число в тысячах с одним знаком после запятой, например: 1.5."
-    return "Допустимо целое неотрицательное число."
+        return (
+            "Введите количество в тысячах. Можно использовать запятую или "
+            "точку и до трёх знаков после неё. Например: 0.12 и 0,12 "
+            "будут восприняты как 120."
+        )
+    return "Введите целое неотрицательное число."

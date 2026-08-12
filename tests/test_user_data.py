@@ -30,7 +30,12 @@ from resources.war_rules.mounts import calculate_mount_points
 from resources.war_rules.pets import calculate_pet_points, explain_pet_points
 from resources.war_rules.technologies import calculate_technology_points
 from tg.utils import format_points
-from tg.user_data import _get_group_tag, fill_tracked_fields, save_all_values
+from tg.user_data import (
+    _get_group_tag,
+    _value_input_hint,
+    fill_tracked_fields,
+    save_all_values,
+)
 
 
 def make_callback(data: str) -> CallbackQuery:
@@ -202,7 +207,7 @@ def test_database_rejects_unknown_forge_level(tmp_path):
     try:
         database.set_value(42, "tester", "forge_level", 36)
     except ValueError as error:
-        assert str(error) == "Forge level must be between 1 and 35"
+        assert str(error) == "Уровень кузницы должен быть от 1 до 35"
     else:
         raise AssertionError("Forge level above 35 must be rejected")
     connection.close()
@@ -215,7 +220,9 @@ def test_database_rejects_excessive_skill_summon_cost_reduction(tmp_path):
     try:
         database.set_value(42, "tester", "skill_summon_cost", 26)
     except ValueError as error:
-        assert str(error) == "Skill summon cost reduction must be between 0 and 25"
+        assert str(error) == (
+            "Снижение стоимости призыва навыков должно быть от 0 до 25%"
+        )
     else:
         raise AssertionError("Skill summon cost reduction above 25 must be rejected")
     connection.close()
@@ -228,7 +235,9 @@ def test_database_rejects_excessive_mount_summon_cost_reduction(tmp_path):
     try:
         database.set_value(42, "tester", "mount_summon_cost", 26)
     except ValueError as error:
-        assert str(error) == "Mount summon cost reduction must be between 0 and 25"
+        assert str(error) == (
+            "Снижение стоимости призыва маунта должно быть от 0 до 25%"
+        )
     else:
         raise AssertionError("Mount summon cost reduction above 25 must be rejected")
     connection.close()
@@ -241,7 +250,9 @@ def test_database_rejects_excessive_extra_mount_chance(tmp_path):
     try:
         database.set_value(42, "tester", "extra_mount_chance", 51)
     except ValueError as error:
-        assert str(error) == "Extra mount chance must be between 0 and 50"
+        assert str(error) == (
+            "Шанс на дополнительного маунта должен быть от 0 до 50%"
+        )
     else:
         raise AssertionError("Extra mount chance above 50 must be rejected")
     connection.close()
@@ -608,17 +619,52 @@ def test_parse_non_negative_int_rejects_invalid_values():
 def test_parse_thousand_based_resource_value():
     assert parse_editable_field_value("hammers", "1.5") == 1_500
     assert parse_editable_field_value("shells", "1,5") == 1_500
+    assert parse_editable_field_value("hammers", "0.5") == 500
+    assert parse_editable_field_value("shells", "0,125") == 125
+    assert parse_editable_field_value("skills", "1.55") == 1_550
+    assert parse_editable_field_value("mount_keys", "0.001") == 1
     assert parse_editable_field_value("mount_keys", "1") == 1_000
     assert parse_editable_field_value("pets", "1 500") == 1_500
 
 
 def test_parse_thousand_based_resource_value_rejects_extra_precision():
-    for value in ("", "-1", "1.55", "1 500"):
+    for value in ("", "-1", "1.5555", "1 500"):
         try:
             parse_editable_field_value("skills", value)
         except ValueError:
             continue
         raise AssertionError(f"{value!r} must be rejected")
+
+
+def test_value_input_hints_show_actual_limits():
+    assert _value_input_hint(EDITABLE_FIELDS["forge_level"]) == (
+        "Введите целое число от 1 до 35."
+    )
+    assert _value_input_hint(EDITABLE_FIELDS["skill_summon_cost"]) == (
+        "Введите целое число от 0 до 25 (%)."
+    )
+    assert _value_input_hint(EDITABLE_FIELDS["extra_mount_chance"]) == (
+        "Введите целое число от 0 до 50 (%)."
+    )
+    hint = _value_input_hint(EDITABLE_FIELDS["hammers"])
+    assert "запятую или точку" in hint
+    assert "Например: 0.12 и 0,12 будут восприняты как 120" in hint
+
+
+def test_input_parser_errors_are_in_russian():
+    try:
+        parse_non_negative_int("не число")
+    except ValueError as error:
+        assert str(error) == "Нужно ввести целое неотрицательное число"
+    else:
+        raise AssertionError("Invalid input must be rejected")
+
+    try:
+        parse_editable_field_value("hammers", "1.5555")
+    except ValueError as error:
+        assert "не более чем с тремя знаками" in str(error)
+    else:
+        raise AssertionError("Extra precision must be rejected")
 
 
 def test_fill_all_rejects_invalid_value_before_advancing_to_next_field():
@@ -650,7 +696,7 @@ def test_fill_all_rejects_invalid_value_before_advancing_to_next_field():
     assert bot.data["fill_index"] == 0
     assert bot.data["fill_values"] == {}
     assert "Уровень кузницы" in bot.replies[0]
-    assert "between 1 and 35" in bot.replies[0]
+    assert "от 1 до 35" in bot.replies[0]
 
 
 def test_reminder_fill_starts_with_only_requested_fields():
