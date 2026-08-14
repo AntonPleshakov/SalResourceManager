@@ -1,20 +1,45 @@
+from datetime import date, timedelta
+
 from telebot import TeleBot
 from telebot.types import CallbackQuery, InlineKeyboardMarkup
 
+from common.datetime_utils import now
 from logger.app_logger import logger
+from resources.user_data import TRACKED_FIELDS, UserData
 from resources.war import WarPointsCalculator
 import tg.war as war
 from tg.utils import Button, empty_filter, format_points, get_ids, get_username
 
 
+WAR_ACCOUNT_STALE_AFTER_DAYS = 3
+
+
+def _resources_updated_after(user: UserData, cutoff: date) -> bool:
+    updated_dates = (
+        user.get_updated_on(field.name) for field in TRACKED_FIELDS
+    )
+    return any(
+        updated_on is not None and updated_on >= cutoff
+        for updated_on in updated_dates
+    )
+
+
 def _war_points_text() -> str:
     users = war.get_user_data_db().get_users()
+    cutoff = now().date() - timedelta(days=WAR_ACCOUNT_STALE_AFTER_DAYS)
+    accounted_users = [
+        user for user in users if _resources_updated_after(user, cutoff)
+    ]
+    stale_users_count = len(users) - len(accounted_users)
     logger.info(
-        "Calculating war points users=%d days=%d",
+        "Calculating war points users=%d accounted_users=%d "
+        "stale_users=%d days=%d",
         len(users),
+        len(accounted_users),
+        stale_users_count,
         len(war.WAR_STAGES),
     )
-    report = WarPointsCalculator().calculate(users, war.WAR_STAGES)
+    report = WarPointsCalculator().calculate(accounted_users, war.WAR_STAGES)
     logger.info("War points calculated")
     lines = [
         "<b>Максимальные очки войны</b>",
@@ -36,6 +61,11 @@ def _war_points_text() -> str:
             ),
             "",
             f"Всего: <b>{format_points(report.total)}</b>",
+            "",
+            f"Учтено аккаунтов: <b>{len(accounted_users)}</b>",
+            "Не учтено (ресурсы не обновлялись более "
+            f"{WAR_ACCOUNT_STALE_AFTER_DAYS} дней): "
+            f"<b>{stale_users_count}</b>",
             "",
             "Максимум каждого дня считается отдельно. В итогах расходуемые "
             "ресурсы учитываются один раз.",

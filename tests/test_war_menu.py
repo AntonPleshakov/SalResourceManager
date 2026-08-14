@@ -1,3 +1,4 @@
+from datetime import date, datetime
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -216,6 +217,41 @@ def test_maximum_war_points_returns_to_war_menu(monkeypatch):
     assert "<b>Итого по активностям</b>" in text
     assert "Всего:" in text
     assert callback_data(bot.edited[0][3]) == ["war_menu"]
+
+
+def test_maximum_war_points_excludes_accounts_stale_for_more_than_three_days(
+    monkeypatch,
+):
+    current = UserData(user_id=42, username="current", hammers=300)
+    boundary = UserData(user_id=43, username="boundary", hammers=200)
+    stale = UserData(user_id=44, username="stale", hammers=500)
+    current.mark_updated("hammers", date(2026, 8, 14))
+    boundary.mark_updated("hammers", date(2026, 8, 11))
+    stale.mark_updated("hammers", date(2026, 8, 10))
+    users = [current, boundary, stale]
+    monkeypatch.setattr(
+        "tg.war.get_user_data_db",
+        lambda: SimpleNamespace(get_users=lambda: users),
+    )
+    monkeypatch.setattr(
+        "tg.war.public.now",
+        lambda: datetime(2026, 8, 14),
+    )
+    bot = FakeBot()
+
+    public_war_points(make_callback(data="war"), bot)
+
+    expected = WarPointsCalculator().calculate(
+        [current, boundary],
+        WAR_STAGES,
+    )
+    text = bot.edited[0][0]
+    assert f"Всего: <b>{format_points(expected.total)}</b>" in text
+    assert "Учтено аккаунтов: <b>2</b>" in text
+    assert (
+        "Не учтено (ресурсы не обновлялись более 3 дней): <b>1</b>"
+        in text
+    )
 
 
 def test_personal_war_calculator_prompts_when_data_is_missing(monkeypatch):
