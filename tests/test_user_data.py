@@ -10,6 +10,7 @@ from config.config import reset_config
 
 reset_config(str(Path(__file__).parents[1] / "config" / "config_template.ini"))
 
+import resources.user_data as user_data_resources
 from db.database import Database
 from db.user_data import UserDataDB
 from resources.egg_levels import EGG_LEVELS, EggLevel
@@ -34,9 +35,12 @@ from tg.user_data import (
     _get_group_tag,
     _value_input_hint,
     fill_tracked_fields,
-    save_all_values,
+    request_value,
+    save_fill_value,
+    save_value,
 )
 from tg.user_data.common import ensure_active_user
+from tg.user_data.fill import skip_fill_value
 
 
 def make_callback(data: str) -> CallbackQuery:
@@ -734,21 +738,129 @@ def test_input_parser_errors_are_in_russian():
         raise AssertionError("Extra precision must be rejected")
 
 
-def test_fill_all_rejects_invalid_value_before_advancing_to_next_field():
+def test_single_value_edit_stores_compact_state_and_shows_current_value(
+    monkeypatch,
+):
+    class FakeBot:
+        def __init__(self):
+            self.data = {}
+            self.edited = []
+
+        def set_state(self, _user_id, _state):
+            pass
+
+        def add_data(self, _user_id, **data):
+            self.data.update(data)
+
+        def edit_message_text(
+            self, text, chat_id, message_id, reply_markup=None
+        ):
+            self.edited.append((text, chat_id, message_id, reply_markup))
+
+    monkeypatch.setattr(
+        "tg.user_data.edit_value.get_active_user_or_prompt",
+        lambda *_: UserData(
+            account_id=7,
+            user_id=42,
+            username="tester",
+            tag="Лидер",
+            hammers=2_500,
+        ),
+    )
+    bot = FakeBot()
+
+    request_value(make_callback("user_data/edit/hammers"), bot)
+
+    assert bot.data == {
+        "value_edit_state": {"field_name": "hammers", "account_id": 7}
+    }
+    assert "Текущее значение: <b>2.50к</b>" in bot.edited[0][0]
+    assert bot.edited[0][3].keyboard[0][0].callback_data == "resources"
+
+
+def test_single_value_edit_saves_to_selected_account(monkeypatch):
+    class FakeUserDataDB:
+        def __init__(self):
+            self.saved = []
+
+        def set_value(
+            self, user_id, username, field_name, value, *, account_id
+        ):
+            self.saved.append(
+                (user_id, username, field_name, value, account_id)
+            )
+
     class FakeBot:
         def __init__(self):
             self.data = {
-                "fill_section": "technologies",
-                "fill_index": 0,
-                "fill_values": {},
+                "value_edit_state": {
+                    "field_name": "hammers",
+                    "account_id": 7,
+                }
             }
-            self.replies = []
 
         def retrieve_data(self, _user_id):
             return nullcontext(self.data)
 
-        def reply_to(self, _message, text):
-            self.replies.append(text)
+    message = SimpleNamespace(
+        from_user=SimpleNamespace(id=42, username="tester", first_name="Tester"),
+        chat=SimpleNamespace(id=42),
+        id=1,
+        text="1.5",
+    )
+    database = FakeUserDataDB()
+    opened = []
+    monkeypatch.setattr("tg.user_data.get_user_data_db", lambda: database)
+    monkeypatch.setattr(
+        "tg.user_data.resources_menu",
+        lambda message, bot, notice: opened.append(notice),
+    )
+
+    save_value(message, FakeBot())
+
+    assert database.saved == [(42, "tester", "hammers", 1_500, 7)]
+    assert opened == ["✅ Молотки: <b>1.50к</b> — сохранено."]
+
+
+def test_fill_all_rejects_invalid_value_before_advancing_to_next_field(
+    monkeypatch,
+):
+    current_user = UserData(
+        account_id=7,
+        user_id=42,
+        username="tester",
+        tag="Лидер",
+        forge_level=10,
+    )
+
+    class FakeUserDataDB:
+        def get_user(self, _user_id, _account_id):
+            return current_user
+
+    class FakeBot:
+        def __init__(self):
+            self.data = {
+                "fill_state": {
+                    "section": "technologies",
+                    "field_names": [
+                        field.name
+                        for field in user_data_resources.TECHNOLOGY_FIELDS
+                    ],
+                    "index": 0,
+                    "account_id": 7,
+                    "account_tag": "Лидер",
+                    "prompt_message_id": 1,
+                },
+            }
+            self.edited = []
+
+        def retrieve_data(self, _user_id):
+            return nullcontext(self.data)
+
+        def edit_message_text(
+            self, text, chat_id, message_id, reply_markup=None
+        ):
+            self.edited.append((text, chat_id, message_id, reply_markup))
 
     message = SimpleNamespace(
         from_user=SimpleNamespace(id=42, username="tester", first_name="Tester"),
@@ -756,17 +868,20 @@ def test_fill_all_rejects_invalid_value_before_advancing_to_next_field():
         id=1,
         text="36",
     )
+    monkeypatch.setattr(
+        "tg.user_data.get_user_data_db", lambda: FakeUserDataDB()
+    )
     bot = FakeBot()
 
-    save_all_values(message, bot)
+    save_fill_value(message, bot)
 
-    assert bot.data["fill_index"] == 0
-    assert bot.data["fill_values"] == {}
-    assert "Уровень кузницы" in bot.replies[0]
-    assert "от 1 до 35" in bot.replies[0]
+    assert bot.data["fill_state"]["index"] == 0
+    assert "Значение не подходит" in bot.edited[0][0]
+    assert "Текущее значение: <b>10</b>" in bot.edited[0][0]
+    assert "от 1 до 35" in bot.edited[0][0]
 
 
-def test_reminder_fill_starts_with_only_requested_fields():
+def test_reminder_fill_starts_with_only_requested_fields(monkeypatch):
     class FakeBot:
         def __init__(self):
             self.data = {}
@@ -784,35 +899,74 @@ def test_reminder_fill_starts_with_only_requested_fields():
             self.edited.append((text, chat_id, message_id, reply_markup))
 
     bot = FakeBot()
+    monkeypatch.setattr(
+        "tg.user_data.fill.get_active_user_or_prompt",
+        lambda *_: UserData(
+            account_id=7,
+            user_id=42,
+            username="tester",
+            tag="Лидер",
+            hammers=2_500,
+            extra_mount_chance=10,
+        ),
+    )
 
     fill_tracked_fields(
         make_callback("user_data/fill/tracked/3,10"),
         bot,
     )
 
-    assert bot.data["fill_section"] == "reminder"
-    assert bot.data["fill_field_names"] == ["hammers", "extra_mount_chance"]
+    assert bot.data["fill_state"]["section"] == "reminder"
+    assert bot.data["fill_state"]["field_names"] == (
+        "hammers",
+        "extra_mount_chance",
+    )
     assert "Молотки" in bot.edited[0][0]
-    assert bot.edited[0][3].keyboard[0][0].callback_data == "home"
+    assert "Текущее значение: <b>2.50к</b>" in bot.edited[0][0]
+    assert [row[0].callback_data for row in bot.edited[0][3].keyboard] == [
+        "user_data/fill/skip",
+        "home",
+    ]
 
 
 def test_reminder_fill_saves_only_requested_fields(monkeypatch):
     class FakeUserDataDB:
         def __init__(self):
             self.saved = []
+            self.user = UserData(
+                account_id=7,
+                user_id=42,
+                username="tester",
+                tag="Лидер",
+                hammers=2_500,
+                extra_mount_chance=5,
+            )
 
-        def set_values(self, user_id, username, values):
-            self.saved.append((user_id, username, dict(values)))
+        def get_user(self, _user_id, _account_id):
+            return self.user
+
+        def set_value(
+            self, user_id, username, field_name, value, *, account_id
+        ):
+            self.user.set_value(field_name, value)
+            self.saved.append(
+                (user_id, username, field_name, value, account_id)
+            )
+            return self.user
 
     class FakeBot:
         def __init__(self):
             self.data = {
-                "fill_section": "reminder",
-                "fill_field_names": ["hammers", "extra_mount_chance"],
-                "fill_index": 0,
-                "fill_values": {},
+                "fill_state": {
+                    "section": "reminder",
+                    "field_names": ["hammers", "extra_mount_chance"],
+                    "index": 0,
+                    "account_id": 7,
+                    "account_tag": "Лидер",
+                    "prompt_message_id": 1,
+                },
             }
-            self.sent = []
+            self.edited = []
 
         def retrieve_data(self, _user_id):
             return nullcontext(self.data)
@@ -820,8 +974,10 @@ def test_reminder_fill_saves_only_requested_fields(monkeypatch):
         def add_data(self, _user_id, **data):
             self.data.update(data)
 
-        def send_message(self, chat_id, text, reply_markup=None):
-            self.sent.append((chat_id, text, reply_markup))
+        def edit_message_text(
+            self, text, chat_id, message_id, reply_markup=None
+        ):
+            self.edited.append((text, chat_id, message_id, reply_markup))
 
         def delete_state(self, _user_id):
             pass
@@ -842,13 +998,75 @@ def test_reminder_fill_saves_only_requested_fields(monkeypatch):
     monkeypatch.setattr("tg.user_data.get_user_data_db", lambda: database)
     bot = FakeBot()
 
-    save_all_values(message("1.5"), bot)
-    save_all_values(message("10"), bot)
+    save_fill_value(message("1.5"), bot)
+    save_fill_value(message("10"), bot)
 
     assert database.saved == [
-        (42, "tester", {"hammers": 1500, "extra_mount_chance": 10})
+        (42, "tester", "hammers", 1500, 7),
+        (42, "tester", "extra_mount_chance", 10, 7),
     ]
-    assert bot.sent[-1][2].keyboard[0][0].callback_data == "home"
+    assert "Текущее значение: <b>5</b>" in bot.edited[0][0]
+    assert "Заполнение завершено" in bot.edited[-1][0]
+    assert bot.edited[-1][3].keyboard[0][0].callback_data == "home"
+
+
+def test_fill_all_can_skip_values_without_changing_them(monkeypatch):
+    current_user = UserData(
+        account_id=7,
+        user_id=42,
+        username="tester",
+        tag="Лидер",
+        hammers=2_500,
+        extra_mount_chance=5,
+    )
+
+    class FakeUserDataDB:
+        def get_user(self, _user_id, _account_id):
+            return current_user
+
+    class FakeBot:
+        def __init__(self):
+            self.data = {
+                "fill_state": {
+                    "section": "reminder",
+                    "field_names": ["hammers", "extra_mount_chance"],
+                    "index": 0,
+                    "account_id": 7,
+                    "account_tag": "Лидер",
+                    "prompt_message_id": 1,
+                },
+            }
+            self.edited = []
+            self.deleted_states = []
+
+        def retrieve_data(self, _user_id):
+            return nullcontext(self.data)
+
+        def add_data(self, _user_id, **data):
+            self.data.update(data)
+
+        def edit_message_text(
+            self, text, chat_id, message_id, reply_markup=None
+        ):
+            self.edited.append((text, chat_id, message_id, reply_markup))
+
+        def delete_state(self, user_id):
+            self.deleted_states.append(user_id)
+
+    monkeypatch.setattr(
+        "tg.user_data.get_user_data_db", lambda: FakeUserDataDB()
+    )
+    bot = FakeBot()
+    callback = make_callback("user_data/fill/skip")
+
+    skip_fill_value(callback, bot)
+    skip_fill_value(callback, bot)
+
+    assert current_user.hammers.value == 2_500
+    assert current_user.extra_mount_chance.value == 5
+    assert "Текущее значение: <b>5</b>" in bot.edited[0][0]
+    assert "Заполнение завершено" in bot.edited[-1][0]
+    assert bot.deleted_states == [42]
 
 
 def test_format_points_rounds_and_adds_suffixes():
