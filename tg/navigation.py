@@ -1,9 +1,9 @@
 from typing import Union
 
-from telebot import TeleBot
+from telebot import TeleBot, formatting
 from telebot.types import CallbackQuery, InlineKeyboardMarkup, Message
 
-from db.initializer import get_admins_db
+from db.initializer import get_admins_db, get_user_data_db
 from logger.app_logger import logger
 from tg.onboarding import show_new_user_welcome
 from tg.releases import mark_current_release_seen, show_unseen_releases
@@ -23,6 +23,11 @@ def show_home_menu(
     message: Union[Message, CallbackQuery], bot: TeleBot
 ) -> None:
     user_id, chat_id, message_id = get_ids(message)
+    accounts = get_user_data_db().get_accounts(user_id)
+    active_account = next(
+        (account for account in accounts if account.is_active),
+        None,
+    )
     keyboard = InlineKeyboardMarkup(row_width=1)
     keyboard.add(Button("Игровые аккаунты", "accounts").inline())
     keyboard.add(Button("Ресурсы", "resources").inline())
@@ -37,7 +42,17 @@ def show_home_menu(
     )
     if get_admins_db().is_admin(user_id):
         keyboard.add(Button("Админ-панель", "admins").inline())
-    text = "Выберите раздел"
+    text_lines = []
+    if active_account is not None:
+        text_lines.append(
+            "Игровой аккаунт: "
+            f"<b>{formatting.escape_html(active_account.tag)}</b>"
+        )
+        if len(accounts) > 1:
+            text_lines.append(f"Всего аккаунтов: {len(accounts)}")
+        text_lines.append("")
+    text_lines.append("Выберите раздел.")
+    text = "\n".join(text_lines)
     if isinstance(message, CallbackQuery):
         bot.edit_message_text(text, chat_id, message_id, reply_markup=keyboard)
     else:

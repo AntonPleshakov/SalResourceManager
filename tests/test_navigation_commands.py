@@ -1,4 +1,5 @@
 from pathlib import Path
+from types import SimpleNamespace
 
 from telebot.types import (
     BotCommandScopeAllPrivateChats,
@@ -77,6 +78,14 @@ def prepare_home(monkeypatch):
             {"is_admin": lambda self, user_id: False},
         )(),
     )
+    monkeypatch.setattr(
+        "tg.navigation.get_user_data_db",
+        lambda: SimpleNamespace(
+            get_accounts=lambda _user_id: [
+                SimpleNamespace(tag="Лидер", is_active=True)
+            ]
+        ),
+    )
 
 
 def test_menu_command_cancels_active_state_and_opens_home(monkeypatch):
@@ -88,7 +97,9 @@ def test_menu_command_cancels_active_state_and_opens_home(monkeypatch):
     assert bot.deleted_states == [42]
     assert bot.sent[0][1] == "Текущее действие отменено."
     assert isinstance(bot.sent[0][2], ReplyKeyboardRemove)
-    assert bot.sent[1][1] == "Выберите раздел"
+    assert bot.sent[1][1] == (
+        "Игровой аккаунт: <b>Лидер</b>\n\nВыберите раздел."
+    )
 
 
 def test_start_command_checks_unseen_releases(monkeypatch):
@@ -126,7 +137,31 @@ def test_cancel_with_active_state_cancels_and_opens_home(monkeypatch):
 
     assert bot.deleted_states == [42]
     assert isinstance(bot.sent[0][2], ReplyKeyboardRemove)
-    assert bot.sent[1][1] == "Выберите раздел"
+    assert bot.sent[1][1] == (
+        "Игровой аккаунт: <b>Лидер</b>\n\nВыберите раздел."
+    )
+
+
+def test_home_shows_account_count_only_for_multiple_accounts(monkeypatch):
+    prepare_home(monkeypatch)
+    monkeypatch.setattr(
+        "tg.navigation.get_user_data_db",
+        lambda: SimpleNamespace(
+            get_accounts=lambda _user_id: [
+                SimpleNamespace(tag="Main & Hero", is_active=True),
+                SimpleNamespace(tag="Alt", is_active=False),
+            ]
+        ),
+    )
+    bot = FakeBot()
+
+    navigation.home(make_message("/menu"), bot)
+
+    assert bot.sent[0][1] == (
+        "Игровой аккаунт: <b>Main &amp; Hero</b>\n"
+        "Всего аккаунтов: 2\n\n"
+        "Выберите раздел."
+    )
 
 
 def test_only_start_and_menu_are_published():

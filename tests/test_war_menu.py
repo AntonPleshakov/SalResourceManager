@@ -1,4 +1,5 @@
 from pathlib import Path
+from types import SimpleNamespace
 
 from telebot.types import CallbackQuery, Chat, Message, User
 
@@ -65,6 +66,14 @@ def test_home_contains_single_war_points_menu(monkeypatch):
     monkeypatch.setattr(
         "tg.navigation.get_admins_db",
         lambda: type("Admins", (), {"is_admin": lambda self, user_id: False})(),
+    )
+    monkeypatch.setattr(
+        "tg.navigation.get_user_data_db",
+        lambda: SimpleNamespace(
+            get_accounts=lambda _user_id: [
+                SimpleNamespace(tag="Лидер", is_active=True)
+            ]
+        ),
     )
     bot = FakeBot()
 
