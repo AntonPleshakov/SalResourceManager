@@ -59,10 +59,15 @@ def build_last_updates_report(
     users: Iterable[UserData],
     reference_date: date,
 ) -> str:
+    sorted_users = sorted(
+        users,
+        key=lambda user: user.get_last_updated_on() or date.min,
+        reverse=True,
+    )
     user_blocks = [
         f"• {_user_link(user)} — "
         f"{_format_last_update(user.get_last_updated_on(), reference_date)}"
-        for user in users
+        for user in sorted_users
     ]
     header = "<b>Последнее обновление аккаунтов</b>"
     if not user_blocks:

@@ -28,3 +28,5 @@ def test_last_updates_report_uses_latest_field_and_readable_age():
     assert "second</a> — вчера (13.08.2026)" in report
     assert "new</a> — никогда" in report
     assert "tg://user?id=42" in report
+    assert report.index("second</a>") < report.index("tester (")
+    assert report.index("tester (") < report.index("new</a>")
