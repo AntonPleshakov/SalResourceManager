@@ -69,7 +69,10 @@ def build_last_updates_report(
         f"{_format_last_update(user.get_last_updated_on(), reference_date)}"
         for user in sorted_users
     ]
-    header = "<b>Последнее обновление аккаунтов</b>"
+    header = (
+        f"<b>Последнее обновление аккаунтов "
+        f"(всего: {len(sorted_users)})</b>"
+    )
     if not user_blocks:
         return f"{header}\n\nАккаунтов пока нет."
     return f"{header}\n\n" + "\n\n".join(user_blocks)

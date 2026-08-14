@@ -23,7 +23,7 @@ def test_last_updates_report_uses_latest_field_and_readable_age():
         reference_date=date(2026, 8, 14),
     )
 
-    assert "Последнее обновление аккаунтов" in report
+    assert "<b>Последнее обновление аккаунтов (всего: 3)</b>" in report
     assert "tester (Лидер)</a> — 2 дня назад (12.08.2026)" in report
     assert "second</a> — вчера (13.08.2026)" in report
     assert "new</a> — никогда" in report

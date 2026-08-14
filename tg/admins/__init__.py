@@ -16,7 +16,7 @@ def admins_main_menu(callback_query: CallbackQuery, bot: TeleBot):
     )
     bot.delete_state(user_id)
     keyboard = InlineKeyboardMarkup()
-    keyboard.row(Button("🕒 Обновления", "admins/last_updates").inline())
+    keyboard.row(Button("👥 Список игроков", "admins/last_updates").inline())
     keyboard.row(Button("📣 Уведомления", "admins/notifications").inline())
     keyboard.row(Button("📤 Обновить Google Таблицу", "admins/game_data").inline())
     keyboard.row(
