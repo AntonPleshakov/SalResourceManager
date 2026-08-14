@@ -246,6 +246,14 @@ class UserData(Parameters):
         except ValueError:
             return None
 
+    def get_last_updated_on(self) -> Optional[date]:
+        updated_dates = [
+            updated_on
+            for field in TRACKED_FIELDS
+            if (updated_on := self.get_updated_on(field.name)) is not None
+        ]
+        return max(updated_dates, default=None)
+
     def mark_updated(self, field_name: str, updated_on: date) -> None:
         parameter_name = UPDATED_AT_FIELDS.get(field_name)
         if parameter_name is None:

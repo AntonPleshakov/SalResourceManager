@@ -5,7 +5,7 @@ from telebot.types import CallbackQuery, InlineKeyboardMarkup
 
 from common.datetime_utils import now
 from logger.app_logger import logger
-from resources.user_data import TRACKED_FIELDS, UserData
+from resources.user_data import UserData
 from resources.war import WarPointsCalculator
 import tg.war as war
 from tg.utils import Button, empty_filter, format_points, get_ids, get_username
@@ -15,13 +15,8 @@ WAR_ACCOUNT_STALE_AFTER_DAYS = 3
 
 
 def _resources_updated_after(user: UserData, cutoff: date) -> bool:
-    updated_dates = (
-        user.get_updated_on(field.name) for field in TRACKED_FIELDS
-    )
-    return any(
-        updated_on is not None and updated_on >= cutoff
-        for updated_on in updated_dates
-    )
+    updated_on = user.get_last_updated_on()
+    return updated_on is not None and updated_on >= cutoff
 
 
 def _war_points_text() -> str:

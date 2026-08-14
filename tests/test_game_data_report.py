@@ -138,6 +138,7 @@ def test_admin_menu_contains_game_data_report(monkeypatch):
     assert bot.edits[0][0][0] == "<b>Админ-панель</b>\n\nВыберите действие."
     assert [button.text for row in markup.keyboard for button in row] == [
         "📊 Актуальность",
+        "🕒 Обновления",
         "📣 Уведомления",
         "📤 Обновить Google Таблицу",
         "👥 Список",

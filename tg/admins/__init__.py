@@ -18,8 +18,9 @@ def admins_main_menu(callback_query: CallbackQuery, bot: TeleBot):
     keyboard = InlineKeyboardMarkup()
     keyboard.row(
         Button("📊 Актуальность", "admins/stale_resources").inline(),
-        Button("📣 Уведомления", "admins/notifications").inline(),
+        Button("🕒 Обновления", "admins/last_updates").inline(),
     )
+    keyboard.row(Button("📣 Уведомления", "admins/notifications").inline())
     keyboard.row(Button("📤 Обновить Google Таблицу", "admins/game_data").inline())
     keyboard.row(
         Button("👥 Список", "admins/admins_list").inline(),
