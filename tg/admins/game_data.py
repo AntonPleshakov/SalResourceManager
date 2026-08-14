@@ -30,7 +30,7 @@ def export_game_data(callback_query: CallbackQuery, bot: TeleBot) -> None:
             error,
         )
         keyboard = InlineKeyboardMarkup(row_width=1)
-        keyboard.add(Button("Назад в админ-панель", "admins").inline())
+        keyboard.add(Button("⬅️ Назад в админ-панель", "admins").inline())
         bot.edit_message_text(
             "Не удалось сформировать игровые данные. Попробуйте ещё раз позже.",
             chat_id,
@@ -40,8 +40,8 @@ def export_game_data(callback_query: CallbackQuery, bot: TeleBot) -> None:
         return
 
     keyboard = InlineKeyboardMarkup(row_width=1)
-    keyboard.add(InlineKeyboardButton("Открыть игровые данные", url=url))
-    keyboard.add(Button("Назад в админ-панель", "admins").inline())
+    keyboard.add(InlineKeyboardButton("📊 Открыть игровые данные", url=url))
+    keyboard.add(Button("⬅️ Назад в админ-панель", "admins").inline())
     bot.edit_message_text(
         "Игровые данные обновлены.",
         chat_id,

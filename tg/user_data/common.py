@@ -24,6 +24,21 @@ class ActiveUserResult:
     group_tag_found: bool | None
 
 
+FIELD_BUTTON_TITLES = {
+    "mount_keys": "🔑 Ключи",
+    "skills": "🎟 Билеты",
+    "shells": "🥚 Скорлупа",
+    "hammers": "🔨 Молотки",
+    "pets": "🐾 Питомцы",
+    "unmerged_mounts": "🐎 Маунты",
+    "forge_level": "🔥 Кузница",
+    "skill_summon_cost": "🎟 Призыв навыков",
+    "extra_egg_chance": "🥚 Шанс яйца",
+    "mount_summon_cost": "🐎 Призыв маунта",
+    "extra_mount_chance": "✨ Доп. маунт",
+}
+
+
 def ensure_active_user(
     message: Union[Message, CallbackQuery], bot: TeleBot
 ) -> ActiveUserResult:
@@ -129,16 +144,21 @@ def section_menu(
     if notice:
         text = f"{notice}\n\n{text}"
 
-    keyboard = InlineKeyboardMarkup(row_width=1)
-    keyboard.add(
-        Button("Сменить игровой аккаунт", f"accounts/{section}").inline()
+    keyboard = InlineKeyboardMarkup(row_width=2)
+    keyboard.row(
+        Button("🔄 Аккаунт", f"accounts/{section}").inline(),
+        Button("📝 Заполнить всё", f"user_data/fill/{section}").inline(),
     )
     keyboard.add(
-        Button("Заполнить все", f"user_data/fill/{section}").inline()
+        *(
+            Button(
+                FIELD_BUTTON_TITLES.get(field.name, field.title),
+                f"user_data/edit/{field.name}",
+            ).inline()
+            for field in fields
+        )
     )
-    for field in fields:
-        keyboard.add(Button(field.title, f"user_data/edit/{field.name}").inline())
-    keyboard.add(Button("Назад в меню", "home").inline())
+    keyboard.row(Button("⬅️ Назад в меню", "home").inline())
 
     if isinstance(message, CallbackQuery):
         bot.edit_message_text(text, chat_id, message_id, reply_markup=keyboard)

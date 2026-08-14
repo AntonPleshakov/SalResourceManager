@@ -71,9 +71,11 @@ def _fill_prompt(context: FillContext, error: str = "") -> str:
 
 
 def _fill_keyboard(state: FillState) -> InlineKeyboardMarkup:
-    keyboard = InlineKeyboardMarkup(row_width=1)
-    keyboard.add(Button("Пропустить", "user_data/fill/skip").inline())
-    keyboard.add(Button("Закончить", state.config.finish_callback).inline())
+    keyboard = InlineKeyboardMarkup()
+    keyboard.row(
+        Button("⏭ Пропустить", "user_data/fill/skip").inline(),
+        Button("✅ Закончить", state.config.finish_callback).inline(),
+    )
     return keyboard
 
 
@@ -217,7 +219,10 @@ def _complete_fill(update: Update, bot: TeleBot, state: FillState) -> None:
     )
     keyboard = InlineKeyboardMarkup(row_width=1)
     keyboard.add(
-        Button(state.config.finish_button, state.config.finish_callback).inline()
+        Button(
+            f"⬅️ {state.config.finish_button}",
+            state.config.finish_callback,
+        ).inline()
     )
     bot.edit_message_text(
         "✅ Заполнение завершено. Введённые значения сохранены, "

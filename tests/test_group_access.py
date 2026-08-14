@@ -150,7 +150,7 @@ def test_access_denial_links_to_public_group():
 
     assert isinstance(result, CancelUpdate)
     button = bot.reply_markups[0].keyboard[0][0]
-    assert button.text == "Открыть группу"
+    assert button.text == "👥 Открыть группу"
     assert button.url == "https://t.me/ShadowAl"
 
 

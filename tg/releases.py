@@ -29,7 +29,7 @@ def _show_notes(
 ) -> None:
     user_id, chat_id, message_id = get_ids(message)
     keyboard = InlineKeyboardMarkup(row_width=1)
-    keyboard.add(Button("Перейти в меню", "home").inline())
+    keyboard.add(Button("🏠 Перейти в меню", "home").inline())
     text = format_release_notes(releases)
     if isinstance(message, CallbackQuery):
         bot.edit_message_text(text, chat_id, message_id, reply_markup=keyboard)

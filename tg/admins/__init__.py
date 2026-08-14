@@ -15,16 +15,18 @@ def admins_main_menu(callback_query: CallbackQuery, bot: TeleBot):
         get_username(callback_query),
     )
     bot.delete_state(user_id)
-    keyboard = InlineKeyboardMarkup(row_width=1)
-    keyboard.add(
-        Button("Проверить актуальность данных", "admins/stale_resources").inline()
+    keyboard = InlineKeyboardMarkup()
+    keyboard.row(
+        Button("📊 Актуальность", "admins/stale_resources").inline(),
+        Button("📣 Уведомления", "admins/notifications").inline(),
     )
-    keyboard.add(Button("Уведомления", "admins/notifications").inline())
-    keyboard.add(Button("Обновить Google Таблицу", "admins/game_data").inline())
-    keyboard.add(Button("Список администраторов", "admins/admins_list").inline())
-    keyboard.add(Button("Добавить администраторов", "admins/add_admins").inline())
-    keyboard.add(Button("Удалить администратора", "admins/del_admin").inline())
-    keyboard.add(Button("Назад в меню", "home").inline())
+    keyboard.row(Button("📤 Обновить Google Таблицу", "admins/game_data").inline())
+    keyboard.row(
+        Button("👥 Список", "admins/admins_list").inline(),
+        Button("➕ Добавить", "admins/add_admins").inline(),
+    )
+    keyboard.row(Button("🗑 Удалить администратора", "admins/del_admin").inline())
+    keyboard.row(Button("⬅️ Назад в меню", "home").inline())
     bot.edit_message_text(
         "<b>Админ-панель</b>\n\nВыберите действие.",
         chat_id,
@@ -45,7 +47,7 @@ def admins_list(callback_query: CallbackQuery, bot: TeleBot):
         get_user_link(admin.user_id.value, admin.username.value) for admin in admins
     )
     keyboard = InlineKeyboardMarkup(row_width=1)
-    keyboard.add(Button("Назад в админ-панель", "admins").inline())
+    keyboard.add(Button("⬅️ Назад в админ-панель", "admins").inline())
     _, chat_id, message_id = get_ids(callback_query)
     bot.edit_message_text(text, chat_id, message_id, reply_markup=keyboard)
 

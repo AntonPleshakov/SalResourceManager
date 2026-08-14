@@ -5,7 +5,6 @@ from telebot.types import CallbackQuery, InlineKeyboardMarkup, Message
 
 from logger.app_logger import logger
 from resources.egg_levels import EGG_LEVELS, EggLevel, format_hatch_batch_count
-from resources.user_data import PET_SETTINGS_FIELDS
 import tg.user_data as user_data
 from tg.user_data.common import get_active_user_or_prompt
 from tg.utils import Button, empty_filter, get_ids, get_username
@@ -42,17 +41,17 @@ def pets_menu(
     if notice:
         text = f"{notice}\n\n{text}"
 
-    keyboard = InlineKeyboardMarkup(row_width=1)
-    keyboard.add(Button("Сменить игровой аккаунт", "accounts/pets").inline())
-    keyboard.add(
+    keyboard = InlineKeyboardMarkup()
+    keyboard.row(Button("🔄 Сменить аккаунт", "accounts/pets").inline())
+    keyboard.row(
         Button(
-            PET_SETTINGS_FIELDS[0].title,
+            "🥚 Яиц в пакете",
             "user_data/edit/eggs_per_hatch_batch",
-        ).inline()
+        ).inline(),
+        Button("🏆 Макс. уровень", "pets/max_level").inline(),
     )
-    keyboard.add(Button("Максимальный уровень яйца", "pets/max_level").inline())
-    keyboard.add(Button("Пакеты для вылупления в день", "pets/batches").inline())
-    keyboard.add(Button("Назад в меню", "home").inline())
+    keyboard.row(Button("📅 Пакеты в день", "pets/batches").inline())
+    keyboard.row(Button("⬅️ Назад в меню", "home").inline())
 
     logger.debug(
         "Opening pet settings for user_id=%s username=%s", user_id, username
@@ -69,16 +68,18 @@ def max_egg_level_menu(callback_query: CallbackQuery, bot: TeleBot) -> None:
     if user is None:
         return
     current_level = EggLevel(user.max_egg_level.value)
-    keyboard = InlineKeyboardMarkup(row_width=1)
+    keyboard = InlineKeyboardMarkup(row_width=2)
+    level_buttons = []
     for level in reversed(EGG_LEVELS):
         marker = " ✓" if level == current_level else ""
-        keyboard.add(
+        level_buttons.append(
             Button(
                 f"{level.label}{marker}",
                 f"pets/max_level/{level.value}",
             ).inline()
         )
-    keyboard.add(Button("Назад к питомцам", "pets").inline())
+    keyboard.add(*level_buttons)
+    keyboard.row(Button("⬅️ Назад к питомцам", "pets").inline())
     bot.edit_message_text(
         "<b>Максимальный уровень яйца</b>\n\n"
         "Выберите самый высокий доступный уровень.",
@@ -154,11 +155,11 @@ def save_max_egg_level(callback_query: CallbackQuery, bot: TeleBot) -> None:
         keyboard = InlineKeyboardMarkup(row_width=1)
         keyboard.add(
             Button(
-                "Понизить и обнулить",
+                "⚠️ Понизить и обнулить",
                 f"pets/max_level/confirm/{level.value}",
             ).inline()
         )
-        keyboard.add(Button("Отмена", "pets/max_level").inline())
+        keyboard.add(Button("✖️ Отмена", "pets/max_level").inline())
         bot.edit_message_text(
             "⚠️ <b>Понизить максимальный уровень яйца?</b>\n\n"
             f"Новый уровень: <b>{level.label}</b>\n\n"
@@ -202,7 +203,7 @@ def hatch_batches_menu(callback_query: CallbackQuery, bot: TeleBot) -> None:
             Button(f"{level.label}: {count}", "pets/batches").inline(),
             Button("+", f"pets/batches/{level.value}/plus").inline(),
         )
-    keyboard.add(Button("Готово", "pets").inline())
+    keyboard.add(Button("✅ Готово", "pets").inline())
     bot.edit_message_text(
         "<b>Пакеты для вылупления в день</b>\n\n"
         "Укажите максимальное количество пакетов каждого уровня. "

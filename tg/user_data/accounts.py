@@ -84,19 +84,20 @@ def accounts_menu(
             continue
         keyboard.add(
             Button(
-                account.tag,
+                f"🔄 {account.tag}",
                 f"accounts/select/{destination}/{account.account_id}",
             ).inline()
         )
-    keyboard.add(
-        Button("➕ Добавить аккаунт", f"accounts/add/{destination}").inline()
-    )
+    account_actions = [
+        Button("➕ Добавить", f"accounts/add/{destination}").inline()
+    ]
     if active is not None:
-        keyboard.add(Button("✏️ Переименовать аккаунт", "accounts/rename").inline())
+        account_actions.append(Button("✏️ Переименовать", "accounts/rename").inline())
+    keyboard.row(*account_actions)
     if len(accounts) > 1:
         keyboard.add(Button("🗑 Удалить аккаунт", "accounts/delete").inline())
     back_callback = destination if destination in DESTINATIONS else "home"
-    keyboard.add(Button("Назад", back_callback).inline())
+    keyboard.add(Button("⬅️ Назад", back_callback).inline())
 
     text = "\n".join(lines)
     if isinstance(message, CallbackQuery):
@@ -132,7 +133,7 @@ def _request_nickname(
     cancel_callback = (
         f"accounts/{destination}" if destination in DESTINATIONS else "accounts"
     )
-    keyboard.add(Button("Отмена", cancel_callback).inline())
+    keyboard.add(Button("✖️ Отмена", cancel_callback).inline())
     bot.edit_message_text(text, chat_id, message_id, reply_markup=keyboard)
 
 
@@ -223,11 +224,11 @@ def request_delete(callback_query: CallbackQuery, bot: TeleBot) -> None:
     for account in candidates:
         keyboard.add(
             Button(
-                account.tag,
+                f"🗑 {account.tag}",
                 f"accounts/delete/confirm/{account.account_id}",
             ).inline()
         )
-    keyboard.add(Button("Отмена", "accounts").inline())
+    keyboard.add(Button("✖️ Отмена", "accounts").inline())
     bot.edit_message_text(
         "<b>Удаление аккаунта</b>\n\n"
         "Выберите неактивный аккаунт, который нужно удалить.",
@@ -255,11 +256,11 @@ def confirm_delete(callback_query: CallbackQuery, bot: TeleBot) -> None:
     keyboard = InlineKeyboardMarkup(row_width=1)
     keyboard.add(
         Button(
-            "Да, удалить вместе с данными",
+            "🗑 Да, удалить вместе с данными",
             f"accounts/delete/{account.account_id}",
         ).inline()
     )
-    keyboard.add(Button("Отмена", "accounts/delete").inline())
+    keyboard.add(Button("✖️ Отмена", "accounts/delete").inline())
     bot.edit_message_text(
         f"Удалить аккаунт <b>{formatting.escape_html(account.tag)}</b>?\n\n"
         "Все сохранённые для него ресурсы и настройки будут удалены безвозвратно.",

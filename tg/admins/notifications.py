@@ -69,14 +69,17 @@ def _update_keyboard(
             if fields:
                 keyboard.add(
                     Button(
-                        f"Ресурсы · {tag}",
+                        f"📦 Ресурсы · {tag}",
                         f"accounts/select/resources/{user.account_id.value}",
                     ).inline()
                 )
-        keyboard.add(Button("Назад в меню", "home").inline())
+        keyboard.add(Button("⬅️ Назад в меню", "home").inline())
         return keyboard
 
-    keyboard.add(Button("Обновить ресурсы", "user_data/fill/resources").inline())
+    keyboard.row(
+        Button("📝 Обновить", "user_data/fill/resources").inline(),
+        Button("🏠 В меню", "home").inline(),
+    )
     return keyboard
 
 
@@ -333,14 +336,14 @@ def notifications_menu(callback_query: CallbackQuery, bot: TeleBot) -> None:
         get_username(callback_query),
     )
     bot.delete_state(user_id)
-    keyboard = InlineKeyboardMarkup(row_width=1)
-    keyboard.add(
+    keyboard = InlineKeyboardMarkup()
+    keyboard.row(
         Button(
-            "Попросить обновить данные", "admins/notifications/standard"
+            "🔔 Обновить данные", "admins/notifications/standard"
         ).inline(),
-        Button("Отправить свой текст", "admins/notifications/custom").inline(),
-        Button("Назад в админ-панель", "admins").inline(),
+        Button("✍️ Свой текст", "admins/notifications/custom").inline(),
     )
+    keyboard.row(Button("⬅️ Назад в админ-панель", "admins").inline())
     bot.edit_message_text(
         "Уведомления пользователям", chat_id, message_id, reply_markup=keyboard
     )
@@ -355,15 +358,17 @@ def confirm_standard_notification(
     )
     bot.set_state(user_id, NotificationStates.standard_confirmation)
     bot.add_data(user_id, standard_notification_plan=plan)
-    keyboard = InlineKeyboardMarkup(row_width=1)
+    keyboard = InlineKeyboardMarkup()
     if plan.recipients:
-        keyboard.add(
+        keyboard.row(
             Button(
-                "Отправить уведомление",
+                "📣 Отправить",
                 "admins/notifications/send_standard",
-            ).inline()
+            ).inline(),
+            Button("✖️ Отмена", "admins/notifications").inline(),
         )
-    keyboard.add(Button("Отмена", "admins/notifications").inline())
+    else:
+        keyboard.row(Button("⬅️ Назад", "admins/notifications").inline())
     bot.edit_message_text(
         "<b>Попросить обновить данные?</b>\n\n"
         "Уведомление получат пользователи, у которых не все данные "
@@ -417,7 +422,7 @@ def request_custom_notification(
     user_id, chat_id, message_id = get_ids(callback_query)
     bot.set_state(user_id, NotificationStates.custom_text)
     keyboard = InlineKeyboardMarkup(row_width=1)
-    keyboard.add(Button("Отмена", "admins/notifications").inline())
+    keyboard.add(Button("✖️ Отмена", "admins/notifications").inline())
     bot.edit_message_text(
         "Введите текст уведомления. После этого можно будет выбрать отправку "
         "в группу с упоминаниями или личным сообщением от бота.",
@@ -460,18 +465,18 @@ def receive_custom_notification_text(message: Message, bot: TeleBot) -> None:
     admin_name = get_username(message)
     bot.set_state(user_id, NotificationStates.custom_confirmation)
     bot.add_data(user_id, notification_text=text, admin_name=admin_name)
-    keyboard = InlineKeyboardMarkup(row_width=1)
-    keyboard.add(
+    keyboard = InlineKeyboardMarkup()
+    keyboard.row(
         Button(
-            "В группу с тегами",
+            "👥 В группу",
             "admins/notifications/send_custom_group",
         ).inline(),
         Button(
-            "Лично от бота (может быть muted)",
+            "✉️ Лично",
             "admins/notifications/send_custom_private",
         ).inline(),
-        Button("Отмена", "admins/notifications").inline(),
     )
+    keyboard.row(Button("✖️ Отмена", "admins/notifications").inline())
     preview = (
         "<b>Предпросмотр:</b>\n\n"
         f"{formatting.escape_html(text)}\n\n"
@@ -514,7 +519,7 @@ def send_custom_group_notification_confirmed(
         )
         keyboard = InlineKeyboardMarkup(row_width=1)
         keyboard.add(
-            Button("Назад к уведомлениям", "admins/notifications").inline()
+            Button("⬅️ Назад к уведомлениям", "admins/notifications").inline()
         )
         bot.edit_message_text(
             "Не удалось отправить уведомление: группа не зарегистрирована.",

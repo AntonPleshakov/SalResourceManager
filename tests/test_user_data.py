@@ -923,10 +923,15 @@ def test_reminder_fill_starts_with_only_requested_fields(monkeypatch):
     )
     assert "Молотки" in bot.edited[0][0]
     assert "Текущее значение: <b>2.50к</b>" in bot.edited[0][0]
-    assert [row[0].callback_data for row in bot.edited[0][3].keyboard] == [
+    assert [
+        button.callback_data
+        for row in bot.edited[0][3].keyboard
+        for button in row
+    ] == [
         "user_data/fill/skip",
         "home",
     ]
+    assert len(bot.edited[0][3].keyboard[0]) == 2
 
 
 def test_reminder_fill_saves_only_requested_fields(monkeypatch):

@@ -95,7 +95,7 @@ def test_standard_notification_is_sent_to_every_user(monkeypatch):
         button.callback_data
         for row in bot.calls[0][2].keyboard
         for button in row
-    ] == ["user_data/fill/resources"]
+    ] == ["user_data/fill/resources", "home"]
 
 
 def test_standard_notification_ignores_stale_technologies(monkeypatch):
@@ -220,7 +220,7 @@ def test_standard_notification_confirmation_is_compact_and_uses_snapshot(
     assert STANDARD_NOTIFICATION_TEXT not in text
     assert [
         button.text for row in markup.keyboard for button in row
-    ] == ["Отправить уведомление", "Отмена"]
+    ] == ["📣 Отправить", "✖️ Отмена"]
     plan = bot.data["standard_notification_plan"]
     assert len(plan.recipients) == 1
     assert plan.skipped == 1

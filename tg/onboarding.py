@@ -34,7 +34,7 @@ def show_new_user_welcome(
             f"<b>{account_name}</b>."
         )
 
-    keyboard.add(Button("Открыть меню", "home").inline())
+    keyboard.add(Button("🏠 Открыть меню", "home").inline())
     text = (
         "👋 <b>Добро пожаловать!</b>\n\n"
         "Бот помогает хранить ресурсы игровых аккаунтов, напоминает об "

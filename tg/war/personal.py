@@ -157,13 +157,15 @@ def personal_war_points(callback_query: CallbackQuery, bot: TeleBot) -> None:
     if user is None:
         keyboard.add(
             Button(
-                "Добавить или выбрать аккаунт", "accounts/war_calculator"
+                "🎮 Добавить или выбрать аккаунт", "accounts/war_calculator"
             ).inline()
         )
-        keyboard.add(Button("Заполнить ресурсы", "resources").inline())
-        keyboard.add(Button("Заполнить технологии", "technologies").inline())
-        keyboard.add(Button("Настроить питомцев", "pets").inline())
-        keyboard.add(Button("Назад к очкам войны", "war_menu").inline())
+        keyboard.row(
+            Button("📦 Ресурсы", "resources").inline(),
+            Button("🔬 Технологии", "technologies").inline(),
+        )
+        keyboard.add(Button("🐾 Настроить питомцев", "pets").inline())
+        keyboard.add(Button("⬅️ Назад к очкам войны", "war_menu").inline())
         bot.edit_message_text(
             "Сначала заполните свои ресурсы, технологии и настройки питомцев, "
             "чтобы бот мог рассчитать очки войны.",
@@ -174,13 +176,15 @@ def personal_war_points(callback_query: CallbackQuery, bot: TeleBot) -> None:
         return
 
     keyboard.add(
-        Button("Сменить игровой аккаунт", "accounts/war_calculator").inline()
+        Button("🔄 Сменить аккаунт", "accounts/war_calculator").inline()
     )
-    keyboard.add(Button("Подробный расчёт", "war_calculator/details").inline())
-    keyboard.add(Button("Обновить ресурсы", "resources").inline())
-    keyboard.add(Button("Обновить технологии", "technologies").inline())
-    keyboard.add(Button("Настроить питомцев", "pets").inline())
-    keyboard.add(Button("Назад к очкам войны", "war_menu").inline())
+    keyboard.add(Button("🧮 Подробный расчёт", "war_calculator/details").inline())
+    keyboard.row(
+        Button("📦 Ресурсы", "resources").inline(),
+        Button("🔬 Технологии", "technologies").inline(),
+    )
+    keyboard.add(Button("🐾 Настроить питомцев", "pets").inline())
+    keyboard.add(Button("⬅️ Назад к очкам войны", "war_menu").inline())
     bot.edit_message_text(
         _personal_war_points_text(user),
         chat_id,
@@ -209,7 +213,7 @@ def personal_war_details_menu(
                 f"war_calculator/details/{activity.value}",
             ).inline()
         )
-    keyboard.add(Button("Назад к отчёту по дням", "war_calculator").inline())
+    keyboard.add(Button("⬅️ Назад к отчёту по дням", "war_calculator").inline())
     bot.edit_message_text(
         "<b>Подробный расчёт</b>\n\n"
         f"Игровой аккаунт: <b>{formatting.escape_html(user.tag.value)}</b>\n\n"
@@ -254,8 +258,8 @@ def personal_war_activity_details(
 
     keyboard = InlineKeyboardMarkup(row_width=1)
     keyboard.add(
-        Button("К списку активностей", "war_calculator/details").inline(),
-        Button("К отчёту по дням", "war_calculator").inline(),
+        Button("📋 Активности", "war_calculator/details").inline(),
+        Button("📊 По дням", "war_calculator").inline(),
     )
     bot.edit_message_text(
         _personal_war_activity_details_text(user, activity),

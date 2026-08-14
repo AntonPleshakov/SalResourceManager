@@ -52,7 +52,7 @@ def public_war_points(callback_query: CallbackQuery, bot: TeleBot) -> None:
         get_username(callback_query),
     )
     keyboard = InlineKeyboardMarkup(row_width=1)
-    keyboard.add(Button("Назад к очкам войны", "war_menu").inline())
+    keyboard.add(Button("⬅️ Назад к очкам войны", "war_menu").inline())
     bot.edit_message_text(
         _war_points_text(), chat_id, message_id, reply_markup=keyboard
     )

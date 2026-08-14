@@ -28,10 +28,12 @@ def war_menu(callback_query: CallbackQuery, bot: TeleBot) -> None:
         user_id,
         get_username(callback_query),
     )
-    keyboard = InlineKeyboardMarkup(row_width=1)
-    keyboard.add(Button("Калькулятор моих очков", "war_calculator").inline())
-    keyboard.add(Button("Максимальные очки войны", "war").inline())
-    keyboard.add(Button("Назад в меню", "home").inline())
+    keyboard = InlineKeyboardMarkup()
+    keyboard.row(
+        Button("🧮 Мои очки", "war_calculator").inline(),
+        Button("👥 Общие", "war").inline(),
+    )
+    keyboard.row(Button("⬅️ Назад в меню", "home").inline())
     bot.edit_message_text(
         "<b>Очки войны</b>\n\nВыберите вариант расчёта.",
         chat_id,

@@ -22,7 +22,7 @@ class AddAdminStates(StatesGroup):
     add_admin = State()
 
 
-CANCEL_ADD_ADMINS_TEXT = "Отмена"
+CANCEL_ADD_ADMINS_TEXT = "✖️ Отмена"
 
 
 def add_admins(callback_query: CallbackQuery, bot: TeleBot):
@@ -36,7 +36,9 @@ def add_admins(callback_query: CallbackQuery, bot: TeleBot):
         request_id=0, user_is_bot=False, request_username=True
     )
     keyboard = ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
-    keyboard.add(KeyboardButton(text="Выбрать пользователей", request_users=request))
+    keyboard.add(
+        KeyboardButton(text="👥 Выбрать пользователей", request_users=request)
+    )
     keyboard.add(Button(CANCEL_ADD_ADMINS_TEXT, "admins").reply())
     bot.delete_message(chat_id, message_id)
     bot.send_message(
@@ -89,8 +91,10 @@ def add_admins_confirmation(message: Message, bot: TeleBot):
         for admin in new_admins
     ]
     keyboard = InlineKeyboardMarkup()
-    keyboard.row(Button("Да", "approved").inline())
-    keyboard.row(Button("Нет", "admins").inline())
+    keyboard.row(
+        Button("✅ Да", "approved").inline(),
+        Button("✖️ Нет", "admins").inline(),
+    )
     bot.send_message(
         chat_id,
         "Добавить администраторов?\n" + "\n".join(links),
@@ -146,7 +150,7 @@ def register_handlers(bot: TeleBot):
     )
     bot.register_message_handler(
         cancel_add_admins,
-        func=lambda message: message.text == CANCEL_ADD_ADMINS_TEXT,
+        func=lambda message: message.text in {CANCEL_ADD_ADMINS_TEXT, "Отмена"},
         content_types=["text"],
         chat_types=["private"],
         state=AddAdminStates.share_users,

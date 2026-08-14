@@ -140,18 +140,18 @@ def _reminder_keyboard(
             if missing_names & resource_names:
                 keyboard.add(
                     Button(
-                        f"Ресурсы · {tag}",
+                        f"📦 Ресурсы · {tag}",
                         f"accounts/select/resources/{account_id}",
                     ).inline()
                 )
             if missing_names & technology_names:
                 keyboard.add(
                     Button(
-                        f"Технологии · {tag}",
+                        f"🔬 Технологии · {tag}",
                         f"accounts/select/technologies/{account_id}",
                     ).inline()
                 )
-        keyboard.add(Button("Назад в меню", "home").inline())
+        keyboard.add(Button("⬅️ Назад в меню", "home").inline())
         return keyboard
 
     field_indexes = ",".join(
@@ -162,14 +162,16 @@ def _reminder_keyboard(
     if field_indexes:
         keyboard.add(
             Button(
-                "Обновить данные",
+                "📝 Обновить данные",
                 f"user_data/fill/tracked/{field_indexes}",
             ).inline()
         )
-    keyboard.add(Button("Ресурсы", "resources").inline())
-    keyboard.add(Button("Технологии", "technologies").inline())
-    keyboard.add(Button("Питомцы", "pets").inline())
-    keyboard.add(Button("Назад в меню", "home").inline())
+    keyboard.row(
+        Button("📦 Ресурсы", "resources").inline(),
+        Button("🔬 Технологии", "technologies").inline(),
+    )
+    keyboard.add(Button("🐾 Питомцы", "pets").inline())
+    keyboard.add(Button("⬅️ Назад в меню", "home").inline())
     return keyboard
 
 

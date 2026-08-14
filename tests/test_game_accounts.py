@@ -101,7 +101,7 @@ def test_account_selector_returns_to_resource_screen_after_switch(
     assert f"accounts/select/resources/{second.account_id}" not in menu_buttons
     assert "accounts/add/resources" in menu_buttons
     assert "accounts/delete" in menu_buttons
-    assert "✏️ Переименовать аккаунт" in [
+    assert "✏️ Переименовать" in [
         button.text for row in bot.edited[-1][3].keyboard for button in row
     ]
     assert menu_buttons[-1] == "resources"

@@ -28,8 +28,13 @@ def del_admin_options(callback_query: CallbackQuery, bot: TeleBot):
     )
     keyboard = InlineKeyboardMarkup(row_width=1)
     for admin in current_admins:
-        keyboard.add(Button(admin.username.value, str(admin.user_id.value)).inline())
-    keyboard.add(Button("Назад в админ-панель", "admins").inline())
+        keyboard.add(
+            Button(
+                f"🗑 {admin.username.value}",
+                str(admin.user_id.value),
+            ).inline()
+        )
+    keyboard.add(Button("⬅️ Назад в админ-панель", "admins").inline())
     user_id, chat_id, message_id = get_ids(callback_query)
     bot.edit_message_text(
         "Выберите пользователя, которого нужно лишить прав администратора.",
@@ -53,8 +58,10 @@ def del_admin_confirmation(callback_query: CallbackQuery, bot: TeleBot):
         home(callback_query, bot)
         return
     keyboard = InlineKeyboardMarkup()
-    keyboard.row(Button("Да", f"approved/{admin.user_id.value}").inline())
-    keyboard.row(Button("Нет", "admins").inline())
+    keyboard.row(
+        Button("🗑 Да", f"approved/{admin.user_id.value}").inline(),
+        Button("✖️ Нет", "admins").inline(),
+    )
     user_id, chat_id, message_id = get_ids(callback_query)
     bot.edit_message_text(
         f"Лишить прав {get_user_link(admin.user_id.value, admin.username.value)}?",

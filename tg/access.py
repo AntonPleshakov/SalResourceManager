@@ -80,7 +80,7 @@ class GroupAccessMiddleware(BaseMiddleware):
             return None
 
         keyboard = InlineKeyboardMarkup(row_width=1)
-        keyboard.add(InlineKeyboardButton("Открыть группу", url=group_url))
+        keyboard.add(InlineKeyboardButton("👥 Открыть группу", url=group_url))
         return keyboard
 
     def _deny_access(

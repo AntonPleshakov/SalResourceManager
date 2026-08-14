@@ -42,7 +42,7 @@ def _show_value_prompt(
 ) -> None:
     _, chat_id, message_id = get_ids(callback_query)
     keyboard = InlineKeyboardMarkup(row_width=1)
-    keyboard.add(Button("Отмена", state.section).inline())
+    keyboard.add(Button("✖️ Отмена", state.section).inline())
     current_value = format_field_value(
         state.field,
         current_user.get_value(state.field_name),

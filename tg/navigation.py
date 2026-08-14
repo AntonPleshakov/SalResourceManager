@@ -28,20 +28,24 @@ def show_home_menu(
         (account for account in accounts if account.is_active),
         None,
     )
-    keyboard = InlineKeyboardMarkup(row_width=1)
-    keyboard.add(Button("Игровые аккаунты", "accounts").inline())
-    keyboard.add(Button("Ресурсы", "resources").inline())
-    keyboard.add(Button("Технологии", "technologies").inline())
-    keyboard.add(Button("Питомцы", "pets").inline())
-    keyboard.add(Button("Очки войны", "war_menu").inline())
-    keyboard.add(Button("Что нового", "releases").inline())
+    keyboard = InlineKeyboardMarkup()
+    keyboard.row(Button("🎮 Игровые аккаунты", "accounts").inline())
+    keyboard.row(
+        Button("📦 Ресурсы", "resources").inline(),
+        Button("🔬 Технологии", "technologies").inline(),
+    )
+    keyboard.row(
+        Button("🐾 Питомцы", "pets").inline(),
+        Button("⚔️ Очки войны", "war_menu").inline(),
+    )
+    keyboard.row(Button("🆕 Что нового", "releases").inline())
     logger.debug(
         "Opening home menu for user_id=%s username=%s",
         user_id,
         get_username(message),
     )
     if get_admins_db().is_admin(user_id):
-        keyboard.add(Button("Админ-панель", "admins").inline())
+        keyboard.row(Button("🛠 Админ-панель", "admins").inline())
     text_lines = []
     if active_account is not None:
         text_lines.append(
