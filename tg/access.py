@@ -3,21 +3,37 @@ from typing import Union
 
 from telebot import TeleBot
 from telebot.handler_backends import BaseMiddleware, CancelUpdate
-from telebot.types import CallbackQuery, ChatMember, Message
+from telebot.types import (
+    CallbackQuery,
+    ChatMember,
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    Message,
+)
 
 from db.access_group import AccessGroupDB
 from logger.app_logger import logger
 from tg.utils import get_ids, get_username
 
 
-ACCESS_DENIED_MESSAGE = "Доступ разрешён только участникам группы."
+ACCESS_DENIED_MESSAGE = (
+    "Этот бот помогает участникам клана ShadowAl в игре Forge Master "
+    "учитывать ресурсы, следить за их обновлением и рассчитывать очки войны.\n\n"
+    "Доступ к боту предоставляется только участникам клана. Вступите в "
+    "ShadowAl и снова откройте бот — участие проверится автоматически. Если "
+    "вы уже состоите в клане или вам нужно приглашение, обратитесь к автору: "
+    "@AntonPleshakov."
+)
 ACCESS_CHECK_FAILED_MESSAGE = (
-    "Не удалось проверить участие в группе. Попробуйте ещё раз позже."
+    "Не удалось проверить ваше участие в клане ShadowAl: Telegram временно "
+    "не ответил. Попробуйте снова через несколько минут. Если проблема "
+    "повторяется, обратитесь к автору: @AntonPleshakov."
 )
 ACCESS_GROUP_NOT_REGISTERED_MESSAGE = (
-    "Группа доступа ещё не зарегистрирована. Администратор должен выполнить "
-    "/register_group в нужной группе."
+    "Бот ещё не настроен для работы с кланом ShadowAl. Обратитесь к автору: "
+    "@AntonPleshakov."
 )
+ACCESS_DENIED_ALERT_MESSAGE = "Доступ сейчас закрыт. Я отправил подробности в чат."
 REGISTER_GROUP_COMMAND_PATTERN = re.compile(
     r"^/register_group(?:@[A-Za-z0-9_]+)?(?:\s|$)", re.IGNORECASE
 )
@@ -44,6 +60,56 @@ class GroupAccessMiddleware(BaseMiddleware):
         self._bot = bot
         self._access_group_db = access_group_db
 
+    def _group_link_keyboard(
+        self, group_id: int
+    ) -> InlineKeyboardMarkup | None:
+        try:
+            group = self._bot.get_chat(group_id)
+        except Exception as error:
+            logger.warning(
+                "Unable to get access group link group_id=%s: %s",
+                group_id,
+                type(error).__name__,
+            )
+            return None
+
+        invite_link = getattr(group, "invite_link", None)
+        username = str(getattr(group, "username", "") or "").lstrip("@")
+        group_url = invite_link or (f"https://t.me/{username}" if username else None)
+        if not group_url:
+            return None
+
+        keyboard = InlineKeyboardMarkup(row_width=1)
+        keyboard.add(InlineKeyboardButton("Открыть группу", url=group_url))
+        return keyboard
+
+    def _deny_access(
+        self,
+        update: Union[Message, CallbackQuery],
+        text: str,
+        reply_markup: InlineKeyboardMarkup | None = None,
+    ) -> None:
+        try:
+            if isinstance(update, CallbackQuery):
+                self._bot.answer_callback_query(
+                    update.id,
+                    text=ACCESS_DENIED_ALERT_MESSAGE,
+                    show_alert=True,
+                )
+                self._bot.send_message(
+                    update.message.chat.id,
+                    text,
+                    reply_markup=reply_markup,
+                )
+            elif reply_markup is not None:
+                self._bot.reply_to(update, text, reply_markup=reply_markup)
+            else:
+                self._bot.reply_to(update, text)
+        except Exception as error:
+            logger.warning(
+                "Unable to send group access denial: %s", type(error).__name__
+            )
+
     def pre_process(
         self, update: Union[Message, CallbackQuery], data: dict
     ) -> CancelUpdate | None:
@@ -55,7 +121,8 @@ class GroupAccessMiddleware(BaseMiddleware):
         if group_id is None:
             user_id, _, _ = get_ids(update)
             logger.info(
-                "Group access denied for user_id=%s username=%s: group is not configured",
+                "Group access denied for user_id=%s username=%s: "
+                "group is not configured",
                 user_id,
                 get_username(update),
             )
@@ -83,7 +150,11 @@ class GroupAccessMiddleware(BaseMiddleware):
             user_id,
             get_username(update),
         )
-        self._deny_access(update, ACCESS_DENIED_MESSAGE)
+        self._deny_access(
+            update,
+            ACCESS_DENIED_MESSAGE,
+            self._group_link_keyboard(group_id),
+        )
         return CancelUpdate()
 
     def post_process(
@@ -93,16 +164,3 @@ class GroupAccessMiddleware(BaseMiddleware):
         exception: BaseException | None,
     ) -> None:
         pass
-
-    def _deny_access(
-        self, update: Union[Message, CallbackQuery], text: str
-    ) -> None:
-        try:
-            if isinstance(update, CallbackQuery):
-                self._bot.answer_callback_query(update.id, text=text, show_alert=True)
-            else:
-                self._bot.reply_to(update, text)
-        except Exception as error:
-            logger.warning(
-                "Unable to send group access denial: %s", type(error).__name__
-            )

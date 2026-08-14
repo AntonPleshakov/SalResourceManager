@@ -10,6 +10,7 @@ reset_config(str(Path(__file__).parents[1] / "config" / "config_template.ini"))
 
 from tg.access import (
     ACCESS_CHECK_FAILED_MESSAGE,
+    ACCESS_DENIED_ALERT_MESSAGE,
     ACCESS_DENIED_MESSAGE,
     ACCESS_GROUP_NOT_REGISTERED_MESSAGE,
     GroupAccessMiddleware,
@@ -42,12 +43,17 @@ class FakeAccessGroupDB:
 
 
 class FakeBot:
-    def __init__(self, member=None, error=None):
+    def __init__(self, member=None, error=None, group_chat=None):
         self.member = member
         self.error = error
+        self.group_chat = group_chat or SimpleNamespace(
+            username=None, invite_link=None
+        )
         self.membership_checks = []
         self.replies = []
+        self.reply_markups = []
         self.callback_answers = []
+        self.sent = []
 
     def get_chat_member(self, group_id, user_id):
         self.membership_checks.append((group_id, user_id))
@@ -55,11 +61,19 @@ class FakeBot:
             raise self.error
         return self.member
 
-    def reply_to(self, message, text):
+    def get_chat(self, group_id):
+        assert group_id == -100123
+        return self.group_chat
+
+    def reply_to(self, message, text, reply_markup=None):
         self.replies.append((message, text))
+        self.reply_markups.append(reply_markup)
 
     def answer_callback_query(self, callback_query_id, **kwargs):
         self.callback_answers.append((callback_query_id, kwargs))
+
+    def send_message(self, chat_id, text, reply_markup=None):
+        self.sent.append((chat_id, text, reply_markup))
 
 
 def test_group_member_statuses_are_allowed():
@@ -117,9 +131,35 @@ def test_middleware_denies_callback_with_an_alert():
     assert bot.callback_answers == [
         (
             "callback-1",
-            {"text": ACCESS_DENIED_MESSAGE, "show_alert": True},
+            {"text": ACCESS_DENIED_ALERT_MESSAGE, "show_alert": True},
         )
     ]
+    assert bot.sent == [(42, ACCESS_DENIED_MESSAGE, None)]
+
+
+def test_access_denial_links_to_public_group():
+    bot = FakeBot(
+        SimpleNamespace(status="left"),
+        group_chat=SimpleNamespace(username="ShadowAl", invite_link=None),
+    )
+    message = make_message()
+
+    result = GroupAccessMiddleware(bot, FakeAccessGroupDB(-100123)).pre_process(
+        message, {}
+    )
+
+    assert isinstance(result, CancelUpdate)
+    button = bot.reply_markups[0].keyboard[0][0]
+    assert button.text == "Открыть группу"
+    assert button.url == "https://t.me/ShadowAl"
+
+
+def test_access_messages_explain_next_step_and_support_contact():
+    assert "Forge Master" in ACCESS_DENIED_MESSAGE
+    assert "ShadowAl" in ACCESS_DENIED_MESSAGE
+    assert "@AntonPleshakov" in ACCESS_DENIED_MESSAGE
+    assert "через несколько минут" in ACCESS_CHECK_FAILED_MESSAGE
+    assert "@AntonPleshakov" in ACCESS_GROUP_NOT_REGISTERED_MESSAGE
 
 
 def test_middleware_fails_closed_when_membership_check_fails():
