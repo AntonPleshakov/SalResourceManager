@@ -13,11 +13,13 @@ from config.config import reset_config
 reset_config(str(Path(__file__).parents[1] / "config" / "config_template.ini"))
 
 import tg.manager as manager
+import tg.navigation as navigation
 from tg.manager import (
     VISIBLE_COMMANDS,
     cancel_command,
     configure_commands,
     open_menu_command,
+    start_command,
 )
 
 
@@ -60,7 +62,13 @@ class FakeBot:
 
 
 def prepare_home(monkeypatch):
-    monkeypatch.setattr("tg.navigation.show_unseen_releases", lambda *_: False)
+    monkeypatch.setattr("tg.navigation.show_new_user_welcome", lambda *_: False)
+    monkeypatch.setattr(
+        "tg.navigation.show_unseen_releases",
+        lambda *_: (_ for _ in ()).throw(
+            AssertionError("direct menu navigation must skip release notes")
+        ),
+    )
     monkeypatch.setattr(
         "tg.navigation.get_admins_db",
         lambda: type(
@@ -81,6 +89,21 @@ def test_menu_command_cancels_active_state_and_opens_home(monkeypatch):
     assert bot.sent[0][1] == "Текущее действие отменено."
     assert isinstance(bot.sent[0][2], ReplyKeyboardRemove)
     assert bot.sent[1][1] == "Выберите раздел"
+
+
+def test_start_command_checks_unseen_releases(monkeypatch):
+    release_checks = []
+    monkeypatch.setattr("tg.navigation.show_new_user_welcome", lambda *_: False)
+    monkeypatch.setattr(
+        "tg.navigation.show_unseen_releases",
+        lambda *_: release_checks.append(True) or True,
+    )
+    bot = FakeBot()
+
+    start_command(make_message("/start"), bot)
+
+    assert release_checks == [True]
+    assert bot.sent == []
 
 
 def test_cancel_without_active_state_is_neutral(monkeypatch):
@@ -117,6 +140,29 @@ def test_only_start_and_menu_are_published():
     assert isinstance(scope, BotCommandScopeAllPrivateChats)
 
 
+def test_onboarding_marks_current_release_without_showing_release_notes(
+    monkeypatch,
+):
+    marked = []
+    monkeypatch.setattr(
+        "tg.navigation.show_new_user_welcome", lambda *_: True
+    )
+    monkeypatch.setattr(
+        "tg.navigation.mark_current_release_seen",
+        lambda message: marked.append(message.from_user.id),
+    )
+    monkeypatch.setattr(
+        "tg.navigation.show_unseen_releases",
+        lambda *_: (_ for _ in ()).throw(AssertionError("must not be called")),
+    )
+
+    bot = FakeBot()
+    navigation.home(make_message("/start"), bot)
+
+    assert marked == [42]
+    assert bot.sent == []
+
+
 def test_recovery_commands_are_registered_before_scenario_handlers(monkeypatch):
     for module in (
         manager.group_registration,
@@ -141,7 +187,9 @@ def test_recovery_commands_are_registered_before_scenario_handlers(monkeypatch):
 
     manager.register_handlers(bot)
 
-    assert bot.message_handlers[0][0] is open_menu_command
-    assert bot.message_handlers[0][1]["commands"] == ["start", "menu"]
-    assert bot.message_handlers[1][0] is cancel_command
-    assert bot.message_handlers[1][1]["commands"] == ["cancel"]
+    assert bot.message_handlers[0][0] is start_command
+    assert bot.message_handlers[0][1]["commands"] == ["start"]
+    assert bot.message_handlers[1][0] is open_menu_command
+    assert bot.message_handlers[1][1]["commands"] == ["menu"]
+    assert bot.message_handlers[2][0] is cancel_command
+    assert bot.message_handlers[2][1]["commands"] == ["cancel"]

@@ -6,6 +6,7 @@ from telebot.types import CallbackQuery, InlineKeyboardMarkup, Message
 
 from logger.app_logger import logger
 import tg.user_data as user_data
+from tg.user_data.common import ensure_active_user
 from tg.utils import Button, empty_filter, get_ids, get_username
 
 
@@ -51,6 +52,9 @@ def accounts_menu(
     database = user_data.get_user_data_db()
     database.update_username(user_id, get_username(message))
     accounts = database.get_accounts(user_id)
+    if not accounts:
+        ensure_active_user(message, bot)
+        accounts = database.get_accounts(user_id)
     active = next((account for account in accounts if account.is_active), None)
     destination = _requested_destination(message)
     lines = ["<b>Игровые аккаунты</b>"]

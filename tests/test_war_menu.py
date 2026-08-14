@@ -60,6 +60,7 @@ def callback_data(markup):
 
 
 def test_home_contains_single_war_points_menu(monkeypatch):
+    monkeypatch.setattr("tg.navigation.show_new_user_welcome", lambda *_: False)
     monkeypatch.setattr("tg.navigation.show_unseen_releases", lambda *_: False)
     monkeypatch.setattr(
         "tg.navigation.get_admins_db",

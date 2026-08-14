@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 from decimal import Decimal
 from typing import Sequence, Union
 
@@ -10,40 +11,56 @@ from resources.user_data import (
     THOUSAND_INPUT_FIELDS,
     TRACKED_FIELDS,
     ResourceField,
+    UserData,
 )
 import tg.user_data as user_data
 from tg.utils import Button, format_points, get_ids, get_username
 
 
+@dataclass(frozen=True)
+class ActiveUserResult:
+    user: UserData
+    is_new_user: bool
+    group_tag_found: bool | None
+
+
+def ensure_active_user(
+    message: Union[Message, CallbackQuery], bot: TeleBot
+) -> ActiveUserResult:
+    user_id, _, _ = get_ids(message)
+    username = get_username(message)
+    database = user_data.get_user_data_db()
+    account = database.get_active_account(user_id)
+    if account is not None:
+        database.update_username(user_id, username)
+        user = database.get_user(user_id)
+        if user is None:
+            raise RuntimeError("Active game account has no user data")
+        return ActiveUserResult(
+            user,
+            is_new_user=False,
+            group_tag_found=None,
+        )
+
+    group_tag = _get_group_tag(bot, user_id) or ""
+    user = database.get_or_create(user_id, username, group_tag)
+    logger.info(
+        "Initial game account created for user_id=%s username=%s group_tag=%s",
+        user_id,
+        username,
+        "found" if group_tag else "missing",
+    )
+    return ActiveUserResult(
+        user,
+        is_new_user=True,
+        group_tag_found=bool(group_tag),
+    )
+
+
 def get_active_user_or_prompt(
     message: Union[Message, CallbackQuery], bot: TeleBot, return_to: str = "home"
 ):
-    user_id, chat_id, message_id = get_ids(message)
-    database = user_data.get_user_data_db()
-    if not hasattr(database, "get_active_account"):
-        return database.get_or_create(user_id, get_username(message))
-    account = database.get_active_account(user_id)
-    if account is not None:
-        user = database.get_or_create(user_id, get_username(message))
-        if user is not None:
-            return user
-
-    keyboard = InlineKeyboardMarkup(row_width=1)
-    keyboard.add(
-        Button(
-            "➕ Добавить игровой аккаунт", f"accounts/add/{return_to}"
-        ).inline()
-    )
-    keyboard.add(Button("Назад в меню", "home").inline())
-    text = (
-        "<b>Сначала добавьте игровой аккаунт</b>\n\n"
-        "Ресурсы и очки хранятся отдельно для каждого игрового аккаунта."
-    )
-    if isinstance(message, CallbackQuery):
-        bot.edit_message_text(text, chat_id, message_id, reply_markup=keyboard)
-    else:
-        bot.send_message(chat_id, text, reply_markup=keyboard)
-    return None
+    return ensure_active_user(message, bot).user
 
 
 def _get_group_tag(bot: TeleBot, user_id: int) -> str | None:

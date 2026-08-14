@@ -42,6 +42,20 @@ def _show_notes(
     )
 
 
+def mark_current_release_seen(
+    message: Union[Message, CallbackQuery],
+) -> None:
+    user_id, _, _ = get_ids(message)
+    try:
+        get_release_views_db().mark_seen(
+            user_id,
+            get_username(message),
+            CURRENT_VERSION,
+        )
+    except RuntimeError:
+        logger.warning("Release views storage is unavailable while marking release")
+
+
 def show_unseen_releases(
     message: Union[Message, CallbackQuery], bot: TeleBot
 ) -> bool:

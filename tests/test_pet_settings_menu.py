@@ -52,7 +52,13 @@ class FakeUserDataDB:
     def __init__(self, user=None):
         self.user = user or UserData(user_id=42, username="tester")
 
-    def get_or_create(self, _user_id, _username, _tag=None):
+    def get_active_account(self, _user_id):
+        return self.user
+
+    def update_username(self, _user_id, username):
+        self.user.username.value = username
+
+    def get_user(self, _user_id):
         return self.user
 
     def set_value(self, _user_id, _username, field_name, value, **_kwargs):
@@ -68,7 +74,6 @@ class FakeUserDataDB:
 def configure(monkeypatch, user=None):
     database = FakeUserDataDB(user)
     monkeypatch.setattr("tg.user_data.get_user_data_db", lambda: database)
-    monkeypatch.setattr("tg.user_data._get_group_tag", lambda *_: None)
     return database
 
 

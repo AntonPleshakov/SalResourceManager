@@ -9,7 +9,12 @@ from config.config import reset_config
 reset_config(str(Path(__file__).parents[1] / "config" / "config_template.ini"))
 
 from resources.releases import CURRENT_VERSION, RELEASES, Release, unseen_releases
-from tg.releases import format_release_notes, show_release_notes, show_unseen_releases
+from tg.releases import (
+    format_release_notes,
+    mark_current_release_seen,
+    show_release_notes,
+    show_unseen_releases,
+)
 
 
 def make_callback(user_id: int = 42, data: str = "releases") -> CallbackQuery:
@@ -100,7 +105,8 @@ def test_release_notes_contain_version_changes_and_date():
 
 
 def test_unseen_release_is_marked_only_after_successful_display(monkeypatch):
-    database = FakeReleaseViewsDB()
+    previous_version = RELEASES[-2].version
+    database = FakeReleaseViewsDB(previous_version)
     monkeypatch.setattr("tg.releases.get_release_views_db", lambda: database)
     callback = make_callback()
 
@@ -108,10 +114,19 @@ def test_unseen_release_is_marked_only_after_successful_display(monkeypatch):
     assert database.marked == [(42, "tester", CURRENT_VERSION)]
 
     database.marked.clear()
-    database.version = None
+    database.version = previous_version
     with pytest.raises(RuntimeError, match="Telegram unavailable"):
         show_unseen_releases(callback, FakeBot(fail=True))
     assert database.marked == []
+
+
+def test_current_release_can_be_marked_seen_without_showing_notes(monkeypatch):
+    database = FakeReleaseViewsDB()
+    monkeypatch.setattr("tg.releases.get_release_views_db", lambda: database)
+
+    mark_current_release_seen(make_callback())
+
+    assert database.marked == [(42, "tester", CURRENT_VERSION)]
 
 
 def test_username_is_updated_even_when_there_are_no_unseen_releases(monkeypatch):

@@ -11,7 +11,7 @@ from tg import group_registration
 from tg import releases
 from tg import user_data
 from tg import war
-from tg.navigation import home
+from tg.navigation import home, start
 from tg.utils import empty_filter
 from logger.app_logger import logger
 
@@ -26,13 +26,22 @@ def _has_active_state(message: Message, bot: TeleBot) -> bool:
     return bot.get_state(message.from_user.id, message.chat.id) is not None
 
 
-def open_menu_command(message: Message, bot: TeleBot) -> None:
+def _notify_about_cancelled_state(message: Message, bot: TeleBot) -> None:
     if _has_active_state(message, bot):
         bot.send_message(
             message.chat.id,
             "Текущее действие отменено.",
             reply_markup=ReplyKeyboardRemove(),
         )
+
+
+def start_command(message: Message, bot: TeleBot) -> None:
+    _notify_about_cancelled_state(message, bot)
+    start(message, bot)
+
+
+def open_menu_command(message: Message, bot: TeleBot) -> None:
+    _notify_about_cancelled_state(message, bot)
     home(message, bot)
 
 
@@ -61,8 +70,14 @@ def configure_commands(bot: TeleBot) -> None:
 def register_handlers(bot: TeleBot):
     logger.debug("Registering Telegram command and callback handlers")
     bot.register_message_handler(
+        start_command,
+        commands=["start"],
+        chat_types=["private"],
+        pass_bot=True,
+    )
+    bot.register_message_handler(
         open_menu_command,
-        commands=["start", "menu"],
+        commands=["menu"],
         chat_types=["private"],
         pass_bot=True,
     )

@@ -36,6 +36,7 @@ from tg.user_data import (
     fill_tracked_fields,
     save_all_values,
 )
+from tg.user_data.common import ensure_active_user
 
 
 def make_callback(data: str) -> CallbackQuery:
@@ -125,6 +126,72 @@ def test_group_tag_prefers_chat_member_custom_title(monkeypatch):
     )
 
     assert _get_group_tag(FakeBot(), 42) == "Офицер"
+
+
+def test_first_game_account_is_created_from_group_tag(tmp_path, monkeypatch):
+    connection = Database(tmp_path / "database.db")
+    database = UserDataDB(connection)
+
+    class FakeAccessGroupDB:
+        def get_group_id(self):
+            return -100123
+
+    class FakeBot:
+        def get_chat_member(self, group_id, user_id):
+            assert (group_id, user_id) == (-100123, 42)
+            return SimpleNamespace(custom_title="Лидер")
+
+    monkeypatch.setattr("tg.user_data.get_user_data_db", lambda: database)
+    monkeypatch.setattr(
+        "tg.user_data.get_access_group_db", lambda: FakeAccessGroupDB()
+    )
+
+    result = ensure_active_user(make_callback("home"), FakeBot())
+
+    assert result.is_new_user is True
+    assert result.group_tag_found is True
+    assert result.user.tag.value == "Лидер"
+    assert [account.tag for account in database.get_accounts(42)] == ["Лидер"]
+    connection.close()
+
+
+def test_first_game_account_uses_username_when_group_tag_is_missing(
+    tmp_path, monkeypatch
+):
+    connection = Database(tmp_path / "database.db")
+    database = UserDataDB(connection)
+
+    class FakeAccessGroupDB:
+        def get_group_id(self):
+            return None
+
+    monkeypatch.setattr("tg.user_data.get_user_data_db", lambda: database)
+    monkeypatch.setattr(
+        "tg.user_data.get_access_group_db", lambda: FakeAccessGroupDB()
+    )
+
+    result = ensure_active_user(make_callback("home"), object())
+
+    assert result.is_new_user is True
+    assert result.group_tag_found is False
+    assert result.user.tag.value == "tester"
+    assert [account.tag for account in database.get_accounts(42)] == ["tester"]
+    connection.close()
+
+
+def test_existing_account_is_returned_as_an_existing_user(tmp_path, monkeypatch):
+    connection = Database(tmp_path / "database.db")
+    database = UserDataDB(connection)
+    database.add_account(42, "old_username", "Лидер")
+    monkeypatch.setattr("tg.user_data.get_user_data_db", lambda: database)
+
+    result = ensure_active_user(make_callback("home"), object())
+
+    assert result.is_new_user is False
+    assert result.group_tag_found is None
+    assert result.user.tag.value == "Лидер"
+    assert result.user.username.value == "tester"
+    connection.close()
 
 
 def test_database_creates_and_updates_user(tmp_path):
