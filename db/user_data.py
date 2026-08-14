@@ -65,6 +65,39 @@ class UserDataDB:
         )
         return [UserData.from_row(list(row)) for row in rows]
 
+    def get_users_with_reminders_enabled(self) -> List[UserData]:
+        rows = self._database.fetch_all(
+            SELECT_USER
+            + "WHERE tu.reminders_enabled = 1 "
+            "ORDER BY tu.user_id, ga.account_id"
+        )
+        return [UserData.from_row(list(row)) for row in rows]
+
+    def reminders_enabled(self, user_id: int) -> bool:
+        row = self._database.fetch_one(
+            "SELECT reminders_enabled FROM telegram_users WHERE user_id = ?",
+            (user_id,),
+        )
+        if row is None:
+            raise ValueError("Telegram user not found")
+        return bool(row[0])
+
+    def set_reminders_enabled(self, user_id: int, enabled: bool) -> None:
+        changed = self._database.run_in_transaction(
+            lambda connection: connection.execute(
+                "UPDATE telegram_users SET reminders_enabled = ? "
+                "WHERE user_id = ?",
+                (int(enabled), user_id),
+            ).rowcount
+        )
+        if not changed:
+            raise ValueError("Telegram user not found")
+        logger.info(
+            "DB: reminders enabled=%s for user_id=%s",
+            enabled,
+            user_id,
+        )
+
     def get_accounts(self, user_id: int) -> List[GameAccount]:
         rows = self._database.fetch_all(
             "SELECT ga.account_id, ga.user_id, tu.username, ga.tag, "

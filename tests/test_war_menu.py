@@ -72,7 +72,8 @@ def test_home_contains_single_war_points_menu(monkeypatch):
         lambda: SimpleNamespace(
             get_accounts=lambda _user_id: [
                 SimpleNamespace(tag="Лидер", is_active=True)
-            ]
+            ],
+            reminders_enabled=lambda _user_id: True,
         ),
     )
     bot = FakeBot()

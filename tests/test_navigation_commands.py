@@ -3,6 +3,7 @@ from types import SimpleNamespace
 
 from telebot.types import (
     BotCommandScopeAllPrivateChats,
+    CallbackQuery,
     Chat,
     Message,
     ReplyKeyboardRemove,
@@ -37,6 +38,20 @@ def make_message(text: str) -> Message:
     )
 
 
+def make_callback(data: str) -> CallbackQuery:
+    user = User(42, False, "Tester", username="tester")
+    message = Message(
+        1,
+        user,
+        0,
+        Chat(42, "private"),
+        "text",
+        {"text": "menu"},
+        None,
+    )
+    return CallbackQuery("callback-1", user, data, "", None, message)
+
+
 class FakeBot:
     def __init__(self, state=None):
         self.state = state
@@ -55,6 +70,9 @@ class FakeBot:
     def send_message(self, chat_id, text, reply_markup=None):
         self.sent.append((chat_id, text, reply_markup))
 
+    def edit_message_text(self, text, chat_id, message_id, reply_markup=None):
+        self.sent.append((chat_id, text, reply_markup))
+
     def reply_to(self, message, text):
         self.replies.append((message, text))
 
@@ -62,7 +80,7 @@ class FakeBot:
         self.commands.append((commands, scope))
 
 
-def prepare_home(monkeypatch):
+def prepare_home(monkeypatch, reminders_enabled=True):
     monkeypatch.setattr("tg.navigation.show_new_user_welcome", lambda *_: False)
     monkeypatch.setattr(
         "tg.navigation.show_unseen_releases",
@@ -83,7 +101,9 @@ def prepare_home(monkeypatch):
         lambda: SimpleNamespace(
             get_accounts=lambda _user_id: [
                 SimpleNamespace(tag="Лидер", is_active=True)
-            ]
+            ],
+            reminders_enabled=lambda _user_id: reminders_enabled,
+            set_reminders_enabled=lambda _user_id, _enabled: None,
         ),
     )
 
@@ -150,7 +170,8 @@ def test_home_shows_account_count_only_for_multiple_accounts(monkeypatch):
             get_accounts=lambda _user_id: [
                 SimpleNamespace(tag="Main & Hero", is_active=True),
                 SimpleNamespace(tag="Alt", is_active=False),
-            ]
+            ],
+            reminders_enabled=lambda _user_id: True,
         ),
     )
     bot = FakeBot()
@@ -161,6 +182,50 @@ def test_home_shows_account_count_only_for_multiple_accounts(monkeypatch):
         "Игровой аккаунт: <b>Main &amp; Hero</b>\n"
         "Всего аккаунтов: 2\n\n"
         "Выберите раздел."
+    )
+
+
+def test_home_menu_shows_reminder_action_for_current_state(monkeypatch):
+    prepare_home(monkeypatch, reminders_enabled=False)
+    bot = FakeBot()
+
+    navigation.home(make_message("/menu"), bot)
+
+    buttons = [button for row in bot.sent[-1][2].keyboard for button in row]
+    reminder_button = next(
+        button for button in buttons if button.callback_data == "reminders/toggle"
+    )
+    assert reminder_button.text == "🔔 Включить напоминания"
+
+
+def test_reminders_can_be_toggled_from_home_menu(monkeypatch):
+    state = {"enabled": True}
+    database = SimpleNamespace(
+        get_accounts=lambda _user_id: [
+            SimpleNamespace(tag="Лидер", is_active=True)
+        ],
+        reminders_enabled=lambda _user_id: state["enabled"],
+        set_reminders_enabled=lambda _user_id, enabled: state.update(
+            enabled=enabled
+        ),
+    )
+    monkeypatch.setattr("tg.navigation.get_user_data_db", lambda: database)
+    monkeypatch.setattr(
+        "tg.navigation.get_admins_db",
+        lambda: SimpleNamespace(is_admin=lambda _user_id: False),
+    )
+    bot = FakeBot()
+
+    navigation.toggle_reminders(make_callback("reminders/toggle"), bot)
+
+    assert state["enabled"] is False
+    buttons = [
+        button for row in bot.sent[-1][2].keyboard for button in row
+    ]
+    assert any(
+        button.text == "🔔 Включить напоминания"
+        and button.callback_data == "reminders/toggle"
+        for button in buttons
     )
 
 

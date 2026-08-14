@@ -11,7 +11,7 @@ from tg import group_registration
 from tg import releases
 from tg import user_data
 from tg import war
-from tg.navigation import home, start
+from tg.navigation import home, start, toggle_reminders
 from tg.utils import empty_filter
 from logger.app_logger import logger
 
@@ -100,6 +100,13 @@ def register_handlers(bot: TeleBot):
     )
     bot.register_callback_query_handler(
         home, func=empty_filter, button="home", is_private=True, pass_bot=True
+    )
+    bot.register_callback_query_handler(
+        toggle_reminders,
+        func=empty_filter,
+        button="reminders/toggle",
+        is_private=True,
+        pass_bot=True,
     )
     admins.register_handlers(bot)
     logger.info("Telegram handlers registered")

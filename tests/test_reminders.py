@@ -121,7 +121,7 @@ def test_reminder_keyboard_has_back_button():
 
 def test_send_reminder_sends_to_every_user_and_continues_after_error(monkeypatch):
     class FakeUserDataDB:
-        def get_users(self):
+        def get_users_with_reminders_enabled(self):
             return [UserData(user_id=1), UserData(user_id=2)]
 
     class FakeBot:
@@ -144,6 +144,37 @@ def test_send_reminder_sends_to_every_user_and_continues_after_error(monkeypatch
     assert [call[0] for call in bot.calls] == [1, 2]
 
 
+def test_blocking_bot_disables_future_resource_reminders(monkeypatch):
+    class BlockedError(Exception):
+        error_code = 403
+        description = "Forbidden: bot was blocked by the user"
+
+    class FakeUserDataDB:
+        def __init__(self):
+            self.disabled = []
+
+        def get_users_with_reminders_enabled(self):
+            return [UserData(user_id=1, username="blocked")]
+
+        def set_reminders_enabled(self, user_id, enabled):
+            self.disabled.append((user_id, enabled))
+
+    class FakeBot:
+        def send_message(self, _user_id, _text, reply_markup):
+            raise BlockedError()
+
+    database = FakeUserDataDB()
+    monkeypatch.setattr("tg.reminders.ApiTelegramException", BlockedError)
+    monkeypatch.setattr("tg.reminders.get_user_data_db", lambda: database)
+
+    send_reminder(
+        FakeBot(),
+        ScheduledReminder(dt(2026, 8, 3, 13), ReminderKind.WEEKLY_REWARD),
+    )
+
+    assert database.disabled == [(1, False)]
+
+
 def test_reminder_combines_multiple_accounts_into_one_message(monkeypatch):
     users = [
         UserData(account_id=11, user_id=1, username="one", tag="Alpha"),
@@ -151,7 +182,7 @@ def test_reminder_combines_multiple_accounts_into_one_message(monkeypatch):
     ]
 
     class FakeUserDataDB:
-        def get_users(self):
+        def get_users_with_reminders_enabled(self):
             return users
 
     class FakeBot:
@@ -195,7 +226,7 @@ def test_daily_reminder_skips_current_user_and_lists_only_missing_resources(
     partial_user.mark_updated("hammers", reminder.time.date())
 
     class FakeUserDataDB:
-        def get_users(self):
+        def get_users_with_reminders_enabled(self):
             return [current_user, partial_user]
 
     class FakeBot:
@@ -217,7 +248,7 @@ def test_daily_reminder_skips_current_user_and_lists_only_missing_resources(
 
 def test_daily_reminder_is_not_sent_when_day_has_no_tracked_fields(monkeypatch):
     class FakeUserDataDB:
-        def get_users(self):
+        def get_users_with_reminders_enabled(self):
             return [UserData(user_id=1, username="tester")]
 
     class FakeBot:
@@ -260,7 +291,7 @@ def test_technology_reminder_lists_only_outdated_technologies(monkeypatch):
         user.mark_updated(field_name, reminder.time.date())
 
     class FakeUserDataDB:
-        def get_users(self):
+        def get_users_with_reminders_enabled(self):
             return [user]
 
     class FakeBot:

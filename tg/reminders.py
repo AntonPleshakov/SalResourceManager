@@ -5,6 +5,7 @@ from threading import Event, Thread
 from typing import Callable, Optional, Sequence, Set, Tuple
 
 from telebot import TeleBot, formatting
+from telebot.apihelper import ApiTelegramException
 from telebot.types import InlineKeyboardMarkup
 
 from common.datetime_utils import now
@@ -178,7 +179,8 @@ def _reminder_keyboard(
 def send_reminder(bot: TeleBot, reminder: ScheduledReminder) -> None:
     sent = 0
     skipped = 0
-    users = get_user_data_db().get_users()
+    database = get_user_data_db()
+    users = database.get_users_with_reminders_enabled()
     required_names = _required_field_names(reminder)
     logger.info(
         "Sending resource reminder kind=%s war_day=%s recipients=%d resources=%d",
@@ -229,6 +231,16 @@ def send_reminder(bot: TeleBot, reminder: ScheduledReminder) -> None:
             bot.send_message(user_id, text, reply_markup=keyboard)
             sent += 1
         except Exception as error:
+            if (
+                isinstance(error, ApiTelegramException)
+                and error.error_code == 403
+                and "bot was blocked by the user" in error.description.lower()
+            ):
+                database.set_reminders_enabled(user_id, False)
+                logger.info(
+                    "Resource reminders disabled after bot block for user_id=%s",
+                    user_id,
+                )
             logger.warning(
                 "Unable to send resource reminder to user_id=%s username=%s: %s",
                 user_id,

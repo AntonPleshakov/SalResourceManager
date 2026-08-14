@@ -83,6 +83,31 @@ def test_resources_are_isolated_and_active_account_can_be_switched(tmp_path):
     connection.close()
 
 
+def test_reminder_preference_defaults_to_enabled_and_filters_users(tmp_path):
+    connection = Database(tmp_path / "database.db")
+    database = UserDataDB(connection)
+    database.add_account(42, "telegram_user", "Main")
+    database.add_account(77, "another_user", "Other")
+
+    assert database.reminders_enabled(42) is True
+    reminder_user_ids = {
+        user.user_id.value
+        for user in database.get_users_with_reminders_enabled()
+    }
+    assert reminder_user_ids == {42, 77}
+
+    database.set_reminders_enabled(42, False)
+
+    assert database.reminders_enabled(42) is False
+    reminder_user_ids = {
+        user.user_id.value
+        for user in database.get_users_with_reminders_enabled()
+    }
+    assert reminder_user_ids == {77}
+    assert {user.user_id.value for user in database.get_users()} == {42, 77}
+    connection.close()
+
+
 def test_account_selector_returns_to_resource_screen_after_switch(
     tmp_path, monkeypatch
 ):

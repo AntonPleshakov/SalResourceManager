@@ -23,7 +23,8 @@ def show_home_menu(
     message: Union[Message, CallbackQuery], bot: TeleBot
 ) -> None:
     user_id, chat_id, message_id = get_ids(message)
-    accounts = get_user_data_db().get_accounts(user_id)
+    database = get_user_data_db()
+    accounts = database.get_accounts(user_id)
     active_account = next(
         (account for account in accounts if account.is_active),
         None,
@@ -37,6 +38,15 @@ def show_home_menu(
     keyboard.row(
         Button("🐾 Питомцы", "pets").inline(),
         Button("⚔️ Очки войны", "war_menu").inline(),
+    )
+    reminders_enabled = database.reminders_enabled(user_id)
+    keyboard.row(
+        Button(
+            "🔕 Выключить напоминания"
+            if reminders_enabled
+            else "🔔 Включить напоминания",
+            "reminders/toggle",
+        ).inline()
     )
     keyboard.row(Button("🆕 Что нового", "releases").inline())
     logger.debug(
@@ -79,3 +89,17 @@ def home(message: Union[Message, CallbackQuery], bot: TeleBot) -> None:
     if _show_onboarding(message, bot):
         return
     show_home_menu(message, bot)
+
+
+def toggle_reminders(callback_query: CallbackQuery, bot: TeleBot) -> None:
+    user_id, _, _ = get_ids(callback_query)
+    database = get_user_data_db()
+    enabled = not database.reminders_enabled(user_id)
+    database.set_reminders_enabled(user_id, enabled)
+    logger.info(
+        "Resource reminders toggled enabled=%s for user_id=%s username=%s",
+        enabled,
+        user_id,
+        get_username(callback_query),
+    )
+    show_home_menu(callback_query, bot)
