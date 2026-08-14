@@ -339,7 +339,7 @@ def notifications_menu(callback_query: CallbackQuery, bot: TeleBot) -> None:
             "Попросить обновить данные", "admins/notifications/standard"
         ).inline(),
         Button("Отправить свой текст", "admins/notifications/custom").inline(),
-        Button("Назад к администраторам", "admins").inline(),
+        Button("Назад в админ-панель", "admins").inline(),
     )
     bot.edit_message_text(
         "Уведомления пользователям", chat_id, message_id, reply_markup=keyboard

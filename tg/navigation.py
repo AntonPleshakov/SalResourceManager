@@ -36,7 +36,7 @@ def show_home_menu(
         get_username(message),
     )
     if get_admins_db().is_admin(user_id):
-        keyboard.add(Button("Администраторы", "admins").inline())
+        keyboard.add(Button("Админ-панель", "admins").inline())
     text = "Выберите раздел"
     if isinstance(message, CallbackQuery):
         bot.edit_message_text(text, chat_id, message_id, reply_markup=keyboard)

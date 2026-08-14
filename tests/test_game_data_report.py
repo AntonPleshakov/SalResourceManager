@@ -135,11 +135,16 @@ def test_admin_menu_contains_game_data_report(monkeypatch):
 
     markup = bot.edits[0][1]["reply_markup"]
     assert "admins/game_data" in callback_data(markup)
-    assert any(
-        button.text == "Выгрузить данные в Google Таблицу"
-        for row in markup.keyboard
-        for button in row
-    )
+    assert bot.edits[0][0][0] == "<b>Админ-панель</b>\n\nВыберите действие."
+    assert [button.text for row in markup.keyboard for button in row] == [
+        "Проверить актуальность данных",
+        "Уведомления",
+        "Обновить Google Таблицу",
+        "Список администраторов",
+        "Добавить администраторов",
+        "Удалить администратора",
+        "Назад в меню",
+    ]
 
 
 def test_game_data_callback_exports_and_shows_url(monkeypatch):

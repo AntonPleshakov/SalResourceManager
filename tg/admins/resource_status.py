@@ -91,7 +91,7 @@ def stale_resources(callback_query: CallbackQuery, bot: TeleBot) -> None:
     )
     chunks = _split_report(report)
     keyboard = InlineKeyboardMarkup(row_width=1)
-    keyboard.add(Button("Назад к администраторам", "admins").inline())
+    keyboard.add(Button("Назад в админ-панель", "admins").inline())
 
     logger.info(
         "Stale resource report requested by user_id=%s username=%s users=%d threshold_days=%d",

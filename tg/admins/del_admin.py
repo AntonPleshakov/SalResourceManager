@@ -29,7 +29,7 @@ def del_admin_options(callback_query: CallbackQuery, bot: TeleBot):
     keyboard = InlineKeyboardMarkup(row_width=1)
     for admin in current_admins:
         keyboard.add(Button(admin.username.value, str(admin.user_id.value)).inline())
-    keyboard.add(Button("Назад к администраторам", "admins").inline())
+    keyboard.add(Button("Назад в админ-панель", "admins").inline())
     user_id, chat_id, message_id = get_ids(callback_query)
     bot.edit_message_text(
         "Выберите пользователя, которого нужно лишить прав администратора.",
