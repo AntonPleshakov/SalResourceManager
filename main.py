@@ -6,7 +6,7 @@ from telebot.handler_backends import BaseMiddleware
 from telebot.types import CallbackQuery, InlineKeyboardMarkup, Message
 
 import tg.manager
-from config.config import getconf, getconf_int
+from config.config import getconf
 from db.initializer import initialize_database
 from logger.app_logger import logger
 from tg.access import GroupAccessMiddleware
@@ -157,7 +157,7 @@ if __name__ == "__main__":
     bot.setup_middleware(AlwaysAnswerCallbackQueryMiddleware(bot))
     bot.setup_middleware(UserFacingErrorMiddleware(bot))
     bot.exception_handler = BotExceptionHandler()
-    reminder_scheduler = ReminderScheduler(bot, getconf_int("REMINDER_HOUR", 13))
+    reminder_scheduler = ReminderScheduler(bot)
     reminder_scheduler.start()
     logger.info(
         "Sal Resources Manager started; listening for Telegram webhooks "

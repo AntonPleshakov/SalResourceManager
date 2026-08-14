@@ -4,7 +4,6 @@ import atexit
 from dataclasses import dataclass
 from pathlib import Path
 
-from config.config import getconf_path
 from logger.app_logger import logger
 
 from .access_group import AccessGroupDB
@@ -14,7 +13,9 @@ from .release_views import ReleaseViewsDB
 from .user_data import UserDataDB
 
 
-DEFAULT_DATABASE_PATH = "data/sal_resources.db"
+DEFAULT_DATABASE_PATH = (
+    Path(__file__).resolve().parents[1] / "data" / "sal_resources.db"
+)
 
 
 @dataclass(frozen=True)
@@ -34,10 +35,7 @@ def initialize_database(
     database_path: Path | None = None,
 ) -> Databases:
     global _databases
-    database_path = database_path or getconf_path(
-        "SQLITE_DB_PATH",
-        DEFAULT_DATABASE_PATH,
-    )
+    database_path = database_path or DEFAULT_DATABASE_PATH
     database = None
 
     logger.info(

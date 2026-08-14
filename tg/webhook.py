@@ -7,9 +7,14 @@ from urllib.parse import urlsplit, urlunsplit
 
 from telebot import TeleBot
 
-from config.config import getconf, getconf_int, getconf_path
+from config.config import getconf
 
 
+_PROJECT_ROOT = Path(__file__).resolve().parents[1]
+WEBHOOK_LISTEN = "0.0.0.0"
+WEBHOOK_PORT = 8443
+WEBHOOK_CERTIFICATE_PATH = _PROJECT_ROOT / "certs" / "webhook.pem"
+WEBHOOK_PRIVATE_KEY_PATH = _PROJECT_ROOT / "certs" / "webhook.key"
 _SECRET_TOKEN_PATTERN = re.compile(r"^[A-Za-z0-9_-]{1,256}$")
 _INVALID_HTTP_REQUEST_MESSAGE = "Invalid HTTP request received."
 
@@ -86,15 +91,11 @@ def build_webhook_settings(
 def load_webhook_settings() -> WebhookSettings:
     settings = build_webhook_settings(
         public_url=getconf("WEBHOOK_URL"),
-        listen=getconf("WEBHOOK_LISTEN", "0.0.0.0"),
-        port=getconf_int("WEBHOOK_PORT", 8443),
+        listen=WEBHOOK_LISTEN,
+        port=WEBHOOK_PORT,
         secret_token=generate_webhook_secret_token(),
-        certificate_path=getconf_path(
-            "WEBHOOK_CERTIFICATE_PATH", "certs/webhook.pem"
-        ),
-        private_key_path=getconf_path(
-            "WEBHOOK_PRIVATE_KEY_PATH", "certs/webhook.key"
-        ),
+        certificate_path=WEBHOOK_CERTIFICATE_PATH,
+        private_key_path=WEBHOOK_PRIVATE_KEY_PATH,
     )
     for option, path in (
         ("WEBHOOK_CERTIFICATE_PATH", settings.certificate_path),

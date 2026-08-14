@@ -5,32 +5,12 @@ from pathlib import Path
 
 _MODE = os.getenv("MODE", "Debug")
 _CONFIG_PATH = Path(__file__).with_name("config.ini")
-_PROJECT_ROOT = _CONFIG_PATH.parent.parent
 _config = configparser.ConfigParser()
 _config.read(_CONFIG_PATH, encoding="utf-8")
 
 
-def getconf(option: str, fallback: str | None = None) -> str:
-    if fallback is None:
-        return _config.get(_MODE, option)
-    return _config.get(_MODE, option, fallback=fallback)
-
-
-def getconf_int(option: str, fallback: int | None = None) -> int:
-    if fallback is None:
-        return _config.getint(_MODE, option)
-    return _config.getint(_MODE, option, fallback=fallback)
-
-
-def getconf_path(option: str, fallback: str | None = None) -> Path:
-    if fallback is None:
-        value = getconf(option)
-    else:
-        value = _config.get(_MODE, option, fallback=fallback)
-    path = Path(value)
-    if path.is_absolute():
-        return path
-    return _PROJECT_ROOT / path
+def getconf(option: str) -> str:
+    return _config.get(_MODE, option)
 
 
 def reset_config(filepath: str) -> None:

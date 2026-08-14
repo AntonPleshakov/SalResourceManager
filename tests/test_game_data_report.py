@@ -8,7 +8,7 @@ from pygsheets.exceptions import WorksheetNotFound
 reset_config(str(Path(__file__).parents[1] / "config" / "config_template.ini"))
 
 from resources.user_data import UserData
-from reports.game_data import GameDataReport
+from reports.game_data import GameDataReport, USER_DATA_PAGE_NAME
 from tg.admins import admins_main_menu
 from tg.admins.game_data import export_game_data
 
@@ -104,7 +104,7 @@ def test_report_replaces_google_worksheet_with_sqlite_snapshot():
     url = GameDataReport(client).export(users)
 
     assert client.opened_key == getconf("GAME_DATA_GTABLE_KEY")
-    assert spreadsheet.requested_worksheet == getconf("USER_DATA_PAGE_NAME")
+    assert spreadsheet.requested_worksheet == USER_DATA_PAGE_NAME
     assert worksheet.cleared
     assert worksheet.start == "A1"
     assert worksheet.values == GameDataReport.HEADER + [users[0].to_row()]
@@ -120,7 +120,7 @@ def test_report_creates_missing_worksheet():
 
     GameDataReport(FakeClient(spreadsheet)).export([])
 
-    assert spreadsheet.added_worksheet == getconf("USER_DATA_PAGE_NAME")
+    assert spreadsheet.added_worksheet == USER_DATA_PAGE_NAME
     assert worksheet.values == GameDataReport.HEADER
 
 

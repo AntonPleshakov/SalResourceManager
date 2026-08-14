@@ -21,6 +21,9 @@ from resources.war import WAR_STAGES, WarActivity
 from tg.utils import Button, format_user_identity, group_user_accounts
 
 
+REMINDER_HOUR = 13
+
+
 class ReminderKind(str, Enum):
     DAILY = "daily"
     WEEKLY_REWARD = "weekly_reward"
@@ -56,7 +59,7 @@ UPDATED_FIELDS_BY_ACTIVITY = {
 }
 
 
-def next_reminder(moment: datetime, hour: int = 13) -> ScheduledReminder:
+def next_reminder(moment: datetime, hour: int = REMINDER_HOUR) -> ScheduledReminder:
     if moment.tzinfo is None:
         raise ValueError("Reminder time must be timezone-aware")
     if not 0 <= hour <= 23:
@@ -261,7 +264,7 @@ class ReminderScheduler:
     def __init__(
         self,
         bot: TeleBot,
-        hour: int = 13,
+        hour: int = REMINDER_HOUR,
         clock: Callable[[], datetime] = now,
     ):
         self._bot = bot

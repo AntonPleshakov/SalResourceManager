@@ -8,10 +8,12 @@ Create the local configuration:
 cp config/config_template.ini config/config.ini
 ```
 
-Set the Telegram `TOKEN`, report settings, and the server's public IPv4 address:
+Set the Telegram `TOKEN`, Google Sheets report key, and the server's public
+IPv4 address:
 
 ```ini
 WEBHOOK_URL = https://203.0.113.10:8443/telegram/
+GAME_DATA_GTABLE_KEY = <report spreadsheet id>
 ```
 
 Place the Google service-account key at `gapi_service_file.json`. For remote

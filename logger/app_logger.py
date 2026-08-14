@@ -1,7 +1,11 @@
 import logging
 import sys
 
-from config.config import getconf
+
+LOG_FORMAT = (
+    "%(asctime)s %(levelname)s %(name)s %(module)s:%(lineno)d | %(message)s"
+)
+LOG_DATE_FORMAT = "%d/%m %H:%M:%S"
 
 
 class _MaxLevelFilter(logging.Filter):
@@ -14,7 +18,7 @@ class _MaxLevelFilter(logging.Filter):
 
 
 def _build_logger() -> logging.Logger:
-    formatter = logging.Formatter(getconf("LOG_FORMAT"), getconf("LOG_DATE_FORMAT"))
+    formatter = logging.Formatter(LOG_FORMAT, LOG_DATE_FORMAT)
 
     stdout_handler = logging.StreamHandler(sys.stdout)
     stdout_handler._sal_managed = True
