@@ -8,12 +8,14 @@ from resources.user_data import UserData
 from resources.war import WarActivity, WarPointsCalculator
 from resources.war_rules.forge import explain_forge_occurrences
 import tg.war as war
+from tg.metrics import observe_score_calculation
 from tg.utils import Button, empty_filter, format_points, get_ids, get_username
 
 
 def _personal_war_points_text(user: UserData) -> str:
     logger.info("Calculating personal war points user_id=%s", user.user_id.value)
-    report = WarPointsCalculator().calculate([user], war.WAR_STAGES)
+    with observe_score_calculation("personal_summary"):
+        report = WarPointsCalculator().calculate([user], war.WAR_STAGES)
     lines = [
         "<b>Калькулятор очков войны</b>",
         f"Игровой аккаунт: <b>{formatting.escape_html(user.tag.value)}</b>",
@@ -77,13 +79,14 @@ def _personal_war_activity_details_text(
 ) -> str:
     occurrences = _activity_occurrences(war.WAR_STAGES, activity)
     calculator = WarPointsCalculator()
-    details = calculator.calculate_details(user, [activity])[activity]
-    occurrence_points = calculator.calculate_occurrence_points(
-        user,
-        activity,
-        occurrences,
-    )
-    total_points = sum(occurrence_points)
+    with observe_score_calculation("activity_details"):
+        details = calculator.calculate_details(user, [activity])[activity]
+        occurrence_points = calculator.calculate_occurrence_points(
+            user,
+            activity,
+            occurrences,
+        )
+        total_points = sum(occurrence_points)
     lines = [
         f"<b>{activity.title}</b>",
         f"Игровой аккаунт: <b>{formatting.escape_html(user.tag.value)}</b>",
@@ -203,7 +206,8 @@ def personal_war_details_menu(
         return
 
     activities = _configured_activities(war.WAR_STAGES)
-    report = WarPointsCalculator().calculate([user], war.WAR_STAGES)
+    with observe_score_calculation("personal_details"):
+        report = WarPointsCalculator().calculate([user], war.WAR_STAGES)
     keyboard = InlineKeyboardMarkup(row_width=1)
     for activity in activities:
         keyboard.add(

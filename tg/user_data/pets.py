@@ -6,6 +6,7 @@ from telebot.types import CallbackQuery, InlineKeyboardMarkup, Message
 from logger.app_logger import logger
 from resources.egg_levels import EGG_LEVELS, EggLevel, format_hatch_batch_count
 import tg.user_data as user_data
+from tg.metrics import record_resource_update
 from tg.user_data.common import get_active_user_or_prompt
 from tg.utils import Button, empty_filter, get_ids, get_username
 
@@ -130,6 +131,7 @@ def _apply_max_egg_level(
         values,
         account_id=user.account_id.value,
     )
+    record_resource_update("pets", "max_egg_level")
     pets_menu(
         callback_query,
         bot,
@@ -248,6 +250,7 @@ def change_hatch_batch_count(callback_query: CallbackQuery, bot: TeleBot) -> Non
         max(0, current + delta),
         account_id=user.account_id.value,
     )
+    record_resource_update("pets", level.batch_field_name)
     hatch_batches_menu(callback_query, bot)
 
 

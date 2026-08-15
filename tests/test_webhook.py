@@ -1,10 +1,13 @@
 import logging
 from pathlib import Path
-from unittest.mock import Mock
+from unittest.mock import ANY, Mock
 
 import pytest
 
+from tg import webhook
+from tg.metrics import WebhookMetricsMiddleware
 from tg.webhook import (
+    build_webhook_listener,
     build_webhook_settings,
     configure_uvicorn_logging,
     generate_webhook_secret_token,
@@ -66,7 +69,51 @@ def test_webhook_settings_reject_invalid_secret_token():
         )
 
 
-def test_serve_webhook_registers_and_starts_listener():
+def test_webhook_listener_is_configured(tmp_path, monkeypatch):
+    certificate_path = tmp_path / "certificate.pem"
+    certificate_path.write_bytes(b"certificate")
+    listener = Mock()
+    listener_class = Mock(return_value=listener)
+    monkeypatch.setattr(webhook, "SyncWebhookListener", listener_class)
+    bot = Mock()
+    settings = build_webhook_settings(
+        "https://bot.example.com/telegram",
+        "0.0.0.0",
+        8443,
+        "valid-secret",
+        certificate_path,
+        tmp_path / "private.key",
+    )
+
+    result = build_webhook_listener(bot, settings)
+
+    bot.set_webhook.assert_called_once_with(
+        url="https://bot.example.com/telegram/",
+        certificate=ANY,
+        max_connections=1,
+        drop_pending_updates=False,
+        secret_token="valid-secret",
+    )
+    listener_class.assert_called_once_with(
+        bot=bot,
+        secret_token="valid-secret",
+        host="0.0.0.0",
+        port=8443,
+        ssl_context=(str(certificate_path), str(tmp_path / "private.key")),
+        url_path="/telegram/",
+    )
+    listener.app.add_middleware.assert_called_once_with(
+        WebhookMetricsMiddleware,
+        webhook_path="/telegram/",
+    )
+    assert bot.webhook_listener is listener
+    assert result is listener
+
+
+def test_serve_webhook_starts_listener(monkeypatch):
+    listener = Mock()
+    build_listener = Mock(return_value=listener)
+    monkeypatch.setattr(webhook, "build_webhook_listener", build_listener)
     bot = Mock()
     settings = build_webhook_settings(
         "https://bot.example.com/telegram",
@@ -79,17 +126,8 @@ def test_serve_webhook_registers_and_starts_listener():
 
     serve_webhook(bot, settings)
 
-    bot.run_webhooks.assert_called_once_with(
-        listen="0.0.0.0",
-        port=8443,
-        url_path="telegram",
-        webhook_url="https://bot.example.com/telegram/",
-        secret_token="valid-secret",
-        certificate="certificate.pem",
-        certificate_key="private.key",
-        max_connections=1,
-        drop_pending_updates=False,
-    )
+    build_listener.assert_called_once_with(bot, settings)
+    listener.run_app.assert_called_once_with()
 
 
 def test_uvicorn_logging_is_configured(monkeypatch):

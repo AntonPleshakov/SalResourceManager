@@ -1,5 +1,6 @@
 from pathlib import Path
 
+from prometheus_client import CollectorRegistry
 from telebot.types import CallbackQuery, Chat, Message, User
 
 from config.config import getconf, reset_config
@@ -10,7 +11,9 @@ reset_config(str(Path(__file__).parents[1] / "config" / "config_template.ini"))
 from resources.user_data import UserData
 from reports.game_data import GameDataReport, USER_DATA_PAGE_NAME
 from tg.admins import admins_main_menu
+from tg.admins import game_data as game_data_module
 from tg.admins.game_data import export_game_data
+from tg.metrics import ApplicationMetrics
 
 
 class FakeWorksheet:
@@ -161,6 +164,12 @@ def test_game_data_callback_exports_and_shows_url(monkeypatch):
         "tg.admins.game_data.get_user_data_db",
         lambda: type("Users", (), {"get_users": lambda _: users})(),
     )
+    registry = CollectorRegistry()
+    monkeypatch.setattr(
+        game_data_module,
+        "APPLICATION_METRICS",
+        ApplicationMetrics(registry),
+    )
     bot = FakeBot()
 
     export_game_data(make_callback(), bot)
@@ -170,6 +179,10 @@ def test_game_data_callback_exports_and_shows_url(monkeypatch):
     markup = bot.edits[1][1]["reply_markup"]
     assert markup.keyboard[0][0].url == "https://docs.google.test/report"
     assert callback_data(markup) == ["admins"]
+    assert registry.get_sample_value(
+        "srm_reports_total",
+        {"report": "game_data", "result": "completed"},
+    ) == 1
 
 
 def test_game_data_callback_reports_export_failure(monkeypatch):

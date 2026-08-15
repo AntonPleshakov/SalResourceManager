@@ -13,6 +13,7 @@ from telebot.types import (
 
 from db.access_group import AccessGroupDB
 from logger.app_logger import logger
+from tg.metrics import APPLICATION_METRICS, ApplicationMetrics
 from tg.utils import get_ids, get_username
 
 
@@ -54,11 +55,17 @@ def is_group_registration_message(update: Union[Message, CallbackQuery]) -> bool
 
 
 class GroupAccessMiddleware(BaseMiddleware):
-    def __init__(self, bot: TeleBot, access_group_db: AccessGroupDB):
+    def __init__(
+        self,
+        bot: TeleBot,
+        access_group_db: AccessGroupDB,
+        metrics: ApplicationMetrics = APPLICATION_METRICS,
+    ):
         super().__init__()
         self.update_types = ["message", "callback_query"]
         self._bot = bot
         self._access_group_db = access_group_db
+        self._metrics = metrics
 
     def _group_link_keyboard(
         self, group_id: int
@@ -115,6 +122,7 @@ class GroupAccessMiddleware(BaseMiddleware):
     ) -> CancelUpdate | None:
         if is_group_registration_message(update):
             logger.debug("Allowing access group registration command")
+            self._metrics.access_checks.labels(result="bypassed").inc()
             return None
 
         group_id = self._access_group_db.get_group_id()
@@ -127,6 +135,7 @@ class GroupAccessMiddleware(BaseMiddleware):
                 get_username(update),
             )
             self._deny_access(update, ACCESS_GROUP_NOT_REGISTERED_MESSAGE)
+            self._metrics.access_checks.labels(result="unconfigured").inc()
             return CancelUpdate()
 
         user_id, _, _ = get_ids(update)
@@ -140,9 +149,11 @@ class GroupAccessMiddleware(BaseMiddleware):
                 error,
             )
             self._deny_access(update, ACCESS_CHECK_FAILED_MESSAGE)
+            self._metrics.access_checks.labels(result="error").inc()
             return CancelUpdate()
 
         if is_group_member(member):
+            self._metrics.access_checks.labels(result="allowed").inc()
             return None
 
         logger.info(
@@ -155,6 +166,7 @@ class GroupAccessMiddleware(BaseMiddleware):
             ACCESS_DENIED_MESSAGE,
             self._group_link_keyboard(group_id),
         )
+        self._metrics.access_checks.labels(result="denied").inc()
         return CancelUpdate()
 
     def post_process(

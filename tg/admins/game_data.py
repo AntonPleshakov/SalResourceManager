@@ -1,11 +1,14 @@
 """Administrative game-data report export."""
 
+from time import monotonic
+
 from telebot import TeleBot
 from telebot.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup
 
 from db.initializer import get_user_data_db
 from logger.app_logger import logger
 from reports.game_data import GameDataReport
+from tg.metrics import APPLICATION_METRICS
 from tg.utils import Button, empty_filter, get_ids, get_username
 
 
@@ -21,6 +24,8 @@ def export_game_data(callback_query: CallbackQuery, bot: TeleBot) -> None:
         chat_id,
         message_id,
     )
+    started_at = monotonic()
+    result = "failed"
     try:
         url = GameDataReport().export(get_user_data_db().get_users())
     except Exception as error:
@@ -38,6 +43,16 @@ def export_game_data(callback_query: CallbackQuery, bot: TeleBot) -> None:
             reply_markup=keyboard,
         )
         return
+    else:
+        result = "completed"
+    finally:
+        APPLICATION_METRICS.reports.labels(
+            report="game_data",
+            result=result,
+        ).inc()
+        APPLICATION_METRICS.report_duration.labels(report="game_data").observe(
+            monotonic() - started_at
+        )
 
     keyboard = InlineKeyboardMarkup(row_width=1)
     keyboard.add(InlineKeyboardButton("📊 Открыть игровые данные", url=url))

@@ -80,6 +80,7 @@ def test_resources_are_isolated_and_active_account_can_be_switched(tmp_path):
     assert database.get_user(42).tag.value == "Main"
     assert database.get_user(42).hammers.value == 1_000
     assert [user.tag.value for user in database.get_users()] == ["Main", "Alt"]
+    assert database.get_account_counts() == {42: 2}
     connection.close()
 
 

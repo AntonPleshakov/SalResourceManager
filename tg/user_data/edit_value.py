@@ -4,6 +4,7 @@ from telebot.types import CallbackQuery, InlineKeyboardMarkup, Message
 import resources.user_data as user_data_resources
 from logger.app_logger import logger
 import tg.user_data as user_data
+from tg.metrics import record_resource_update
 from tg.user_data.common import get_active_user_or_prompt, value_input_hint
 from tg.user_data.editing_common import (
     EditUserDataStates,
@@ -122,6 +123,7 @@ def _persist_value(
             value,
             account_id=state.account_id,
         )
+        record_resource_update(state.section, state.field_name)
         return True
     except ValueError as error:
         logger.warning(

@@ -11,6 +11,14 @@ from db.initializer import initialize_database
 from logger.app_logger import logger
 from tg.access import GroupAccessMiddleware
 from tg.filters import add_custom_filters
+from tg.metrics import (
+    APPLICATION_METRICS,
+    METRICS_LISTEN,
+    METRICS_PORT,
+    register_player_account_metrics,
+    start_metrics_server,
+    TelegramMetricsMiddleware,
+)
 from tg.reminders import ReminderScheduler
 from tg.utils import (
     Button,
@@ -116,6 +124,9 @@ def permission_denied_message(message: Union[Message, CallbackQuery]):
 def initialize_databases():
     logger.info("Initializing application databases")
     databases = initialize_database()
+    register_player_account_metrics(
+        lambda: databases.user_data.get_account_counts().values()
+    )
     logger.info(
         "Application databases initialized: admins=%d users=%d "
         "release_views=%d access_group=%s",
@@ -143,6 +154,7 @@ if __name__ == "__main__":
     logger.debug("Registering Telegram filters, middleware and handlers")
     add_custom_filters(bot)
     bot.setup_middleware(GroupAccessMiddleware(bot, access_group_db))
+    bot.setup_middleware(TelegramMetricsMiddleware())
     tg.manager.register_handlers(bot)
     tg.manager.configure_commands(bot)
     bot.register_message_handler(
@@ -158,18 +170,26 @@ if __name__ == "__main__":
     bot.setup_middleware(UserFacingErrorMiddleware(bot))
     bot.exception_handler = BotExceptionHandler()
     reminder_scheduler = ReminderScheduler(bot)
-    reminder_scheduler.start()
-    logger.info(
-        "Sal Resources Manager started; listening for Telegram webhooks "
-        "on %s:%d/%s/",
-        webhook_settings.listen,
-        webhook_settings.port,
-        webhook_settings.url_path,
-    )
+    metrics_server = start_metrics_server()
     try:
+        reminder_scheduler.start()
+        APPLICATION_METRICS.ready.set(1)
+        logger.info(
+            "Sal Resources Manager started; listening for Telegram webhooks "
+            "on %s:%d/%s/ and exposing metrics on %s:%d/metrics",
+            webhook_settings.listen,
+            webhook_settings.port,
+            webhook_settings.url_path,
+            METRICS_LISTEN,
+            METRICS_PORT,
+        )
         serve_webhook(bot, webhook_settings)
     finally:
+        APPLICATION_METRICS.ready.set(0)
         logger.info("Stopping Sal Resources Manager")
-        reminder_scheduler.stop()
-        bot.stop_bot()
+        try:
+            reminder_scheduler.stop()
+            bot.stop_bot()
+        finally:
+            metrics_server.stop()
         logger.info("Sal Resources Manager stopped")

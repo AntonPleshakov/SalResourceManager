@@ -73,6 +73,13 @@ class UserDataDB:
         )
         return [UserData.from_row(list(row)) for row in rows]
 
+    def get_account_counts(self) -> Dict[int, int]:
+        rows = self._database.fetch_all(
+            "SELECT user_id, COUNT(*) FROM game_accounts "
+            "GROUP BY user_id ORDER BY user_id"
+        )
+        return {int(user_id): int(count) for user_id, count in rows}
+
     def reminders_enabled(self, user_id: int) -> bool:
         row = self._database.fetch_one(
             "SELECT reminders_enabled FROM telegram_users WHERE user_id = ?",

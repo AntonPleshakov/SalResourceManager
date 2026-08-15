@@ -18,6 +18,7 @@ from resources.user_data import (
     UserData,
 )
 from resources.war import WAR_STAGES, WarActivity
+from tg.metrics import APPLICATION_METRICS, ApplicationMetrics
 from tg.utils import Button, format_user_identity, group_user_accounts
 
 
@@ -179,7 +180,11 @@ def _reminder_keyboard(
     return keyboard
 
 
-def send_reminder(bot: TeleBot, reminder: ScheduledReminder) -> None:
+def send_reminder(
+    bot: TeleBot,
+    reminder: ScheduledReminder,
+    metrics: ApplicationMetrics = APPLICATION_METRICS,
+) -> None:
     sent = 0
     skipped = 0
     database = get_user_data_db()
@@ -211,6 +216,10 @@ def send_reminder(bot: TeleBot, reminder: ScheduledReminder) -> None:
         ]
         if not account_fields:
             skipped += 1
+            metrics.reminders.labels(
+                kind=reminder.kind.value,
+                result="skipped",
+            ).inc()
             logger.debug(
                 "Resource reminder skipped for user_id=%s username=%s: all resources are current",
                 user_id,
@@ -233,7 +242,15 @@ def send_reminder(bot: TeleBot, reminder: ScheduledReminder) -> None:
         try:
             bot.send_message(user_id, text, reply_markup=keyboard)
             sent += 1
+            metrics.reminders.labels(
+                kind=reminder.kind.value,
+                result="sent",
+            ).inc()
         except Exception as error:
+            metrics.reminders.labels(
+                kind=reminder.kind.value,
+                result="failed",
+            ).inc()
             if (
                 isinstance(error, ApiTelegramException)
                 and error.error_code == 403
@@ -266,10 +283,12 @@ class ReminderScheduler:
         bot: TeleBot,
         hour: int = REMINDER_HOUR,
         clock: Callable[[], datetime] = now,
+        metrics: ApplicationMetrics = APPLICATION_METRICS,
     ):
         self._bot = bot
         self._hour = hour
         self._clock = clock
+        self._metrics = metrics
         self._stop_event = Event()
         self._thread: Optional[Thread] = None
 
@@ -297,6 +316,9 @@ class ReminderScheduler:
     def _run(self) -> None:
         while not self._stop_event.is_set():
             reminder = next_reminder(self._clock(), self._hour)
+            self._metrics.next_reminder_timestamp.labels(
+                kind=reminder.kind.value
+            ).set(reminder.time.timestamp())
             delay = max((reminder.time - self._clock()).total_seconds(), 0)
             logger.debug(
                 "Next resource reminder kind=%s scheduled_at=%s delay_seconds=%.0f",
@@ -308,6 +330,15 @@ class ReminderScheduler:
                 logger.debug("Resource reminder scheduler received stop signal")
                 return
             try:
-                send_reminder(self._bot, reminder)
+                send_reminder(self._bot, reminder, self._metrics)
             except Exception:
+                self._metrics.reminder_runs.labels(
+                    kind=reminder.kind.value,
+                    result="failed",
+                ).inc()
                 logger.exception("Unable to process resource reminder")
+            else:
+                self._metrics.reminder_runs.labels(
+                    kind=reminder.kind.value,
+                    result="completed",
+                ).inc()

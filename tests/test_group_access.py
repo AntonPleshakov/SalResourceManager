@@ -1,6 +1,7 @@
 from pathlib import Path
 from types import SimpleNamespace
 
+from prometheus_client import CollectorRegistry
 from telebot.handler_backends import CancelUpdate
 from telebot.types import CallbackQuery, Chat, Message, User
 
@@ -22,6 +23,7 @@ from tg.group_registration import (
     REGISTRATION_SUCCESS_MESSAGE,
     register_access_group,
 )
+from tg.metrics import ApplicationMetrics
 
 
 def make_message(user_id=42, chat_type="private", text="hello"):
@@ -102,6 +104,38 @@ def test_middleware_allows_a_group_member():
     assert result is None
     assert bot.membership_checks == [(-100123, 42)]
     assert bot.replies == []
+
+
+def test_access_decisions_are_recorded() -> None:
+    registry = CollectorRegistry()
+    metrics = ApplicationMetrics(registry)
+
+    GroupAccessMiddleware(
+        FakeBot(SimpleNamespace(status="member")),
+        FakeAccessGroupDB(-100123),
+        metrics,
+    ).pre_process(make_message(), {})
+    GroupAccessMiddleware(
+        FakeBot(SimpleNamespace(status="left")),
+        FakeAccessGroupDB(-100123),
+        metrics,
+    ).pre_process(make_message(), {})
+    GroupAccessMiddleware(
+        FakeBot(error=ConnectionError("unavailable")),
+        FakeAccessGroupDB(-100123),
+        metrics,
+    ).pre_process(make_message(), {})
+    GroupAccessMiddleware(FakeBot(), FakeAccessGroupDB(), metrics).pre_process(
+        make_message(), {}
+    )
+    GroupAccessMiddleware(FakeBot(), FakeAccessGroupDB(), metrics).pre_process(
+        make_message(chat_type="supergroup", text="/register_group"), {}
+    )
+
+    for result in ("allowed", "denied", "error", "unconfigured", "bypassed"):
+        assert registry.get_sample_value(
+            "srm_access_checks_total", {"result": result}
+        ) == 1
 
 
 def test_middleware_denies_a_non_member():

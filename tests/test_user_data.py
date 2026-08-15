@@ -810,7 +810,12 @@ def test_single_value_edit_saves_to_selected_account(monkeypatch):
     )
     database = FakeUserDataDB()
     opened = []
+    updates = []
     monkeypatch.setattr("tg.user_data.get_user_data_db", lambda: database)
+    monkeypatch.setattr(
+        "tg.user_data.edit_value.record_resource_update",
+        lambda category, field: updates.append((category, field)),
+    )
     monkeypatch.setattr(
         "tg.user_data.resources_menu",
         lambda message, bot, notice: opened.append(notice),
@@ -819,6 +824,7 @@ def test_single_value_edit_saves_to_selected_account(monkeypatch):
     save_value(message, FakeBot())
 
     assert database.saved == [(42, "tester", "hammers", 1_500, 7)]
+    assert updates == [("resources", "hammers")]
     assert opened == ["✅ Молотки: <b>1.50к</b> — сохранено."]
 
 
@@ -1000,7 +1006,12 @@ def test_reminder_fill_saves_only_requested_fields(monkeypatch):
         )
 
     database = FakeUserDataDB()
+    updates = []
     monkeypatch.setattr("tg.user_data.get_user_data_db", lambda: database)
+    monkeypatch.setattr(
+        "tg.user_data.fill.record_resource_update",
+        lambda category, field: updates.append((category, field)),
+    )
     bot = FakeBot()
 
     save_fill_value(message("1.5"), bot)
@@ -1009,6 +1020,10 @@ def test_reminder_fill_saves_only_requested_fields(monkeypatch):
     assert database.saved == [
         (42, "tester", "hammers", 1500, 7),
         (42, "tester", "extra_mount_chance", 10, 7),
+    ]
+    assert updates == [
+        ("resources", "hammers"),
+        ("technologies", "extra_mount_chance"),
     ]
     assert "Текущее значение: <b>5</b>" in bot.edited[0][0]
     assert "Заполнение завершено" in bot.edited[-1][0]

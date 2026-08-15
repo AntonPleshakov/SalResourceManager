@@ -6,8 +6,10 @@ from pathlib import Path
 from urllib.parse import urlsplit, urlunsplit
 
 from telebot import TeleBot
+from telebot.ext.sync import SyncWebhookListener
 
 from config.config import getconf
+from tg.metrics import WebhookMetricsMiddleware
 
 
 _PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -122,16 +124,38 @@ def configure_uvicorn_logging() -> None:
         handler_filters.append("invalid_http_request")
 
 
+def build_webhook_listener(
+    bot: TeleBot, settings: WebhookSettings
+) -> SyncWebhookListener:
+    with settings.certificate_path.open("rb") as certificate:
+        bot.set_webhook(
+            url=settings.public_url,
+            certificate=certificate,
+            max_connections=1,
+            drop_pending_updates=False,
+            secret_token=settings.secret_token,
+        )
+
+    webhook_path = f"/{settings.url_path}/"
+    listener = SyncWebhookListener(
+        bot=bot,
+        secret_token=settings.secret_token,
+        host=settings.listen,
+        port=settings.port,
+        ssl_context=(
+            str(settings.certificate_path),
+            str(settings.private_key_path),
+        ),
+        url_path=webhook_path,
+    )
+    listener.app.add_middleware(
+        WebhookMetricsMiddleware,
+        webhook_path=webhook_path,
+    )
+    bot.webhook_listener = listener
+    return listener
+
+
 def serve_webhook(bot: TeleBot, settings: WebhookSettings) -> None:
     configure_uvicorn_logging()
-    bot.run_webhooks(
-        listen=settings.listen,
-        port=settings.port,
-        url_path=settings.url_path,
-        webhook_url=settings.public_url,
-        secret_token=settings.secret_token,
-        certificate=str(settings.certificate_path),
-        certificate_key=str(settings.private_key_path),
-        max_connections=1,
-        drop_pending_updates=False,
-    )
+    build_webhook_listener(bot, settings).run_app()

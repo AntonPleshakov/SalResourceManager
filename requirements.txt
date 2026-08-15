@@ -1,3 +1,4 @@
 pygsheets==2.0.6
 pyTelegramBotAPI[fastapi,uvicorn]==4.36.0
+prometheus-client==0.25.0
 wsproto==1.3.2

@@ -8,6 +8,7 @@ from logger.app_logger import logger
 from resources.user_data import UserData
 from resources.war import WarPointsCalculator
 import tg.war as war
+from tg.metrics import observe_score_calculation
 from tg.utils import Button, empty_filter, format_points, get_ids, get_username
 
 
@@ -34,7 +35,8 @@ def _war_points_text() -> str:
         stale_users_count,
         len(war.WAR_STAGES),
     )
-    report = WarPointsCalculator().calculate(accounted_users, war.WAR_STAGES)
+    with observe_score_calculation("public"):
+        report = WarPointsCalculator().calculate(accounted_users, war.WAR_STAGES)
     logger.info("War points calculated")
     lines = [
         "<b>Максимальные очки войны</b>",

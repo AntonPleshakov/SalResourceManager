@@ -13,11 +13,13 @@ from tg.user_data.editing_common import (
     FillState,
     PRIVATE_CALLBACK_HANDLER,
     PRIVATE_TEXT_HANDLER,
+    VALUE_EDIT_SECTIONS,
     account_line,
     format_field_value,
     load_state,
     save_state,
 )
+from tg.metrics import record_resource_update
 from tg.utils import Button, get_ids, get_username
 
 
@@ -185,13 +187,16 @@ def _persist_fill_value(
     user_id, _, _ = get_ids(message)
     field = context.state.current_field
     try:
-        return user_data.get_user_data_db().set_value(
+        updated_user = user_data.get_user_data_db().set_value(
             user_id,
             get_username(message),
             field.name,
             value,
             account_id=context.state.account_id,
         )
+        category = VALUE_EDIT_SECTIONS.get(field.name, context.state.section)
+        record_resource_update(category, field.name)
+        return updated_user
     except ValueError as error:
         logger.warning(
             "Rejected user data value user_id=%s username=%s section=%s "

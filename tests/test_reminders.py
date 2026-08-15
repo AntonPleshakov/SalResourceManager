@@ -2,6 +2,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
+from prometheus_client import CollectorRegistry
 
 from config.config import reset_config
 
@@ -9,6 +10,7 @@ reset_config(str(Path(__file__).parents[1] / "config" / "config_template.ini"))
 
 from resources.user_data import UserData
 from resources.war import WarActivity
+from tg.metrics import ApplicationMetrics
 from tg.reminders import (
     ReminderKind,
     ScheduledReminder,
@@ -135,13 +137,24 @@ def test_send_reminder_sends_to_every_user_and_continues_after_error(monkeypatch
 
     monkeypatch.setattr("tg.reminders.get_user_data_db", lambda: FakeUserDataDB())
     bot = FakeBot()
+    registry = CollectorRegistry()
+    metrics = ApplicationMetrics(registry)
 
     send_reminder(
         bot,
         ScheduledReminder(dt(2026, 8, 3, 13), ReminderKind.WEEKLY_REWARD),
+        metrics,
     )
 
     assert [call[0] for call in bot.calls] == [1, 2]
+    assert registry.get_sample_value(
+        "srm_reminders_total",
+        {"kind": "weekly_reward", "result": "sent"},
+    ) == 1
+    assert registry.get_sample_value(
+        "srm_reminders_total",
+        {"kind": "weekly_reward", "result": "failed"},
+    ) == 1
 
 
 def test_blocking_bot_disables_future_resource_reminders(monkeypatch):

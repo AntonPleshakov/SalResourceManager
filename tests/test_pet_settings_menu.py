@@ -187,6 +187,11 @@ def test_lowering_max_level_without_batch_data_saves_immediately(monkeypatch):
 def test_daily_batch_editor_changes_each_level_independently(monkeypatch):
     database = configure(monkeypatch)
     bot = FakeBot()
+    updates = []
+    monkeypatch.setattr(
+        "tg.user_data.pets.record_resource_update",
+        lambda category, field: updates.append((category, field)),
+    )
 
     hatch_batches_menu(make_callback("pets/batches"), bot)
     assert "pets/batches/6/plus" in callback_data(bot.edited[-1][3])
@@ -197,4 +202,8 @@ def test_daily_batch_editor_changes_each_level_independently(monkeypatch):
 
     assert database.user.hatch_batches_mythic.value == 2
     assert database.user.hatch_batches_ultimate.value == 0
+    assert updates == [
+        ("pets", "hatch_batches_mythic"),
+        ("pets", "hatch_batches_ultimate"),
+    ]
     assert "Всего в день: <b>2</b>" in bot.edited[-1][0]
