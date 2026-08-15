@@ -32,6 +32,21 @@ Prometheus is available at `http://127.0.0.1:9090`. It scrapes the bot's
 internal metrics endpoint at `bot:9100`; port `9100` is not published on the
 host.
 
+Grafana is published on all host interfaces at `http://<server-ip>:3000`.
+Prometheus is provisioned as its default datasource, and the
+`Sal Resource Manager` dashboard is loaded automatically. Set the initial
+administrator credentials in `config/config.ini`:
+
+```ini
+[security]
+admin_user = admin
+admin_password = replace-with-a-strong-password
+```
+
+Grafana reads these values only when it creates the administrator in an empty
+`grafana-data` volume. For an existing installation, change the password in
+Grafana instead.
+
 Application metrics include:
 
 - `srm_ready`;

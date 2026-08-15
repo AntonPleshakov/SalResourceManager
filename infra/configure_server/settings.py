@@ -16,6 +16,9 @@ PROJECT_DIR = INFRA_DIR.parent
 REMOTE_SCRIPT_FILE = PACKAGE_DIR / "remote.sh"
 CERTIFICATE_SCRIPT_FILE = PACKAGE_DIR / "generate-webhook-certificate.sh"
 PROMETHEUS_CONFIG_FILE = PROJECT_DIR / "config/prometheus.yml"
+GRAFANA_DATASOURCES_CONFIG_FILE = PROJECT_DIR / "config/grafana/datasources.yml"
+GRAFANA_DASHBOARDS_CONFIG_FILE = PROJECT_DIR / "config/grafana/dashboards.yml"
+GRAFANA_DASHBOARD_FILE = PROJECT_DIR / "config/grafana/sal-resource-manager.json"
 
 
 class ConfigureError(RuntimeError):
@@ -119,6 +122,9 @@ def require_local_prerequisites(settings: Settings) -> None:
     files = [
         PROJECT_DIR / "compose.yaml",
         PROMETHEUS_CONFIG_FILE,
+        GRAFANA_DATASOURCES_CONFIG_FILE,
+        GRAFANA_DASHBOARDS_CONFIG_FILE,
+        GRAFANA_DASHBOARD_FILE,
         REMOTE_SCRIPT_FILE,
         CERTIFICATE_SCRIPT_FILE,
         settings.config_file,

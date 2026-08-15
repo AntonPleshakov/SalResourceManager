@@ -19,9 +19,10 @@ The script ensures that:
 - `data/` is owned by UID/GID `10001`;
 - OpenSSL is installed and a self-signed webhook certificate matching the
   public IPv4 address in `WEBHOOK_URL` exists;
-- active UFW installations allow inbound TCP port `8443`;
-- the current `compose.yaml`, Prometheus config, application config, and Google
-  report credentials are installed with the required permissions;
+- active UFW installations allow inbound TCP ports `8443` and `3000`;
+- the current `compose.yaml`, Prometheus and Grafana provisioning configs,
+  application config, and Google report credentials are installed with the
+  required permissions;
 - the configured application image is pulled and Compose is applied;
 - the bot starts successfully and `/app/data` is a writable persistent mount.
 
@@ -94,7 +95,26 @@ by `configure-server.py`.
 
 Prometheus stores its time series in the `prometheus-data` Docker volume and is
 available only on the server loopback interface at `http://127.0.0.1:9090`.
-Use an SSH tunnel when remote access to its web UI is needed.
+Grafana stores its database in the `grafana-data` volume and is published on
+all server interfaces at `http://<server-ip>:3000`. Active UFW installations
+are configured to allow the port. A provider-level firewall must also allow
+inbound TCP port `3000`.
+
+Set the initial Grafana credentials in the uploaded `config.ini`:
+
+```ini
+[security]
+admin_user = admin
+admin_password = replace-with-a-strong-password
+```
+
+The installer protects the application config with mode `0400` for the
+application UID. It extracts only the `[security]` section into a separate
+Grafana config, also with mode `0400`, owned by the Grafana UID. Grafana uses
+these values only when it creates the administrator in an empty `grafana-data`
+volume. For an existing installation, change the password in Grafana.
+Provisioning loads the Prometheus datasource and the Sal Resource Manager
+dashboard automatically.
 
 ## Webhook certificate
 
@@ -125,4 +145,4 @@ sudo /opt/sal-resource-manager/generate-webhook-certificate.sh \
 
 If it prints `generated`, restart the bot so it loads and uploads the new
 certificate. Provider-level firewalls are outside the script's control and
-must allow inbound TCP port `8443`.
+must allow inbound TCP ports `8443` and `3000`.

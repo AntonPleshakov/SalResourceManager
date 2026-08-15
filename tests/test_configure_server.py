@@ -123,6 +123,26 @@ def test_remote_script_is_uploaded_executed_and_cleaned_up(monkeypatch):
         and call[0][-1].endswith(f":{remote_dir}/prometheus.yml")
         for call in calls
     )
+    for source, remote_name in (
+        (
+            configure_settings.GRAFANA_DATASOURCES_CONFIG_FILE,
+            "grafana-datasources.yml",
+        ),
+        (
+            configure_settings.GRAFANA_DASHBOARDS_CONFIG_FILE,
+            "grafana-dashboards.yml",
+        ),
+        (
+            configure_settings.GRAFANA_DASHBOARD_FILE,
+            "grafana-dashboard.json",
+        ),
+    ):
+        assert any(
+            call[0][0] == "scp"
+            and call[0][-2] == str(source)
+            and call[0][-1].endswith(f":{remote_dir}/{remote_name}")
+            for call in calls
+        )
     assert f"bash {remote_dir}/configure-remote.sh {remote_dir}" in calls[-2][0][-1]
     assert calls[-2][1] == {}
     assert calls[-1][1] == {"quiet": True}

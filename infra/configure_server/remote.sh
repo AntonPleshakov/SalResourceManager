@@ -5,6 +5,8 @@ set -Eeuo pipefail
 APP_DIR="/opt/sal-resource-manager"
 APP_UID="10001"
 APP_GID="10001"
+GRAFANA_UID="472"
+GRAFANA_GID="0"
 CONTAINER_NAME="sal-resource-manager"
 SOURCE_DIR="${1:?Source directory is required}"
 CERTIFICATE_SCRIPT="$APP_DIR/generate-webhook-certificate.sh"
@@ -50,6 +52,7 @@ ensure_compose() {
 ensure_directories() {
     install -d -m 0750 "$APP_DIR"
     install -d -m 0750 "$APP_DIR/config"
+    install -d -m 0750 "$APP_DIR/config/grafana"
     install -o "$APP_UID" -g "$APP_GID" -d -m 0750 "$APP_DIR/certs"
     install -o "$APP_UID" -g "$APP_GID" -d -m 0750 "$APP_DIR/data"
 }
@@ -76,14 +79,60 @@ install_managed_file() {
     log "$destination is current."
 }
 
+generate_grafana_config() {
+    local destination="$SOURCE_DIR/grafana.ini"
+
+    if ! awk '
+        BEGIN { in_security = 0 }
+        /^[[:space:]]*\[[^]]+\][[:space:]]*$/ {
+            section = $0
+            sub(/^[[:space:]]*\[/, "", section)
+            sub(/\][[:space:]]*$/, "", section)
+            in_security = (tolower(section) == "security")
+            if (in_security) print "[security]"
+            next
+        }
+        in_security {
+            print
+            separator = index($0, "=")
+            if (separator == 0) next
+            key = substr($0, 1, separator - 1)
+            gsub(/^[[:space:]]+|[[:space:]]+$/, "", key)
+            if (tolower(key) == "admin_user") found_user = 1
+            if (tolower(key) == "admin_password") found_password = 1
+        }
+        END { if (!found_user || !found_password) exit 1 }
+    ' "$SOURCE_DIR/config.ini" > "$destination"; then
+        rm -f "$destination"
+        fail "config.ini must define admin_user and admin_password in [security]."
+    fi
+    chmod 0600 "$destination"
+}
+
 install_configuration() {
     ensure_directories
+    generate_grafana_config
     install_managed_file \
         "$SOURCE_DIR/compose.yaml" "$APP_DIR/compose.yaml" \
         root root 0644 false
     install_managed_file \
         "$SOURCE_DIR/prometheus.yml" "$APP_DIR/config/prometheus.yml" \
         root root 0644 true
+    install_managed_file \
+        "$SOURCE_DIR/grafana-datasources.yml" \
+        "$APP_DIR/config/grafana/datasources.yml" \
+        root root 0644 true
+    install_managed_file \
+        "$SOURCE_DIR/grafana-dashboards.yml" \
+        "$APP_DIR/config/grafana/dashboards.yml" \
+        root root 0644 true
+    install_managed_file \
+        "$SOURCE_DIR/grafana-dashboard.json" \
+        "$APP_DIR/config/grafana/sal-resource-manager.json" \
+        root root 0644 true
+    install_managed_file \
+        "$SOURCE_DIR/grafana.ini" "$APP_DIR/config/grafana/grafana.ini" \
+        "$GRAFANA_UID" "$GRAFANA_GID" 0400 true
     install_managed_file \
         "$SOURCE_DIR/generate-webhook-certificate.sh" "$CERTIFICATE_SCRIPT" \
         root root 0750 false
@@ -191,7 +240,8 @@ configure_firewall() {
     fi
 
     ufw allow 8443/tcp >/dev/null
-    log "UFW allows inbound TCP traffic on port 8443."
+    ufw allow 3000/tcp >/dev/null
+    log "UFW allows inbound TCP traffic on ports 8443 and 3000."
 }
 
 login_to_ghcr() {
@@ -219,12 +269,12 @@ apply_compose() {
     if [[ "$APP_RESTART_REQUIRED" == "true" ]]; then
         compose_args+=(--force-recreate)
     fi
-    compose_args+=(bot prometheus)
+    compose_args+=(bot prometheus grafana)
 
     log "Pulling the configured service images..."
     (
         cd "$APP_DIR"
-        docker compose pull bot prometheus
+        docker compose pull bot prometheus grafana
         docker compose "${compose_args[@]}"
     )
 }
@@ -318,6 +368,12 @@ main() {
     [[ -f "$SOURCE_DIR/compose.yaml" ]] || fail "compose.yaml was not uploaded."
     [[ -f "$SOURCE_DIR/prometheus.yml" ]] ||
         fail "prometheus.yml was not uploaded."
+    [[ -f "$SOURCE_DIR/grafana-datasources.yml" ]] ||
+        fail "grafana-datasources.yml was not uploaded."
+    [[ -f "$SOURCE_DIR/grafana-dashboards.yml" ]] ||
+        fail "grafana-dashboards.yml was not uploaded."
+    [[ -f "$SOURCE_DIR/grafana-dashboard.json" ]] ||
+        fail "grafana-dashboard.json was not uploaded."
     [[ -f "$SOURCE_DIR/generate-webhook-certificate.sh" ]] ||
         fail "Certificate generator was not uploaded."
     [[ -f "$SOURCE_DIR/config.ini" ]] || fail "config.ini was not uploaded."

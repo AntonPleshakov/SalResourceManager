@@ -106,7 +106,7 @@ jobs:
             "${DEPLOY_USER}@${DEPLOY_HOST}" \
             'cd /opt/sal-resource-manager &&
              if [ "$(id -u)" -eq 0 ]; then
-               docker compose pull bot && docker compose up -d --force-recreate bot
+               docker compose pull bot && docker compose up -d --force-recreate bot && docker image prune -f
              else
-               sudo -n docker compose pull bot && sudo -n docker compose up -d --force-recreate bot
+               sudo -n docker compose pull bot && sudo -n docker compose up -d --force-recreate bot && sudo -n docker image prune -f
              fi'
