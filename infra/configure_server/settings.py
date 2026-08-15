@@ -15,6 +15,7 @@ INFRA_DIR = PACKAGE_DIR.parent
 PROJECT_DIR = INFRA_DIR.parent
 REMOTE_SCRIPT_FILE = PACKAGE_DIR / "remote.sh"
 CERTIFICATE_SCRIPT_FILE = PACKAGE_DIR / "generate-webhook-certificate.sh"
+PROMETHEUS_CONFIG_FILE = PROJECT_DIR / "config/prometheus.yml"
 
 
 class ConfigureError(RuntimeError):
@@ -117,6 +118,7 @@ def require_local_prerequisites(settings: Settings) -> None:
 
     files = [
         PROJECT_DIR / "compose.yaml",
+        PROMETHEUS_CONFIG_FILE,
         REMOTE_SCRIPT_FILE,
         CERTIFICATE_SCRIPT_FILE,
         settings.config_file,

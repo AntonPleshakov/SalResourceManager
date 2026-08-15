@@ -117,6 +117,12 @@ def test_remote_script_is_uploaded_executed_and_cleaned_up(monkeypatch):
         )
         for call in calls
     )
+    assert any(
+        call[0][0] == "scp"
+        and call[0][-2] == str(configure_settings.PROMETHEUS_CONFIG_FILE)
+        and call[0][-1].endswith(f":{remote_dir}/prometheus.yml")
+        for call in calls
+    )
     assert f"bash {remote_dir}/configure-remote.sh {remote_dir}" in calls[-2][0][-1]
     assert calls[-2][1] == {}
     assert calls[-1][1] == {"quiet": True}

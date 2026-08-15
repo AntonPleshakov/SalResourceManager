@@ -82,6 +82,9 @@ install_configuration() {
         "$SOURCE_DIR/compose.yaml" "$APP_DIR/compose.yaml" \
         root root 0644 false
     install_managed_file \
+        "$SOURCE_DIR/prometheus.yml" "$APP_DIR/config/prometheus.yml" \
+        root root 0644 true
+    install_managed_file \
         "$SOURCE_DIR/generate-webhook-certificate.sh" "$CERTIFICATE_SCRIPT" \
         root root 0750 false
     install_managed_file \
@@ -216,12 +219,12 @@ apply_compose() {
     if [[ "$APP_RESTART_REQUIRED" == "true" ]]; then
         compose_args+=(--force-recreate)
     fi
-    compose_args+=(bot)
+    compose_args+=(bot prometheus)
 
-    log "Pulling the configured application image..."
+    log "Pulling the configured service images..."
     (
         cd "$APP_DIR"
-        docker compose pull bot
+        docker compose pull bot prometheus
         docker compose "${compose_args[@]}"
     )
 }
@@ -313,6 +316,8 @@ verify_storage() {
 main() {
     [[ "${EUID}" -eq 0 ]] || fail "Remote configuration must run as root."
     [[ -f "$SOURCE_DIR/compose.yaml" ]] || fail "compose.yaml was not uploaded."
+    [[ -f "$SOURCE_DIR/prometheus.yml" ]] ||
+        fail "prometheus.yml was not uploaded."
     [[ -f "$SOURCE_DIR/generate-webhook-certificate.sh" ]] ||
         fail "Certificate generator was not uploaded."
     [[ -f "$SOURCE_DIR/config.ini" ]] || fail "config.ini was not uploaded."

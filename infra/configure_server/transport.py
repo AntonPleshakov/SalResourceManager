@@ -11,6 +11,7 @@ from typing import Optional, Sequence
 from .settings import (
     CERTIFICATE_SCRIPT_FILE,
     PROJECT_DIR,
+    PROMETHEUS_CONFIG_FILE,
     REMOTE_SCRIPT_FILE,
     Settings,
     require_local_prerequisites,
@@ -84,6 +85,7 @@ def configure_server(settings: Settings) -> None:
             (REMOTE_SCRIPT_FILE, "configure-remote.sh"),
             (CERTIFICATE_SCRIPT_FILE, "generate-webhook-certificate.sh"),
             (PROJECT_DIR / "compose.yaml", "compose.yaml"),
+            (PROMETHEUS_CONFIG_FILE, "prometheus.yml"),
             (settings.config_file, "config.ini"),
             (settings.google_credentials_file, "gapi_service_file.json"),
         )
@@ -119,6 +121,7 @@ def _cleanup_remote_files(
         "configure-remote.sh",
         "generate-webhook-certificate.sh",
         "compose.yaml",
+        "prometheus.yml",
         "config.ini",
         "gapi_service_file.json",
         "ghcr-credentials",

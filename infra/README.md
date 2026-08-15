@@ -20,8 +20,8 @@ The script ensures that:
 - OpenSSL is installed and a self-signed webhook certificate matching the
   public IPv4 address in `WEBHOOK_URL` exists;
 - active UFW installations allow inbound TCP port `8443`;
-- the current `compose.yaml`, application config, and Google report credentials
-  are installed with the required permissions;
+- the current `compose.yaml`, Prometheus config, application config, and Google
+  report credentials are installed with the required permissions;
 - the configured application image is pulled and Compose is applied;
 - the bot starts successfully and `/app/data` is a writable persistent mount.
 
@@ -91,6 +91,10 @@ the application and do not need to be restored.
 Automatic GitHub deployments continue to update only the application image.
 Host directories, permissions, Compose configuration, and secrets are managed
 by `configure-server.py`.
+
+Prometheus stores its time series in the `prometheus-data` Docker volume and is
+available only on the server loopback interface at `http://127.0.0.1:9090`.
+Use an SSH tunnel when remote access to its web UI is needed.
 
 ## Webhook certificate
 
