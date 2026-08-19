@@ -28,9 +28,10 @@ docker compose up -d
 docker compose logs -f bot
 ```
 
-Prometheus is available at `http://127.0.0.1:9090`. It scrapes the bot's
-internal metrics endpoint at `bot:9100`; port `9100` is not published on the
-host.
+Prometheus is available at `http://127.0.0.1:9090`. It scrapes the bot,
+Grafana, its own runtime, and a private `node_exporter` endpoint. The exporter
+reads Linux host metrics through read-only mounts and its port `9100` is not
+published on the host.
 
 Grafana is published on all host interfaces at `http://<server-ip>:3000`.
 Prometheus is provisioned as its default datasource. Grafana loads two
@@ -39,7 +40,8 @@ dashboards automatically:
 - `Sal Resource Manager — Пользователи` for webhook traffic, bot actions,
   player resources, reminders, and reports;
 - `Sal Resource Manager — Система` for readiness, uptime, process CPU and
-  memory relative to the Compose limits, and Prometheus/Python runtime health.
+  memory relative to the Compose limits, Prometheus/Grafana resource usage,
+  and server CPU, load average, and available memory.
 
 Set the initial
 administrator credentials in `config/config.ini`:

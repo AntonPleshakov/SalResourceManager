@@ -88,10 +88,34 @@ def test_system_dashboard_uses_process_limits_and_runtime_metrics() -> None:
         "process_open_fds",
         "scrape_duration_seconds",
         "python_gc_collections_total",
+        "node_memory_MemAvailable_bytes",
+        "node_memory_MemTotal_bytes",
+        "node_cpu_seconds_total",
+        "node_load1",
+        "node_load5",
+        "node_load15",
     ):
         assert metric in queries
     assert "268435456" in queries
     assert "/ 0.5" in queries
+    assert 'job=~"prometheus|grafana"' in queries
+
+
+def test_prometheus_scrapes_grafana_and_private_node_exporter() -> None:
+    compose = (PROJECT_DIR / "compose.yaml").read_text(encoding="utf-8")
+    prometheus = (PROJECT_DIR / "config/prometheus.yml").read_text(
+        encoding="utf-8"
+    )
+
+    assert "quay.io/prometheus/node-exporter:v1.11.1" in compose
+    assert "- /:/host:ro,rslave" in compose
+    assert "node-exporter:9100" in prometheus
+    assert "grafana:3000" in prometheus
+    assert "9100:9100" not in compose
+    assert "node-exporter:9100:9100" not in compose
+    assert "pull bot node-exporter prometheus grafana" in (
+        PROJECT_DIR / "infra/configure_server/remote.sh"
+    ).read_text(encoding="utf-8")
 
 
 def test_grafana_uses_a_separate_restricted_config() -> None:
