@@ -95,6 +95,10 @@ by `configure-server.py`.
 
 Prometheus stores its time series in the `prometheus-data` Docker volume and is
 available only on the server loopback interface at `http://127.0.0.1:9090`.
+The Compose stack runs `node_exporter` with read-only host mounts to collect
+server CPU, load, and memory metrics. Its metrics port is exposed only inside
+the Compose network. Prometheus also scrapes Grafana's internal metrics
+endpoint.
 Grafana stores its database in the `grafana-data` volume and is published on
 all server interfaces at `http://<server-ip>:3000`. Active UFW installations
 are configured to allow the port. A provider-level firewall must also allow

@@ -273,12 +273,12 @@ apply_compose() {
     if [[ "$APP_RESTART_REQUIRED" == "true" ]]; then
         compose_args+=(--force-recreate)
     fi
-    compose_args+=(bot prometheus grafana)
+    compose_args+=(bot node-exporter prometheus grafana)
 
     log "Pulling the configured service images..."
     (
         cd "$APP_DIR"
-        docker compose pull bot prometheus grafana
+        docker compose pull bot node-exporter prometheus grafana
         docker compose "${compose_args[@]}"
     )
 }
