@@ -9,25 +9,44 @@ DASHBOARD_FILE = (
     / "grafana"
     / "sal-resource-manager.json"
 )
+SYSTEM_DASHBOARD_FILE = (
+    Path(__file__).parents[1]
+    / "config"
+    / "grafana"
+    / "sal-resource-manager-system.json"
+)
 PROJECT_DIR = Path(__file__).parents[1]
 
 
-def test_grafana_dashboard_uses_provisioned_prometheus_metrics() -> None:
-    dashboard = json.loads(DASHBOARD_FILE.read_text(encoding="utf-8"))
-    panels = dashboard["panels"]
-    queries = "\n".join(
+def _queries(dashboard: dict) -> str:
+    return "\n".join(
         target["expr"]
-        for panel in panels
+        for panel in dashboard["panels"]
         for target in panel.get("targets", [])
     )
 
-    assert dashboard["uid"] == "sal-resource-manager"
+
+def _assert_dashboard_structure(dashboard: dict) -> None:
+    panels = dashboard["panels"]
     assert len({panel["id"] for panel in panels}) == len(panels)
     assert all(
         panel.get("datasource", {}).get("uid") == "prometheus"
         for panel in panels
         if panel["type"] != "row"
     )
+    assert all(
+        "$__range" not in target["expr"] or not target.get("range", True)
+        for panel in panels
+        for target in panel.get("targets", [])
+    )
+
+
+def test_user_dashboard_uses_actionable_prometheus_metrics() -> None:
+    dashboard = json.loads(DASHBOARD_FILE.read_text(encoding="utf-8"))
+    queries = _queries(dashboard)
+
+    assert dashboard["uid"] == "sal-resource-manager"
+    _assert_dashboard_structure(dashboard)
     for metric in (
         "srm_ready",
         "srm_users",
@@ -35,16 +54,44 @@ def test_grafana_dashboard_uses_provisioned_prometheus_metrics() -> None:
         "srm_users_by_account_count",
         "srm_requests_total",
         "srm_request_duration_seconds_bucket",
-        "srm_request_size_bytes_bucket",
-        "srm_events_total",
-        "srm_event_errors_total",
+        "srm_event_outcomes_total",
+        "srm_handler_calls_total",
+        "srm_handler_duration_seconds_bucket",
         "srm_resource_updates_total",
+        "srm_last_resource_update_timestamp_seconds",
         "srm_score_calculations_total",
         "srm_access_checks_total",
         "srm_reminders_total",
+        "srm_reminder_runs_total",
+        "srm_next_reminder_timestamp_seconds",
         "srm_reports_total",
+        "srm_report_duration_seconds_bucket",
     ):
         assert metric in queries
+    assert "reqps" not in json.dumps(dashboard)
+    assert "* 60" in queries
+    assert dashboard["templating"]["list"][0]["name"] == "slow_threshold"
+    assert 'le="$slow_threshold"' in queries
+    assert "by (le, handler)" in queries
+
+
+def test_system_dashboard_uses_process_limits_and_runtime_metrics() -> None:
+    dashboard = json.loads(SYSTEM_DASHBOARD_FILE.read_text(encoding="utf-8"))
+    queries = _queries(dashboard)
+
+    assert dashboard["uid"] == "sal-resource-manager-system"
+    _assert_dashboard_structure(dashboard)
+    for metric in (
+        "process_resident_memory_bytes",
+        "process_cpu_seconds_total",
+        "process_start_time_seconds",
+        "process_open_fds",
+        "scrape_duration_seconds",
+        "python_gc_collections_total",
+    ):
+        assert metric in queries
+    assert "268435456" in queries
+    assert "/ 0.5" in queries
 
 
 def test_grafana_uses_a_separate_restricted_config() -> None:
@@ -59,6 +106,7 @@ def test_grafana_uses_a_separate_restricted_config() -> None:
     assert "GF_SECURITY_ADMIN_PASSWORD" not in compose
     assert "./config/grafana/grafana.ini:/etc/grafana/grafana.ini:ro" in compose
     assert "${CONFIG_FILE:-./config/config.ini}:/etc/grafana/grafana.ini" not in compose
+    assert "sal-resource-manager-system.json:/etc/grafana/dashboards/" in compose
     assert 'GRAFANA_UID="472"' in remote_script
     assert '"$GRAFANA_UID" "$GRAFANA_GID" 0400 true' in remote_script
     assert "generate_grafana_config" in remote_script

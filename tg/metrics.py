@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import inspect
 from collections import Counter as ValueCounter
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -16,10 +17,13 @@ from starlette.responses import Response
 from telebot.handler_backends import BaseMiddleware
 from telebot.types import CallbackQuery, Message
 
+from logger.app_logger import logger
+
 
 METRICS_LISTEN = "0.0.0.0"
 METRICS_PORT = 9100
 _STARTED_AT_KEY = "srm_metrics_started_at"
+_HANDLER_ACTION_KEY = "srm_metrics_handler_action"
 
 
 class ApplicationMetrics:
@@ -72,6 +76,12 @@ class ApplicationMetrics:
             ("event_type",),
             registry=registry,
         )
+        self.event_outcomes = Counter(
+            "srm_event_outcomes_total",
+            "Authorized Telegram updates grouped by whether a bot handler ran.",
+            ("event_type", "chat_type", "outcome"),
+            registry=registry,
+        )
         self.event_duration = Histogram(
             "srm_event_duration_seconds",
             "Time spent processing Telegram events.",
@@ -89,6 +99,40 @@ class ApplicationMetrics:
             "srm_last_event_timestamp_seconds",
             "Unix timestamp of the last processed Telegram event.",
             ("event_type",),
+            registry=registry,
+        )
+        self.handler_calls = Counter(
+            "srm_handler_calls_total",
+            "Telegram bot handler calls grouped by handler and result.",
+            ("event_type", "handler", "result"),
+            registry=registry,
+        )
+        self.handler_duration = Histogram(
+            "srm_handler_duration_seconds",
+            "Time spent inside a matched Telegram bot handler.",
+            ("event_type", "handler"),
+            buckets=(
+                0.001,
+                0.0025,
+                0.005,
+                0.01,
+                0.025,
+                0.05,
+                0.1,
+                0.25,
+                0.5,
+                1,
+                2.5,
+                5,
+                10,
+                30,
+            ),
+            registry=registry,
+        )
+        self.handlers_in_progress = Gauge(
+            "srm_handlers_in_progress",
+            "Telegram bot handlers currently running.",
+            ("event_type", "handler"),
             registry=registry,
         )
         self.access_checks = Counter(
@@ -246,6 +290,124 @@ def _event_type(update: Message | CallbackQuery) -> str:
     return "callback_query" if isinstance(update, CallbackQuery) else "message"
 
 
+def _chat_type(update: Message | CallbackQuery) -> str:
+    message = update.message if isinstance(update, CallbackQuery) else update
+    return str(getattr(getattr(message, "chat", None), "type", "unknown"))
+
+
+def _handler_action(handler: Callable) -> str:
+    module = str(getattr(handler, "__module__", "") or "")
+    if module.startswith("tg."):
+        module = module[3:]
+    elif module == "__main__":
+        module = "main"
+    name = str(getattr(handler, "__name__", handler.__class__.__name__))
+    return f"{module}.{name}" if module else name
+
+
+def _update_log_context(
+    update: Message | CallbackQuery,
+) -> tuple[object, object, object]:
+    message = update.message if isinstance(update, CallbackQuery) else update
+    user_id = getattr(getattr(update, "from_user", None), "id", None)
+    chat_id = getattr(getattr(message, "chat", None), "id", None)
+    update_id = (
+        getattr(update, "id", None)
+        if isinstance(update, CallbackQuery)
+        else getattr(message, "id", None)
+    )
+    return user_id, chat_id, update_id
+
+
+def _instrument_handler(
+    handler: Callable,
+    *,
+    pass_bot: bool,
+    event_type: str,
+    metrics: ApplicationMetrics,
+    clock: Callable[[], float],
+) -> Callable:
+    action = _handler_action(handler)
+    parameters = inspect.signature(handler).parameters
+
+    def instrumented(update, data: dict, bot):
+        data[_HANDLER_ACTION_KEY] = action
+        started_at = clock()
+        metrics.handlers_in_progress.labels(
+            event_type=event_type,
+            handler=action,
+        ).inc()
+        result = "failed"
+        error_type = "none"
+        try:
+            kwargs = {
+                name: data[name]
+                for name in parameters
+                if name in data and name not in {"data", "bot"}
+            }
+            if "data" in parameters:
+                kwargs["data"] = data
+            if pass_bot or "bot" in parameters:
+                kwargs["bot"] = bot
+            handler_result = handler(update, **kwargs)
+            result = "completed"
+            return handler_result
+        except BaseException as error:
+            error_type = type(error).__name__
+            raise
+        finally:
+            duration = max(0.0, clock() - started_at)
+            labels = {"event_type": event_type, "handler": action}
+            metrics.handlers_in_progress.labels(**labels).dec()
+            metrics.handler_calls.labels(**labels, result=result).inc()
+            metrics.handler_duration.labels(**labels).observe(duration)
+            user_id, chat_id, update_id = _update_log_context(update)
+            logger.info(
+                "Telegram handler finished event_type=%s handler=%s "
+                "result=%s duration_seconds=%.3f user_id=%s chat_id=%s "
+                "update_id=%s error_type=%s",
+                event_type,
+                action,
+                result,
+                duration,
+                user_id,
+                chat_id,
+                update_id,
+                error_type,
+            )
+
+    instrumented.__name__ = (
+        f"instrumented_{getattr(handler, '__name__', 'handler')}"
+    )
+    instrumented.__module__ = getattr(handler, "__module__", __name__)
+    setattr(instrumented, "_srm_instrumented", True)
+    return instrumented
+
+
+def instrument_registered_handlers(
+    bot,
+    metrics: ApplicationMetrics = APPLICATION_METRICS,
+    clock: Callable[[], float] = monotonic,
+) -> None:
+    """Wrap the bot's finite handler set with low-cardinality metrics."""
+    handler_groups = (
+        ("message", bot.message_handlers),
+        ("callback_query", bot.callback_query_handlers),
+    )
+    for event_type, handlers in handler_groups:
+        for definition in handlers:
+            handler = definition["function"]
+            if getattr(handler, "_srm_instrumented", False):
+                continue
+            definition["function"] = _instrument_handler(
+                handler,
+                pass_bot=bool(definition.get("pass_bot")),
+                event_type=event_type,
+                metrics=metrics,
+                clock=clock,
+            )
+
+
 class WebhookMetricsMiddleware(BaseHTTPMiddleware):
     def __init__(
         self,
@@ -332,6 +494,19 @@ class TelegramMetricsMiddleware(BaseMiddleware):
         )
         if exception is not None:
             self._metrics.event_errors.labels(event_type=event_type).inc()
+        action = data.get(_HANDLER_ACTION_KEY)
+        outcome = (
+            "failed"
+            if exception is not None
+            else "handled"
+            if action is not None
+            else "ignored"
+        )
+        self._metrics.event_outcomes.labels(
+            event_type=event_type,
+            chat_type=_chat_type(update),
+            outcome=outcome,
+        ).inc()
         self._metrics.last_event_timestamp.labels(event_type=event_type).set(
             self._wall_clock()
         )

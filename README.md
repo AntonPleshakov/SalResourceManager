@@ -33,8 +33,15 @@ internal metrics endpoint at `bot:9100`; port `9100` is not published on the
 host.
 
 Grafana is published on all host interfaces at `http://<server-ip>:3000`.
-Prometheus is provisioned as its default datasource, and the
-`Sal Resource Manager` dashboard is loaded automatically. Set the initial
+Prometheus is provisioned as its default datasource. Grafana loads two
+dashboards automatically:
+
+- `Sal Resource Manager — Пользователи` for webhook traffic, bot actions,
+  player resources, reminders, and reports;
+- `Sal Resource Manager — Система` for readiness, uptime, process CPU and
+  memory relative to the Compose limits, and Prometheus/Python runtime health.
+
+Set the initial
 administrator credentials in `config/config.ini`:
 
 ```ini
@@ -56,6 +63,8 @@ Application metrics include:
 - bot processing: `srm_events_total`, `srm_event_errors_total`,
   `srm_event_duration_seconds`, `srm_events_in_progress`, and
   `srm_last_event_timestamp_seconds`;
+- matched bot actions: `srm_event_outcomes_total`, `srm_handler_calls_total`,
+  `srm_handler_duration_seconds`, and `srm_handlers_in_progress`;
 - access decisions: `srm_access_checks_total`;
 - reminders: `srm_reminders_total`, `srm_reminder_runs_total`, and
   `srm_next_reminder_timestamp_seconds`;
@@ -67,9 +76,14 @@ Application metrics include:
 - players and accounts: `srm_users`, `srm_accounts`, and
   `srm_users_by_account_count`.
 
-Request metrics are recorded at the HTTP webhook layer and include the request
-method and response status. Event metrics cover authorized Telegram messages
-and callback queries passed to the bot handlers.
+Request metrics are recorded at the HTTP webhook layer and include every
+Telegram request, its method, and response status. Event outcome metrics
+separate authorized updates that matched a registered bot handler from group
+messages that reached the webhook but were ignored. Handler metrics use the
+finite registered function name as the action label. Slow calls can be selected
+in Grafana using a configurable histogram threshold. Every completed handler
+call is logged at `INFO` with its action, result, duration, user/chat/update
+identifiers, and exception type.
 
 The Python client also exposes its standard process, runtime, and garbage
 collector metrics.

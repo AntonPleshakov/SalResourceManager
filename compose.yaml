@@ -79,6 +79,7 @@ services:
       - ./config/grafana/datasources.yml:/etc/grafana/provisioning/datasources/prometheus.yml:ro
       - ./config/grafana/dashboards.yml:/etc/grafana/provisioning/dashboards/sal-resource-manager.yml:ro
       - ./config/grafana/sal-resource-manager.json:/etc/grafana/dashboards/sal-resource-manager.json:ro
+      - ./config/grafana/sal-resource-manager-system.json:/etc/grafana/dashboards/sal-resource-manager-system.json:ro
       - grafana-data:/var/lib/grafana
 
     mem_limit: 256m

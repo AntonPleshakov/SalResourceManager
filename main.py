@@ -15,6 +15,7 @@ from tg.metrics import (
     APPLICATION_METRICS,
     METRICS_LISTEN,
     METRICS_PORT,
+    instrument_registered_handlers,
     register_player_account_metrics,
     start_metrics_server,
     TelegramMetricsMiddleware,
@@ -166,6 +167,7 @@ if __name__ == "__main__":
         is_private=True,
         is_admin=False,
     )
+    instrument_registered_handlers(bot)
     bot.setup_middleware(AlwaysAnswerCallbackQueryMiddleware(bot))
     bot.setup_middleware(UserFacingErrorMiddleware(bot))
     bot.exception_handler = BotExceptionHandler()

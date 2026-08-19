@@ -113,8 +113,9 @@ application UID. It extracts only the `[security]` section into a separate
 Grafana config, also with mode `0400`, owned by the Grafana UID. Grafana uses
 these values only when it creates the administrator in an empty `grafana-data`
 volume. For an existing installation, change the password in Grafana.
-Provisioning loads the Prometheus datasource and the Sal Resource Manager
-dashboard automatically.
+Provisioning loads the Prometheus datasource and both Sal Resource Manager
+dashboards automatically: the user/activity dashboard and the system/process
+dashboard.
 
 ## Webhook certificate
 

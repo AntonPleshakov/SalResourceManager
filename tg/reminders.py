@@ -60,12 +60,15 @@ UPDATED_FIELDS_BY_ACTIVITY = {
 }
 
 
-def next_reminder(moment: datetime, hour: int = REMINDER_HOUR) -> ScheduledReminder:
+def next_reminders(
+    moment: datetime, hour: int = REMINDER_HOUR
+) -> dict[ReminderKind, ScheduledReminder]:
     if moment.tzinfo is None:
         raise ValueError("Reminder time must be timezone-aware")
     if not 0 <= hour <= 23:
         raise ValueError("Reminder hour must be between 0 and 23")
 
+    reminders: dict[ReminderKind, ScheduledReminder] = {}
     for days_ahead in range(8):
         day = moment + timedelta(days=days_ahead)
         reminder = REMINDERS_BY_WEEKDAY.get(day.weekday())
@@ -75,9 +78,15 @@ def next_reminder(moment: datetime, hour: int = REMINDER_HOUR) -> ScheduledRemin
         if candidate < moment:
             continue
         kind, war_day = reminder
-        return ScheduledReminder(candidate, kind, war_day)
+        reminders.setdefault(kind, ScheduledReminder(candidate, kind, war_day))
+        if len(reminders) == len(ReminderKind):
+            return reminders
 
-    raise RuntimeError("Unable to find the next resource reminder")
+    raise RuntimeError("Unable to find all next resource reminders")
+
+
+def next_reminder(moment: datetime, hour: int = REMINDER_HOUR) -> ScheduledReminder:
+    return min(next_reminders(moment, hour).values(), key=lambda item: item.time)
 
 
 def _required_field_names(reminder: ScheduledReminder) -> Set[str]:
@@ -315,10 +324,12 @@ class ReminderScheduler:
 
     def _run(self) -> None:
         while not self._stop_event.is_set():
-            reminder = next_reminder(self._clock(), self._hour)
-            self._metrics.next_reminder_timestamp.labels(
-                kind=reminder.kind.value
-            ).set(reminder.time.timestamp())
+            upcoming = next_reminders(self._clock(), self._hour)
+            for scheduled in upcoming.values():
+                self._metrics.next_reminder_timestamp.labels(
+                    kind=scheduled.kind.value
+                ).set(scheduled.time.timestamp())
+            reminder = min(upcoming.values(), key=lambda item: item.time)
             delay = max((reminder.time - self._clock()).total_seconds(), 0)
             logger.debug(
                 "Next resource reminder kind=%s scheduled_at=%s delay_seconds=%.0f",

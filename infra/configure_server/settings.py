@@ -19,6 +19,9 @@ PROMETHEUS_CONFIG_FILE = PROJECT_DIR / "config/prometheus.yml"
 GRAFANA_DATASOURCES_CONFIG_FILE = PROJECT_DIR / "config/grafana/datasources.yml"
 GRAFANA_DASHBOARDS_CONFIG_FILE = PROJECT_DIR / "config/grafana/dashboards.yml"
 GRAFANA_DASHBOARD_FILE = PROJECT_DIR / "config/grafana/sal-resource-manager.json"
+GRAFANA_SYSTEM_DASHBOARD_FILE = (
+    PROJECT_DIR / "config/grafana/sal-resource-manager-system.json"
+)
 
 
 class ConfigureError(RuntimeError):
@@ -125,6 +128,7 @@ def require_local_prerequisites(settings: Settings) -> None:
         GRAFANA_DATASOURCES_CONFIG_FILE,
         GRAFANA_DASHBOARDS_CONFIG_FILE,
         GRAFANA_DASHBOARD_FILE,
+        GRAFANA_SYSTEM_DASHBOARD_FILE,
         REMOTE_SCRIPT_FILE,
         CERTIFICATE_SCRIPT_FILE,
         settings.config_file,

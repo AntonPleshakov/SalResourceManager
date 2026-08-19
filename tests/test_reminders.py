@@ -18,6 +18,7 @@ from tg.reminders import (
     _reminder_keyboard,
     _required_field_names,
     next_reminder,
+    next_reminders,
     send_reminder,
 )
 
@@ -63,6 +64,19 @@ def test_next_reminder(moment, expected_time, kind, war_day):
 def test_next_reminder_requires_timezone():
     with pytest.raises(ValueError):
         next_reminder(datetime(2026, 8, 3, 12))
+
+
+def test_next_reminders_returns_fresh_timestamp_for_each_kind():
+    reminders = next_reminders(dt(2026, 8, 19, 14))
+
+    assert reminders == {
+        ReminderKind.DAILY: ScheduledReminder(
+            dt(2026, 8, 20, 13), ReminderKind.DAILY, 2
+        ),
+        ReminderKind.WEEKLY_REWARD: ScheduledReminder(
+            dt(2026, 8, 24, 13), ReminderKind.WEEKLY_REWARD
+        ),
+    }
 
 
 def test_daily_reminder_mentions_hardcoded_war_stages():

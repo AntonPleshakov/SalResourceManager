@@ -1,4 +1,5 @@
 import asyncio
+from unittest.mock import Mock
 from urllib.request import urlopen
 
 import pytest
@@ -9,6 +10,7 @@ from telebot.types import CallbackQuery, Chat, Message, User
 
 from tg.metrics import (
     ApplicationMetrics,
+    instrument_registered_handlers,
     observe_score_calculation,
     record_resource_update,
     register_player_account_metrics,
@@ -153,6 +155,14 @@ def test_middleware_records_successful_message() -> None:
         "srm_last_event_timestamp_seconds",
         {"event_type": "message"},
     ) == 200
+    assert registry.get_sample_value(
+        "srm_event_outcomes_total",
+        {
+            "event_type": "message",
+            "chat_type": "private",
+            "outcome": "ignored",
+        },
+    ) == 1
 
 
 def test_middleware_records_failed_callback_query() -> None:
@@ -172,6 +182,109 @@ def test_middleware_records_failed_callback_query() -> None:
     assert registry.get_sample_value(
         "srm_event_duration_seconds_sum", labels
     ) == 0.5
+
+
+def test_registered_handler_metrics_include_action_duration_and_log(
+    monkeypatch,
+) -> None:
+    registry = CollectorRegistry()
+    metrics = ApplicationMetrics(registry)
+    timestamps = iter((10.0, 11.25))
+    calls = []
+
+    def handled_message(message: Message, bot) -> None:
+        calls.append((message, bot))
+
+    class FakeBot:
+        message_handlers = [
+            {"function": handled_message, "pass_bot": True}
+        ]
+        callback_query_handlers = []
+
+    bot = FakeBot()
+    log_info = Mock()
+    monkeypatch.setattr("tg.metrics.logger.info", log_info)
+    instrument_registered_handlers(
+        bot,
+        metrics,
+        clock=lambda: next(timestamps),
+    )
+    data = {}
+    message = make_message()
+
+    bot.message_handlers[0]["function"](message, data, bot)
+
+    action = f"{__name__}.handled_message"
+    labels = {"event_type": "message", "handler": action}
+    assert calls == [(message, bot)]
+    assert registry.get_sample_value(
+        "srm_handler_calls_total", {**labels, "result": "completed"}
+    ) == 1
+    assert registry.get_sample_value(
+        "srm_handler_duration_seconds_sum", labels
+    ) == pytest.approx(1.25)
+    assert registry.get_sample_value(
+        "srm_handler_duration_seconds_count", labels
+    ) == 1
+    assert registry.get_sample_value(
+        "srm_handler_duration_seconds_bucket", {**labels, "le": "1.0"}
+    ) == 0
+    assert registry.get_sample_value("srm_handlers_in_progress", labels) == 0
+    log_info.assert_called_once_with(
+        "Telegram handler finished event_type=%s handler=%s "
+        "result=%s duration_seconds=%.3f user_id=%s chat_id=%s "
+        "update_id=%s error_type=%s",
+        "message",
+        action,
+        "completed",
+        1.25,
+        42,
+        42,
+        1,
+        "none",
+    )
+
+
+def test_failed_callback_handler_logs_result_and_exception(monkeypatch) -> None:
+    registry = CollectorRegistry()
+    metrics = ApplicationMetrics(registry)
+    timestamps = iter((20.0, 20.5))
+
+    def failed_callback(callback_query: CallbackQuery) -> None:
+        raise RuntimeError("failed")
+
+    class FakeBot:
+        message_handlers = []
+        callback_query_handlers = [{"function": failed_callback}]
+
+    bot = FakeBot()
+    log_info = Mock()
+    monkeypatch.setattr("tg.metrics.logger.info", log_info)
+    instrument_registered_handlers(
+        bot,
+        metrics,
+        clock=lambda: next(timestamps),
+    )
+
+    with pytest.raises(RuntimeError, match="failed"):
+        bot.callback_query_handlers[0]["function"](
+            make_callback_query(), {}, bot
+        )
+
+    action = f"{__name__}.failed_callback"
+    log_info.assert_called_once_with(
+        "Telegram handler finished event_type=%s handler=%s "
+        "result=%s duration_seconds=%.3f user_id=%s chat_id=%s "
+        "update_id=%s error_type=%s",
+        "callback_query",
+        action,
+        "failed",
+        0.5,
+        42,
+        42,
+        "callback-1",
+        "RuntimeError",
+    )
 
 
 def test_ready_metric_can_follow_application_lifecycle() -> None:

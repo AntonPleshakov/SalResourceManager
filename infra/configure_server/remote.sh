@@ -131,6 +131,10 @@ install_configuration() {
         "$APP_DIR/config/grafana/sal-resource-manager.json" \
         root root 0644 true
     install_managed_file \
+        "$SOURCE_DIR/grafana-system-dashboard.json" \
+        "$APP_DIR/config/grafana/sal-resource-manager-system.json" \
+        root root 0644 true
+    install_managed_file \
         "$SOURCE_DIR/grafana.ini" "$APP_DIR/config/grafana/grafana.ini" \
         "$GRAFANA_UID" "$GRAFANA_GID" 0400 true
     install_managed_file \
@@ -374,6 +378,8 @@ main() {
         fail "grafana-dashboards.yml was not uploaded."
     [[ -f "$SOURCE_DIR/grafana-dashboard.json" ]] ||
         fail "grafana-dashboard.json was not uploaded."
+    [[ -f "$SOURCE_DIR/grafana-system-dashboard.json" ]] ||
+        fail "grafana-system-dashboard.json was not uploaded."
     [[ -f "$SOURCE_DIR/generate-webhook-certificate.sh" ]] ||
         fail "Certificate generator was not uploaded."
     [[ -f "$SOURCE_DIR/config.ini" ]] || fail "config.ini was not uploaded."

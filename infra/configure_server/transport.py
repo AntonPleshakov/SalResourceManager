@@ -13,6 +13,7 @@ from .settings import (
     GRAFANA_DASHBOARD_FILE,
     GRAFANA_DASHBOARDS_CONFIG_FILE,
     GRAFANA_DATASOURCES_CONFIG_FILE,
+    GRAFANA_SYSTEM_DASHBOARD_FILE,
     PROJECT_DIR,
     PROMETHEUS_CONFIG_FILE,
     REMOTE_SCRIPT_FILE,
@@ -92,6 +93,7 @@ def configure_server(settings: Settings) -> None:
             (GRAFANA_DATASOURCES_CONFIG_FILE, "grafana-datasources.yml"),
             (GRAFANA_DASHBOARDS_CONFIG_FILE, "grafana-dashboards.yml"),
             (GRAFANA_DASHBOARD_FILE, "grafana-dashboard.json"),
+            (GRAFANA_SYSTEM_DASHBOARD_FILE, "grafana-system-dashboard.json"),
             (settings.config_file, "config.ini"),
             (settings.google_credentials_file, "gapi_service_file.json"),
         )
@@ -131,6 +133,7 @@ def _cleanup_remote_files(
         "grafana-datasources.yml",
         "grafana-dashboards.yml",
         "grafana-dashboard.json",
+        "grafana-system-dashboard.json",
         "config.ini",
         "gapi_service_file.json",
         "ghcr-credentials",
