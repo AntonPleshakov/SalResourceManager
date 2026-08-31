@@ -20,8 +20,8 @@ def _resources_updated_after(user: UserData, cutoff: date) -> bool:
     return updated_on is not None and updated_on >= cutoff
 
 
-def _war_points_text() -> str:
-    users = war.get_user_data_db().get_users()
+def _war_points_text(clan_id: int | None = None) -> str:
+    users = war.get_user_data_db().get_users(clan_id)
     cutoff = now().date() - timedelta(days=WAR_ACCOUNT_STALE_AFTER_DAYS)
     accounted_users = [
         user for user in users if _resources_updated_after(user, cutoff)
@@ -80,8 +80,19 @@ def public_war_points(callback_query: CallbackQuery, bot: TeleBot) -> None:
     )
     keyboard = InlineKeyboardMarkup(row_width=1)
     keyboard.add(Button("⬅️ Назад к очкам войны", "war_menu").inline())
+    account = war.get_user_data_db().get_active_account(user_id)
+    if account is None:
+        bot.answer_callback_query(
+            callback_query.id,
+            "Сначала создайте игровой аккаунт",
+            show_alert=True,
+        )
+        return
     bot.edit_message_text(
-        _war_points_text(), chat_id, message_id, reply_markup=keyboard
+        _war_points_text(account.clan_id),
+        chat_id,
+        message_id,
+        reply_markup=keyboard,
     )
 
 

@@ -21,6 +21,8 @@ class GameAccount:
     username: str
     tag: str
     is_active: bool = False
+    clan_id: int = 0
+    clan_title: str = ""
 
 
 RESOURCE_FIELDS: Tuple[ResourceField, ...] = (

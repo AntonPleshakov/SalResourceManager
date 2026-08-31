@@ -6,6 +6,7 @@ from telebot.types import CallbackQuery, InlineKeyboardMarkup, Message
 
 from logger.app_logger import logger
 import tg.user_data as user_data
+from tg.clans import get_user_clans
 from tg.user_data.common import ensure_active_user
 from tg.utils import Button, empty_filter, get_ids, get_username
 
@@ -15,6 +16,23 @@ class GameAccountStates(StatesGroup):
 
 
 DESTINATIONS = {"resources", "technologies", "pets", "war_calculator"}
+
+
+def _get_group_tag(bot: TeleBot, user_id: int, group_id: int) -> str | None:
+    try:
+        member = bot.get_chat_member(group_id, user_id)
+        if member.status in {"creator", "administrator"}:
+            return member.custom_title or ""
+        if member.status in {"member", "restricted"}:
+            return member.tag or ""
+        return ""
+    except Exception as error:
+        logger.warning(
+            "Unable to get group tag for user_id=%s: %s",
+            user_id,
+            type(error).__name__,
+        )
+        return None
 
 
 def _requested_destination(message: Union[Message, CallbackQuery]) -> str:
@@ -53,7 +71,9 @@ def accounts_menu(
     database.update_username(user_id, get_username(message))
     accounts = database.get_accounts(user_id)
     if not accounts:
-        ensure_active_user(message, bot)
+        active_user = ensure_active_user(message, bot)
+        if active_user.user is None:
+            return
         accounts = database.get_accounts(user_id)
     active = next((account for account in accounts if account.is_active), None)
     destination = _requested_destination(message)
@@ -62,7 +82,14 @@ def accounts_menu(
         active_tag = (
             formatting.escape_html(active.tag) if active is not None else "не выбран"
         )
-        lines.extend(["", f"Активный аккаунт: <b>{active_tag}</b>."])
+        clan_title = formatting.escape_html(active.clan_title) if active else ""
+        lines.extend(
+            [
+                "",
+                f"Активный аккаунт: <b>{active_tag}</b>.",
+                f"Клан: <b>{clan_title}</b>.",
+            ]
+        )
         if len(accounts) > 1:
             lines.extend(
                 ["", "Выберите другой аккаунт, чтобы переключиться."]
@@ -84,7 +111,7 @@ def accounts_menu(
             continue
         keyboard.add(
             Button(
-                f"🔄 {account.tag}",
+                f"🔄 {account.tag} · {account.clan_title}",
                 f"accounts/select/{destination}/{account.account_id}",
             ).inline()
         )
@@ -107,7 +134,11 @@ def accounts_menu(
 
 
 def _request_nickname(
-    callback_query: CallbackQuery, bot: TeleBot, action: str
+    callback_query: CallbackQuery,
+    bot: TeleBot,
+    action: str,
+    clan_id: int | None = None,
+    destination: str | None = None,
 ) -> None:
     user_id, chat_id, message_id = get_ids(callback_query)
     account = user_data.get_user_data_db().get_active_account(user_id)
@@ -115,11 +146,13 @@ def _request_nickname(
         accounts_menu(callback_query, bot)
         return
     bot.set_state(user_id, GameAccountStates.nickname)
+    destination = destination or _requested_destination(callback_query)
     bot.add_data(
         user_id,
         account_action=action,
         account_id=None if account is None else account.account_id,
-        account_destination=_requested_destination(callback_query),
+        account_destination=destination,
+        account_clan_id=clan_id,
     )
     if action == "add":
         text = "Введите имя нового игрового аккаунта."
@@ -129,7 +162,6 @@ def _request_nickname(
             f"«{formatting.escape_html(account.tag)}»."
         )
     keyboard = InlineKeyboardMarkup(row_width=1)
-    destination = _requested_destination(callback_query)
     cancel_callback = (
         f"accounts/{destination}" if destination in DESTINATIONS else "accounts"
     )
@@ -138,11 +170,108 @@ def _request_nickname(
 
 
 def request_add(callback_query: CallbackQuery, bot: TeleBot) -> None:
-    _request_nickname(callback_query, bot, "add")
+    user_id, chat_id, message_id = get_ids(callback_query)
+    groups = get_user_clans(
+        bot,
+        user_id,
+        user_data.get_access_group_db().get_groups(),
+    )
+    keyboard = InlineKeyboardMarkup(row_width=1)
+    destination = _requested_destination(callback_query)
+    for group in groups:
+        keyboard.add(
+            Button(
+                f"🏰 {group.title}",
+                f"accounts/add/{destination}/clan/{group.group_id}",
+            ).inline()
+        )
+    cancel_callback = (
+        f"accounts/{destination}" if destination in DESTINATIONS else "accounts"
+    )
+    keyboard.add(Button("✖️ Отмена", cancel_callback).inline())
+    text = (
+        "<b>Новый игровой аккаунт</b>\n\nВыберите клан аккаунта."
+        if groups
+        else "Не удалось найти зарегистрированный клан, в котором вы состоите."
+    )
+    bot.edit_message_text(
+        text,
+        chat_id,
+        message_id,
+        reply_markup=keyboard,
+    )
+
+
+def request_add_nickname(callback_query: CallbackQuery, bot: TeleBot) -> None:
+    try:
+        destination = callback_query.data.split("/")[2]
+        clan_id = int(callback_query.data.rsplit("/", maxsplit=1)[-1])
+    except ValueError:
+        bot.answer_callback_query(
+            callback_query.id, "Клан не найден", show_alert=True
+        )
+        return
+    groups = get_user_clans(
+        bot,
+        callback_query.from_user.id,
+        user_data.get_access_group_db().get_groups(),
+    )
+    if clan_id not in {group.group_id for group in groups}:
+        bot.answer_callback_query(
+            callback_query.id,
+            "Вы не состоите в выбранном клане",
+            show_alert=True,
+        )
+        return
+    _request_nickname(
+        callback_query, bot, "add", clan_id, destination=destination
+    )
 
 
 def request_rename(callback_query: CallbackQuery, bot: TeleBot) -> None:
     _request_nickname(callback_query, bot, "rename")
+
+
+def create_initial_account(callback_query: CallbackQuery, bot: TeleBot) -> None:
+    user_id = callback_query.from_user.id
+    try:
+        clan_id = int(callback_query.data.rsplit("/", maxsplit=1)[-1])
+    except ValueError:
+        bot.answer_callback_query(
+            callback_query.id, "Клан не найден", show_alert=True
+        )
+        return
+    groups = get_user_clans(
+        bot, user_id, user_data.get_access_group_db().get_groups()
+    )
+    if clan_id not in {group.group_id for group in groups}:
+        bot.answer_callback_query(
+            callback_query.id,
+            "Вы не состоите в выбранном клане",
+            show_alert=True,
+        )
+        return
+    database = user_data.get_user_data_db()
+    existing = database.get_active_account(user_id)
+    if existing is not None:
+        accounts_menu(callback_query, bot)
+        return
+    group_tag = _get_group_tag(bot, user_id, clan_id) or ""
+    username = get_username(callback_query)
+    account = database.add_account(
+        user_id,
+        username,
+        group_tag or username,
+        clan_id=clan_id,
+    )
+    created_user = database.get_user(user_id, account.account_id)
+    if created_user is None:
+        raise RuntimeError("Created game account has no user data")
+    from tg.onboarding import show_created_account_welcome
+
+    show_created_account_welcome(
+        callback_query, bot, created_user, bool(group_tag)
+    )
 
 
 def save_nickname(message: Message, bot: TeleBot) -> None:
@@ -151,10 +280,26 @@ def save_nickname(message: Message, bot: TeleBot) -> None:
         action = data.get("account_action")
         account_id = data.get("account_id")
         destination = data.get("account_destination")
+        clan_id = data.get("account_clan_id")
     try:
         if action == "add":
+            if not isinstance(clan_id, int):
+                raise ValueError("Не выбран клан игрового аккаунта")
+            available_clan_ids = {
+                group.group_id
+                for group in get_user_clans(
+                    bot,
+                    user_id,
+                    user_data.get_access_group_db().get_groups(),
+                )
+            }
+            if clan_id not in available_clan_ids:
+                raise ValueError("Вы не состоите в выбранном клане")
             account = user_data.get_user_data_db().add_account(
-                user_id, get_username(message), message.text
+                user_id,
+                get_username(message),
+                message.text,
+                clan_id=clan_id,
             )
             notice = (
                 f"✅ Аккаунт «{formatting.escape_html(account.tag)}» добавлен и выбран."
@@ -303,6 +448,24 @@ def register_handlers(bot: TeleBot) -> None:
         request_rename,
         func=empty_filter,
         button="accounts/rename",
+        is_private=True,
+        pass_bot=True,
+    )
+    bot.register_callback_query_handler(
+        request_add_nickname,
+        func=empty_filter,
+        button=(
+            r"accounts/add/"
+            r"(accounts|resources|technologies|pets|war_calculator)"
+            r"/clan/-?[0-9]+"
+        ),
+        is_private=True,
+        pass_bot=True,
+    )
+    bot.register_callback_query_handler(
+        create_initial_account,
+        func=empty_filter,
+        button=r"accounts/create/-?[0-9]+",
         is_private=True,
         pass_bot=True,
     )

@@ -13,6 +13,8 @@ from telebot.types import (
 from db.admins import Admin
 from db.initializer import get_admins_db
 from logger.app_logger import logger
+from tg.admins.common import get_active_admin_group
+from tg.clans import is_group_member
 from tg.navigation import home
 from tg.utils import Button, empty_filter, get_ids, get_user_link, get_username
 
@@ -27,6 +29,7 @@ CANCEL_ADD_ADMINS_TEXT = "✖️ Отмена"
 
 def add_admins(callback_query: CallbackQuery, bot: TeleBot):
     user_id, chat_id, message_id = get_ids(callback_query)
+    group = get_active_admin_group(user_id)
     logger.info(
         "Add admin requested by user_id=%s username=%s",
         user_id,
@@ -49,6 +52,7 @@ def add_admins(callback_query: CallbackQuery, bot: TeleBot):
         reply_markup=keyboard,
     )
     bot.set_state(user_id, AddAdminStates.share_users)
+    bot.add_data(user_id, admin_group_id=group.group_id)
 
 
 def cancel_add_admins(message: Message, bot: TeleBot):
@@ -107,6 +111,15 @@ def add_admins_approved(callback_query: CallbackQuery, bot: TeleBot):
     user_id, _, _ = get_ids(callback_query)
     with bot.retrieve_data(user_id) as data:
         new_admins = data.pop("new_admins")
+        group_id = data.get("admin_group_id")
+    if not isinstance(group_id, int) or not get_admins_db().is_admin(
+        user_id, group_id
+    ):
+        bot.answer_callback_query(
+            callback_query.id,
+            "Нет прав администратора выбранного клана",
+        )
+        return
     logger.info(
         "Admin addition approved requester_id=%s username=%s count=%d",
         user_id,
@@ -114,8 +127,36 @@ def add_admins_approved(callback_query: CallbackQuery, bot: TeleBot):
         len(new_admins),
     )
     bot.delete_state(user_id)
+    rejected_admins = []
+    result_text = "Администраторы добавлены"
     for admin in new_admins:
-        get_admins_db().add_admin(admin)
+        try:
+            member = bot.get_chat_member(group_id, admin.user_id.value)
+        except Exception as error:
+            logger.warning(
+                "Unable to verify new clan admin user_id=%s group_id=%s: %s",
+                admin.user_id.value,
+                group_id,
+                error,
+            )
+            rejected_admins.append(admin)
+            result_text += (
+                f"\n{admin.username.value} не добавлен: "
+                "не удалось проверить участие в клане"
+            )
+            continue
+        if not is_group_member(member):
+            logger.warning(
+                "Rejected non-member clan admin user_id=%s group_id=%s",
+                admin.user_id.value,
+                group_id,
+            )
+            rejected_admins.append(admin)
+            result_text += (
+                f"\n{admin.username.value} не добавлен: не состоит в клане"
+            )
+            continue
+        get_admins_db().add_admin(admin, group_id)
         try:
             bot.send_message(
                 admin.user_id.value,
@@ -132,9 +173,11 @@ def add_admins_approved(callback_query: CallbackQuery, bot: TeleBot):
         "Admin addition completed requester_id=%s username=%s count=%d",
         user_id,
         get_username(callback_query),
-        len(new_admins),
+        len(new_admins) - len(rejected_admins),
     )
-    bot.answer_callback_query(callback_query.id, "Администраторы добавлены")
+    if len(rejected_admins) == len(new_admins):
+        result_text = "Администраторы не добавлены"
+    bot.answer_callback_query(callback_query.id, result_text)
     home(callback_query, bot)
 
 

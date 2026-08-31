@@ -16,7 +16,6 @@ from resources.user_data import (
 from tg.user_data import accounts, edit_value, fill, pets, resources, technologies
 from tg.user_data.accounts import GameAccountStates, accounts_menu
 from tg.user_data.common import (
-    _get_group_tag,
     section_menu as _section_menu,
     value_input_hint as _value_input_hint,
 )
@@ -56,7 +55,6 @@ __all__ = [
     "THOUSAND_INPUT_FIELDS",
     "TECHNOLOGY_FIELDS",
     "TRACKED_FIELDS",
-    "_get_group_tag",
     "_section_menu",
     "_value_input_hint",
     "change_hatch_batch_count",

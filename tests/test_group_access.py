@@ -3,9 +3,12 @@ from types import SimpleNamespace
 
 from prometheus_client import CollectorRegistry
 from telebot.handler_backends import CancelUpdate
-from telebot.types import CallbackQuery, Chat, Message, User
+from telebot.types import CallbackQuery, Chat, ChatShared, Message, User
 
 from config.config import reset_config
+from db.access_group import AccessGroup, AccessGroupDB
+from db.admins import Admin, AdminsDB
+from db.database import Database
 
 reset_config(str(Path(__file__).parents[1] / "config" / "config_template.ini"))
 
@@ -19,9 +22,15 @@ from tg.access import (
 )
 from tg.group_registration import (
     BOT_NOT_ADMIN_MESSAGE,
+    GROUP_REGISTRATION_REQUEST_ID,
+    GROUP_SELECTION_MESSAGE,
+    GroupRegistrationStates,
     NOT_ADMIN_MESSAGE,
     REGISTRATION_SUCCESS_MESSAGE,
-    register_access_group,
+    USER_NOT_GROUP_ADMIN_MESSAGE,
+    register_current_group,
+    register_selected_group,
+    request_group_registration,
 )
 from tg.metrics import ApplicationMetrics
 
@@ -33,15 +42,34 @@ def make_message(user_id=42, chat_type="private", text="hello"):
     return Message(1, user, 0, chat, "text", {"text": text}, None)
 
 
+def make_shared_group_message(
+    user_id=42, group_id=-100123, request_id=GROUP_REGISTRATION_REQUEST_ID
+):
+    message = make_message(user_id=user_id)
+    message.content_type = "chat_shared"
+    message.chat_shared = ChatShared(request_id, group_id, title="Test group")
+    return message
+
+
+def make_callback(data="admins/register_group"):
+    message = make_message()
+    return CallbackQuery("callback-1", message.from_user, data, "", None, message)
+
+
 class FakeAccessGroupDB:
     def __init__(self, group_id=None):
         self.group_id = group_id
 
-    def get_group_id(self):
-        return self.group_id
+    def get_groups(self):
+        return (
+            []
+            if self.group_id is None
+            else [AccessGroup(self.group_id, "Test group")]
+        )
 
-    def set_group_id(self, group_id):
+    def add_group(self, group_id, title):
         self.group_id = group_id
+        return AccessGroup(group_id, title)
 
 
 class FakeBot:
@@ -106,6 +134,29 @@ def test_middleware_allows_a_group_member():
     assert bot.replies == []
 
 
+def test_middleware_allows_member_of_any_registered_clan():
+    groups = SimpleNamespace(
+        get_groups=lambda: [
+            AccessGroup(-100001, "Alpha"),
+            AccessGroup(-100002, "Beta"),
+        ]
+    )
+
+    class MultiClanBot(FakeBot):
+        def get_chat_member(self, group_id, user_id):
+            self.membership_checks.append((group_id, user_id))
+            return SimpleNamespace(
+                status="member" if group_id == -100002 else "left"
+            )
+
+    bot = MultiClanBot()
+
+    result = GroupAccessMiddleware(bot, groups).pre_process(make_message(), {})
+
+    assert result is None
+    assert bot.membership_checks == [(-100001, 42), (-100002, 42)]
+
+
 def test_access_decisions_are_recorded() -> None:
     registry = CollectorRegistry()
     metrics = ApplicationMetrics(registry)
@@ -131,8 +182,18 @@ def test_access_decisions_are_recorded() -> None:
     GroupAccessMiddleware(FakeBot(), FakeAccessGroupDB(), metrics).pre_process(
         make_message(chat_type="supergroup", text="/register_group"), {}
     )
+    GroupAccessMiddleware(FakeBot(), FakeAccessGroupDB(), metrics).pre_process(
+        make_message(chat_type="supergroup", text="hello"), {}
+    )
 
-    for result in ("allowed", "denied", "error", "unconfigured", "bypassed"):
+    for result in (
+        "allowed",
+        "denied",
+        "error",
+        "unconfigured",
+        "bypassed",
+        "ignored",
+    ):
         assert registry.get_sample_value(
             "srm_access_checks_total", {"result": result}
         ) == 1
@@ -184,13 +245,13 @@ def test_access_denial_links_to_public_group():
 
     assert isinstance(result, CancelUpdate)
     button = bot.reply_markups[0].keyboard[0][0]
-    assert button.text == "👥 Открыть группу"
+    assert button.text == "👥 Test group"
     assert button.url == "https://t.me/ShadowAl"
 
 
 def test_access_messages_explain_next_step_and_support_contact():
     assert "Forge Master" in ACCESS_DENIED_MESSAGE
-    assert "ShadowAl" in ACCESS_DENIED_MESSAGE
+    assert "зарегистрированных кланов" in ACCESS_DENIED_MESSAGE
     assert "@AntonPleshakov" in ACCESS_DENIED_MESSAGE
     assert "через несколько минут" in ACCESS_CHECK_FAILED_MESSAGE
     assert "@AntonPleshakov" in ACCESS_GROUP_NOT_REGISTERED_MESSAGE
@@ -230,38 +291,195 @@ def test_middleware_allows_group_registration_command_before_registration():
     assert bot.replies == []
 
 
+def test_middleware_ignores_other_group_updates_immediately():
+    class UnexpectedDB:
+        def get_groups(self):
+            raise AssertionError("Group updates must not query registered clans")
+
+    bot = FakeBot(error=AssertionError("Membership must not be checked"))
+    message = make_message(chat_type="supergroup", text="hello")
+    callback = CallbackQuery(
+        "callback-1", message.from_user, "home", "", None, message
+    )
+
+    for update in (message, callback):
+        result = GroupAccessMiddleware(bot, UnexpectedDB()).pre_process(update, {})
+        assert isinstance(result, CancelUpdate)
+
+    assert bot.membership_checks == []
+    assert bot.replies == []
+    assert bot.callback_answers == []
+
+
+def test_middleware_does_not_treat_private_text_as_registration_command():
+    bot = FakeBot()
+    message = make_message(chat_type="private", text="/register_group")
+
+    result = GroupAccessMiddleware(bot, FakeAccessGroupDB()).pre_process(message, {})
+
+    assert isinstance(result, CancelUpdate)
+    assert bot.replies == [(message, ACCESS_GROUP_NOT_REGISTERED_MESSAGE)]
+
+
+def test_middleware_does_not_bypass_shared_group_before_registration():
+    bot = FakeBot()
+    message = make_shared_group_message()
+
+    result = GroupAccessMiddleware(bot, FakeAccessGroupDB()).pre_process(message, {})
+
+    assert isinstance(result, CancelUpdate)
+    assert bot.membership_checks == []
+    assert bot.replies == [(message, ACCESS_GROUP_NOT_REGISTERED_MESSAGE)]
+
+
 class FakeRegistrationBot:
-    def __init__(self, bot_status="administrator"):
+    def __init__(
+        self,
+        bot_status="administrator",
+        user_status="administrator",
+        group_type="supergroup",
+    ):
         self.bot_status = bot_status
+        self.user_status = user_status
+        self.group_type = group_type
         self.replies = []
+        self.sent = []
+        self.states = []
+        self.deleted_states = []
 
     def get_me(self):
         return SimpleNamespace(id=999)
 
     def get_chat_member(self, chat_id, user_id):
-        return SimpleNamespace(status=self.bot_status)
+        status = self.bot_status if user_id == 999 else self.user_status
+        return SimpleNamespace(status=status)
 
-    def reply_to(self, message, text):
-        self.replies.append((message, text))
+    def get_chat(self, chat_id):
+        return SimpleNamespace(id=chat_id, type=self.group_type, title="Test group")
+
+    def reply_to(self, message, text, reply_markup=None):
+        self.replies.append((message, text, reply_markup))
+
+    def send_message(self, chat_id, text, reply_markup=None):
+        self.sent.append((chat_id, text, reply_markup))
+
+    def set_state(self, user_id, state):
+        self.states.append((user_id, state))
+
+    def delete_state(self, user_id):
+        self.deleted_states.append(user_id)
 
 
-def test_admin_can_register_group(monkeypatch):
+def test_bot_admin_gets_picker_without_telegram_admin_requirement(monkeypatch):
+    import tg.group_registration as registration
+
+    monkeypatch.setattr(
+        registration,
+        "get_admins_db",
+        lambda: SimpleNamespace(
+            is_admin=lambda user_id: True,
+            add_admin=lambda admin, group_id: None,
+            select_group=lambda user_id, group_id: None,
+        ),
+    )
+    bot = FakeRegistrationBot()
+    callback = make_callback()
+
+    request_group_registration(callback, bot)
+
+    assert bot.sent[0][:2] == (callback.message.chat.id, GROUP_SELECTION_MESSAGE)
+    button = bot.sent[0][2].keyboard[0][0]
+    assert button["request_chat"]["chat_is_channel"] is False
+    assert button["request_chat"]["bot_is_member"] is True
+    assert "user_administrator_rights" not in button["request_chat"]
+    assert "bot_administrator_rights" not in button["request_chat"]
+    assert bot.states == [(42, GroupRegistrationStates.select_group)]
+
+
+def test_bot_admin_can_register_selected_group_without_telegram_admin_rights(
+    monkeypatch,
+):
     import tg.group_registration as registration
 
     database = FakeAccessGroupDB()
     monkeypatch.setattr(
         registration,
         "get_admins_db",
-        lambda: SimpleNamespace(is_admin=lambda user_id: True),
+        lambda: SimpleNamespace(
+            is_admin=lambda user_id: True,
+            add_admin=lambda admin, group_id: None,
+            select_group=lambda user_id, group_id: None,
+        ),
     )
     monkeypatch.setattr(registration, "get_access_group_db", lambda: database)
+    bot = FakeRegistrationBot(user_status="member")
+    message = make_shared_group_message()
+
+    register_selected_group(message, bot)
+
+    assert database.get_groups() == [
+        AccessGroup(message.chat_shared.chat_id, "Test group")
+    ]
+    assert bot.replies[0][0:2] == (
+        message,
+        REGISTRATION_SUCCESS_MESSAGE.format(title="Test group"),
+    )
+    assert bot.deleted_states == [42]
+
+
+def test_selected_group_handler_requires_registration_state():
+    import tg.group_registration as registration
+
+    class FakeHandlersBot:
+        def __init__(self):
+            self.message_handlers = []
+
+        def register_message_handler(self, callback, **kwargs):
+            self.message_handlers.append((callback, kwargs))
+
+        def register_callback_query_handler(self, callback, **kwargs):
+            pass
+
+    bot = FakeHandlersBot()
+
+    registration.register_handlers(bot)
+
+    handler = next(
+        kwargs
+        for callback, kwargs in bot.message_handlers
+        if callback is register_selected_group
+    )
+    assert handler["content_types"] == ["chat_shared"]
+    assert handler["chat_types"] == ["private"]
+    assert handler["state"] is GroupRegistrationStates.select_group
+
+
+def test_registration_adds_clans_and_grants_requester_scoped_admin_rights(
+    tmp_path, monkeypatch
+):
+    import tg.group_registration as registration
+
+    connection = Database(tmp_path / "database.db")
+    groups = AccessGroupDB(connection)
+    admins = AdminsDB(connection)
+    admins.add_admin(Admin("tester", 42))
+    monkeypatch.setattr(registration, "get_admins_db", lambda: admins)
+    monkeypatch.setattr(registration, "get_access_group_db", lambda: groups)
     bot = FakeRegistrationBot()
-    message = make_message(chat_type="supergroup", text="/register_group")
 
-    register_access_group(message, bot)
+    register_selected_group(make_shared_group_message(group_id=-100001), bot)
+    register_selected_group(make_shared_group_message(group_id=-100002), bot)
 
-    assert database.get_group_id() == message.chat.id
-    assert bot.replies == [(message, REGISTRATION_SUCCESS_MESSAGE)]
+    assert [group.group_id for group in groups.get_groups()] == [
+        -100002,
+        -100001,
+    ]
+    assert {group.group_id for group in admins.get_clans(42)} == {
+        -100002,
+        -100001,
+    }
+    assert admins.get_active_group(42).group_id == -100002
+    connection.close()
 
 
 def test_non_admin_cannot_register_group(monkeypatch):
@@ -273,11 +491,50 @@ def test_non_admin_cannot_register_group(monkeypatch):
         lambda: SimpleNamespace(is_admin=lambda user_id: False),
     )
     bot = FakeRegistrationBot()
-    message = make_message(chat_type="group", text="/register_group")
+    message = make_shared_group_message()
 
-    register_access_group(message, bot)
+    register_selected_group(message, bot)
 
-    assert bot.replies == [(message, NOT_ADMIN_MESSAGE)]
+    assert bot.replies[0][0:2] == (message, NOT_ADMIN_MESSAGE)
+
+
+def test_telegram_group_admin_can_register_without_existing_bot_rights(
+    tmp_path, monkeypatch
+):
+    import tg.group_registration as registration
+
+    connection = Database(tmp_path / "database.db")
+    groups = AccessGroupDB(connection)
+    admins = AdminsDB(connection)
+    monkeypatch.setattr(registration, "get_admins_db", lambda: admins)
+    monkeypatch.setattr(registration, "get_access_group_db", lambda: groups)
+    bot = FakeRegistrationBot(user_status="administrator")
+    message = make_message(chat_type="supergroup", text="/register_group")
+
+    register_current_group(message, bot)
+
+    assert groups.get_group(message.chat.id).title == "Test group"
+    assert admins.is_admin(42, message.chat.id)
+    assert admins.get_active_group(42).group_id == message.chat.id
+    assert bot.replies[0][0:2] == (
+        message,
+        REGISTRATION_SUCCESS_MESSAGE.format(title="Test group"),
+    )
+    connection.close()
+
+
+def test_group_member_cannot_register_current_group(monkeypatch):
+    import tg.group_registration as registration
+
+    database = FakeAccessGroupDB()
+    monkeypatch.setattr(registration, "get_access_group_db", lambda: database)
+    bot = FakeRegistrationBot(user_status="member")
+    message = make_message(chat_type="supergroup", text="/register_group")
+
+    register_current_group(message, bot)
+
+    assert database.get_groups() == []
+    assert bot.replies[0][0:2] == (message, USER_NOT_GROUP_ADMIN_MESSAGE)
 
 
 def test_bot_must_be_group_admin_before_registration(monkeypatch):
@@ -291,9 +548,9 @@ def test_bot_must_be_group_admin_before_registration(monkeypatch):
     )
     monkeypatch.setattr(registration, "get_access_group_db", lambda: database)
     bot = FakeRegistrationBot(bot_status="member")
-    message = make_message(chat_type="group", text="/register_group")
+    message = make_shared_group_message()
 
-    register_access_group(message, bot)
+    register_selected_group(message, bot)
 
-    assert database.get_group_id() is None
-    assert bot.replies == [(message, BOT_NOT_ADMIN_MESSAGE)]
+    assert database.get_groups() == []
+    assert bot.replies[0][0:2] == (message, BOT_NOT_ADMIN_MESSAGE)

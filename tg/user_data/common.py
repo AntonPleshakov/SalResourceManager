@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 from decimal import Decimal
-from typing import Sequence, Union
+from typing import Optional, Sequence, Union
 
 from telebot import TeleBot, formatting
 from telebot.types import CallbackQuery, InlineKeyboardMarkup, Message
@@ -14,14 +14,16 @@ from resources.user_data import (
     UserData,
 )
 import tg.user_data as user_data
+from tg.clans import get_user_clans
 from tg.utils import Button, format_points, get_ids, get_username
 
 
 @dataclass(frozen=True)
 class ActiveUserResult:
-    user: UserData
+    user: Optional[UserData]
     is_new_user: bool
     group_tag_found: bool | None
+    clan_selection_required: bool = False
 
 
 FIELD_BUTTON_TITLES = {
@@ -57,18 +59,33 @@ def ensure_active_user(
             group_tag_found=None,
         )
 
-    group_tag = _get_group_tag(bot, user_id) or ""
-    user = database.get_or_create(user_id, username, group_tag)
-    logger.info(
-        "Initial game account created for user_id=%s username=%s group_tag=%s",
-        user_id,
-        username,
-        "found" if group_tag else "missing",
+    database.update_username(user_id, username)
+    groups = get_user_clans(
+        bot, user_id, user_data.get_access_group_db().get_groups()
     )
+    keyboard = InlineKeyboardMarkup(row_width=1)
+    for group in groups:
+        keyboard.add(
+            Button(
+                f"🏰 {group.title}", f"accounts/create/{group.group_id}"
+            ).inline()
+        )
+    text = (
+        "<b>Выберите клан игрового аккаунта</b>\n\n"
+        "Аккаунт будет учитываться только в данных выбранного клана."
+        if groups
+        else "Не удалось найти зарегистрированный клан, в котором вы состоите."
+    )
+    _, chat_id, message_id = get_ids(message)
+    if isinstance(message, CallbackQuery):
+        bot.edit_message_text(text, chat_id, message_id, reply_markup=keyboard)
+    else:
+        bot.send_message(chat_id, text, reply_markup=keyboard)
     return ActiveUserResult(
-        user,
-        is_new_user=True,
-        group_tag_found=bool(group_tag),
+        None,
+        is_new_user=False,
+        group_tag_found=None,
+        clan_selection_required=True,
     )
 
 
@@ -76,29 +93,6 @@ def get_active_user_or_prompt(
     message: Union[Message, CallbackQuery], bot: TeleBot, return_to: str = "home"
 ):
     return ensure_active_user(message, bot).user
-
-
-def _get_group_tag(bot: TeleBot, user_id: int) -> str | None:
-    try:
-        group_id = user_data.get_access_group_db().get_group_id()
-    except RuntimeError:
-        return None
-    if group_id is None:
-        return None
-    try:
-        member = bot.get_chat_member(group_id, user_id)
-        return (
-            getattr(member, "custom_title", None)
-            or getattr(member, "tag", None)
-            or ""
-        )
-    except Exception as error:
-        logger.warning(
-            "Unable to get group tag for user_id=%s: %s",
-            user_id,
-            type(error).__name__,
-        )
-        return None
 
 
 def section_menu(

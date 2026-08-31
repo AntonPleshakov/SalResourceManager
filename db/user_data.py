@@ -59,17 +59,26 @@ class UserDataDB:
             )
         return None if row is None else UserData.from_row(list(row))
 
-    def get_users(self) -> List[UserData]:
+    def get_users(self, clan_id: Optional[int] = None) -> List[UserData]:
+        where = "" if clan_id is None else "WHERE ga.clan_id = ? "
+        parameters = () if clan_id is None else (int(clan_id),)
         rows = self._database.fetch_all(
-            SELECT_USER + "ORDER BY tu.user_id, ga.account_id"
+            SELECT_USER + where + "ORDER BY tu.user_id, ga.account_id",
+            parameters,
         )
         return [UserData.from_row(list(row)) for row in rows]
 
-    def get_users_with_reminders_enabled(self) -> List[UserData]:
+    def get_users_with_reminders_enabled(
+        self, clan_id: Optional[int] = None
+    ) -> List[UserData]:
+        clan_filter = "" if clan_id is None else "AND ga.clan_id = ? "
+        parameters = () if clan_id is None else (int(clan_id),)
         rows = self._database.fetch_all(
             SELECT_USER
             + "WHERE tu.reminders_enabled = 1 "
-            "ORDER BY tu.user_id, ga.account_id"
+            + clan_filter
+            + "ORDER BY tu.user_id, ga.account_id",
+            parameters,
         )
         return [UserData.from_row(list(row)) for row in rows]
 
@@ -108,9 +117,10 @@ class UserDataDB:
     def get_accounts(self, user_id: int) -> List[GameAccount]:
         rows = self._database.fetch_all(
             "SELECT ga.account_id, ga.user_id, tu.username, ga.tag, "
-            "ga.account_id = tu.active_game_account_id "
+            "ga.account_id = tu.active_game_account_id, ga.clan_id, c.title "
             "FROM game_accounts ga "
             "JOIN telegram_users tu ON tu.user_id = ga.user_id "
+            "JOIN clans c ON c.group_id = ga.clan_id "
             "WHERE ga.user_id = ? ORDER BY ga.account_id",
             (user_id,),
         )
@@ -121,6 +131,8 @@ class UserDataDB:
                 username=str(row[2]),
                 tag=str(row[3]),
                 is_active=bool(row[4]),
+                clan_id=int(row[5]),
+                clan_title=str(row[6]),
             )
             for row in rows
         ]
@@ -141,19 +153,26 @@ class UserDataDB:
         )
 
     def add_account(
-        self, user_id: int, username: str, tag: str, *, make_active: bool = True
+        self,
+        user_id: int,
+        username: str,
+        tag: str,
+        *,
+        clan_id: Optional[int] = None,
+        make_active: bool = True,
     ) -> GameAccount:
         normalized_tag = self._validate_tag(tag)
 
         def add(connection):
+            resolved_clan_id = self._resolve_clan_id(connection, clan_id)
             connection.execute(
                 "INSERT INTO telegram_users (user_id, username) VALUES (?, ?) "
                 "ON CONFLICT(user_id) DO UPDATE SET username = excluded.username",
                 (user_id, username),
             )
             cursor = connection.execute(
-                "INSERT INTO game_accounts (user_id, tag) VALUES (?, ?)",
-                (user_id, normalized_tag),
+                "INSERT INTO game_accounts (user_id, clan_id, tag) VALUES (?, ?, ?)",
+                (user_id, resolved_clan_id, normalized_tag),
             )
             account_id = int(cursor.lastrowid)
             user = UserData(
@@ -184,9 +203,10 @@ class UserDataDB:
                 ) from error
             raise
         logger.info(
-            "DB: added game account user_id=%s account_id=%s tag=%s",
+            "DB: added game account user_id=%s account_id=%s clan_id=%s tag=%s",
             user_id,
             account_id,
+            clan_id,
             normalized_tag,
         )
         return next(
@@ -267,12 +287,21 @@ class UserDataDB:
         )
 
     def get_or_create(
-        self, user_id: int, username: str, tag: Optional[str] = None
+        self,
+        user_id: int,
+        username: str,
+        tag: Optional[str] = None,
+        clan_id: Optional[int] = None,
     ) -> UserData:
         self.update_username(user_id, username)
         user = self.get_user(user_id)
         if user is None:
-            account = self.add_account(user_id, username, tag or username)
+            account = self.add_account(
+                user_id,
+                username,
+                tag or username,
+                clan_id=clan_id,
+            )
             user = self.get_user(user_id, account.account_id)
         return user  # type: ignore[return-value]
 
@@ -285,6 +314,7 @@ class UserDataDB:
         updated_on: Optional[date] = None,
         tag: Optional[str] = None,
         account_id: Optional[int] = None,
+        clan_id: Optional[int] = None,
     ) -> UserData:
         user = self.set_values(
             user_id,
@@ -293,6 +323,7 @@ class UserDataDB:
             updated_on=updated_on,
             tag=tag,
             account_id=account_id,
+            clan_id=clan_id,
         )
         logger.info(
             "DB: updated user_id=%s account_id=%s field=%s",
@@ -310,6 +341,7 @@ class UserDataDB:
         updated_on: Optional[date] = None,
         tag: Optional[str] = None,
         account_id: Optional[int] = None,
+        clan_id: Optional[int] = None,
     ) -> UserData:
         self._validate_values(values)
         self.update_username(user_id, username)
@@ -318,7 +350,7 @@ class UserDataDB:
         if user is None:
             if account_id is not None:
                 raise ValueError("Игровой аккаунт не найден")
-            user = self.get_or_create(user_id, username, tag)
+            user = self.get_or_create(user_id, username, tag, clan_id)
         user.username.value = username
         for field_name, value in values.items():
             user.set_value(field_name, value)
@@ -326,6 +358,21 @@ class UserDataDB:
                 user.mark_updated(field_name, field_updated_on)
         self._save(user)
         return user
+
+    @staticmethod
+    def _resolve_clan_id(connection, clan_id: Optional[int]) -> int:
+        if clan_id is not None:
+            exists = connection.execute(
+                "SELECT 1 FROM clans WHERE group_id = ?", (int(clan_id),)
+            ).fetchone()
+            if exists is None:
+                raise ValueError("Клан не найден")
+            return int(clan_id)
+
+        rows = connection.execute("SELECT group_id FROM clans").fetchall()
+        if len(rows) != 1:
+            raise ValueError("Выберите клан игрового аккаунта")
+        return int(rows[0][0])
 
     @staticmethod
     def _validate_tag(tag: str) -> str:

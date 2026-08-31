@@ -1,9 +1,10 @@
-from telebot import TeleBot
+from telebot import TeleBot, formatting
 from telebot.handler_backends import State, StatesGroup
 from telebot.types import CallbackQuery, InlineKeyboardMarkup
 
 from db.initializer import get_admins_db
 from logger.app_logger import logger
+from tg.admins.common import get_active_admin_group
 from tg.navigation import home
 from tg.utils import Button, empty_filter, get_ids, get_user_link, get_username
 
@@ -15,9 +16,10 @@ class DelAdminStates(StatesGroup):
 
 def del_admin_options(callback_query: CallbackQuery, bot: TeleBot):
     requester_id = callback_query.from_user.id
+    group = get_active_admin_group(requester_id)
     current_admins = [
         admin
-        for admin in get_admins_db().get_admins()
+        for admin in get_admins_db().get_admins(group.group_id)
         if admin.user_id.value != requester_id
     ]
     logger.info(
@@ -43,10 +45,23 @@ def del_admin_options(callback_query: CallbackQuery, bot: TeleBot):
         reply_markup=keyboard,
     )
     bot.set_state(user_id, DelAdminStates.admin_id)
+    bot.add_data(
+        user_id,
+        admin_group_id=group.group_id,
+        admin_group_title=group.title,
+    )
 
 
 def del_admin_confirmation(callback_query: CallbackQuery, bot: TeleBot):
-    admin = get_admins_db().get_admin(int(callback_query.data))
+    requester_id = callback_query.from_user.id
+    with bot.retrieve_data(requester_id) as data:
+        group_id = data.get("admin_group_id")
+    admin = (
+        None
+        if not isinstance(group_id, int)
+        or not get_admins_db().is_admin(requester_id, group_id)
+        else get_admins_db().get_admin(int(callback_query.data), group_id)
+    )
     if admin is None:
         logger.warning(
             "Admin removal target not found requester_id=%s username=%s target=%s",
@@ -74,7 +89,16 @@ def del_admin_confirmation(callback_query: CallbackQuery, bot: TeleBot):
 
 def del_admin_approved(callback_query: CallbackQuery, bot: TeleBot):
     admin_id = int(callback_query.data.split("/")[-1])
-    admin = get_admins_db().get_admin(admin_id)
+    requester_id = callback_query.from_user.id
+    with bot.retrieve_data(requester_id) as data:
+        group_id = data.get("admin_group_id")
+        group_title = data.get("admin_group_title")
+    admin = (
+        None
+        if not isinstance(group_id, int)
+        or not get_admins_db().is_admin(requester_id, group_id)
+        else get_admins_db().get_admin(admin_id, group_id)
+    )
     if admin is None:
         logger.warning(
             "Approved admin removal target not found requester_id=%s username=%s target_id=%s",
@@ -92,12 +116,23 @@ def del_admin_approved(callback_query: CallbackQuery, bot: TeleBot):
         callback_query.from_user.id,
         get_username(callback_query),
     )
-    get_admins_db().del_admin(admin_id)
+    get_admins_db().del_admin(admin_id, group_id)
     user_id, _, _ = get_ids(callback_query)
     bot.delete_state(user_id)
-    bot.answer_callback_query(callback_query.id, "Права администратора отозваны")
+    bot.answer_callback_query(
+        callback_query.id, "Права администратора клана отозваны"
+    )
     try:
-        bot.send_message(admin_id, "Ваши права администратора были отозваны.")
+        group_title = (
+            group_title
+            if isinstance(group_title, str) and group_title
+            else str(group_id)
+        )
+        bot.send_message(
+            admin_id,
+            "Ваши права администратора клана "
+            f"«{formatting.escape_html(group_title)}» были отозваны.",
+        )
     except Exception as error:
         logger.warning(
             "Unable to notify removed admin user_id=%s username=%s: %s",

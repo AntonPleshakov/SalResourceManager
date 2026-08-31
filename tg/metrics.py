@@ -291,8 +291,9 @@ def _event_type(update: Message | CallbackQuery) -> str:
 
 
 def _chat_type(update: Message | CallbackQuery) -> str:
-    message = update.message if isinstance(update, CallbackQuery) else update
-    return str(getattr(getattr(message, "chat", None), "type", "unknown"))
+    if isinstance(update, CallbackQuery):
+        return "unknown" if update.message is None else update.message.chat.type
+    return update.chat.type
 
 
 def _handler_action(handler: Callable) -> str:
@@ -308,15 +309,11 @@ def _handler_action(handler: Callable) -> str:
 def _update_log_context(
     update: Message | CallbackQuery,
 ) -> tuple[object, object, object]:
-    message = update.message if isinstance(update, CallbackQuery) else update
-    user_id = getattr(getattr(update, "from_user", None), "id", None)
-    chat_id = getattr(getattr(message, "chat", None), "id", None)
-    update_id = (
-        getattr(update, "id", None)
-        if isinstance(update, CallbackQuery)
-        else getattr(message, "id", None)
-    )
-    return user_id, chat_id, update_id
+    user_id = None if update.from_user is None else update.from_user.id
+    if isinstance(update, CallbackQuery):
+        chat_id = None if update.message is None else update.message.chat.id
+        return user_id, chat_id, update.id
+    return user_id, update.chat.id, update.message_id
 
 
 def _instrument_handler(

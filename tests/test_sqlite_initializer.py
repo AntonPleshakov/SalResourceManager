@@ -21,7 +21,7 @@ def test_initializer_applies_migrations_and_activates_databases(tmp_path):
         assert get_release_views_db() is databases.release_views
         assert get_user_data_db() is databases.user_data
         assert databases.admins.get_admins() == []
-        assert databases.access_group.get_group_id() is None
+        assert databases.access_group.get_groups() == []
         assert databases.release_views.get_users_count() == 0
         assert databases.user_data.get_users() == []
     finally:
@@ -34,7 +34,7 @@ def test_sqlite_databases_write_directly_and_persist(tmp_path):
     databases.admins.add_admin(Admin("first", 1))
     databases.admins.add_admin(Admin("second", 2))
     databases.admins.del_admin(1)
-    databases.access_group.set_group_id(-100123)
+    databases.access_group.add_group(-100123, "Test clan")
     databases.release_views.mark_seen(42, "player", "1.2.3")
     databases.release_views.update_username(42, "renamed")
     databases.user_data.set_values(
@@ -55,7 +55,7 @@ def test_sqlite_databases_write_directly_and_persist(tmp_path):
     restored = initialize_database(database_path=database_path)
     try:
         assert [admin.user_id.value for admin in restored.admins.get_admins()] == [2]
-        assert restored.access_group.get_group_id() == -100123
+        assert restored.access_group.get_group(-100123).title == "Test clan"
         assert restored.release_views.get_users() == {
             42: ("renamed", "1.2.3")
         }

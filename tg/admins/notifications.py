@@ -7,13 +7,14 @@ from telebot.handler_backends import State, StatesGroup
 from telebot.types import CallbackQuery, InlineKeyboardMarkup, Message
 
 from common.datetime_utils import now
-from db.initializer import get_access_group_db, get_user_data_db
+from db.initializer import get_admins_db, get_user_data_db
 from logger.app_logger import logger
 from resources.user_data import (
     RESOURCE_FIELDS,
     ResourceField,
     UserData,
 )
+from tg.admins.common import get_active_admin_group
 from tg.utils import (
     Button,
     empty_filter,
@@ -258,13 +259,12 @@ def build_custom_notification_messages(
 
 
 def send_custom_notification(
-    bot: TeleBot, text: str, admin_name: str
+    bot: TeleBot,
+    text: str,
+    admin_name: str,
+    group_id: int,
 ) -> BroadcastResult:
-    group_id = get_access_group_db().get_group_id()
-    if group_id is None:
-        raise RuntimeError("Access group is not registered")
-
-    users = get_user_data_db().get_users()
+    users = get_user_data_db().get_users(group_id)
     recipient_count = len(group_user_accounts(users))
     messages = build_custom_notification_messages(text, admin_name, users)
     logger.info(
@@ -288,7 +288,10 @@ def send_custom_notification(
 
 
 def send_custom_private_notification(
-    bot: TeleBot, text: str, admin_name: str
+    bot: TeleBot,
+    text: str,
+    admin_name: str,
+    group_id: int | None = None,
 ) -> BroadcastResult:
     clean_text = text.strip()
     if not clean_text:
@@ -305,7 +308,7 @@ def send_custom_private_notification(
     message = _custom_notification_header(clean_text, admin_name)
     sent = 0
     failed = 0
-    users = get_user_data_db().get_users()
+    users = get_user_data_db().get_users(group_id)
     grouped_users = group_user_accounts(users)
     logger.info(
         "Starting custom private notification recipients=%d", len(grouped_users)
@@ -353,11 +356,16 @@ def confirm_standard_notification(
     callback_query: CallbackQuery, bot: TeleBot
 ) -> None:
     user_id, chat_id, message_id = get_ids(callback_query)
+    group = get_active_admin_group(user_id)
     plan = build_standard_notification_plan(
-        get_user_data_db().get_users(), now().date()
+        get_user_data_db().get_users(group.group_id), now().date()
     )
     bot.set_state(user_id, NotificationStates.standard_confirmation)
-    bot.add_data(user_id, standard_notification_plan=plan)
+    bot.add_data(
+        user_id,
+        standard_notification_plan=plan,
+        admin_group_id=group.group_id,
+    )
     keyboard = InlineKeyboardMarkup()
     if plan.recipients:
         keyboard.row(
@@ -392,7 +400,12 @@ def send_standard_notification_confirmed(
     user_id, _, _ = get_ids(callback_query)
     with bot.retrieve_data(user_id) as data:
         plan = data.get("standard_notification_plan")
-    if not isinstance(plan, StandardNotificationPlan):
+        group_id = data.get("admin_group_id")
+    if (
+        not isinstance(plan, StandardNotificationPlan)
+        or not isinstance(group_id, int)
+        or not get_admins_db().is_admin(user_id, group_id)
+    ):
         bot.answer_callback_query(
             callback_query.id,
             "Не удалось найти список получателей",
@@ -512,7 +525,10 @@ def send_custom_group_notification_confirmed(
     )
 
     try:
-        result = send_custom_notification(bot, text, admin_name)
+        group = get_active_admin_group(user_id)
+        result = send_custom_notification(
+            bot, text, admin_name, group.group_id
+        )
     except RuntimeError:
         logger.warning(
             "Custom group notification rejected: access group is not configured"
@@ -554,7 +570,10 @@ def send_custom_private_notification_confirmed(
         chat_id,
         message_id,
     )
-    result = send_custom_private_notification(bot, text, admin_name)
+    group = get_active_admin_group(user_id)
+    result = send_custom_private_notification(
+        bot, text, admin_name, group.group_id
+    )
     bot.answer_callback_query(
         callback_query.id,
         f"Доставлено: {result.sent}, ошибок: {result.failed}",

@@ -1,9 +1,17 @@
-from telebot import TeleBot
+from telebot import TeleBot, formatting
 from telebot.types import CallbackQuery, InlineKeyboardMarkup
 
 from db.initializer import get_admins_db
 from logger.app_logger import logger
-from tg.admins import add_admin, del_admin, game_data, notifications, resource_status
+from tg.admins import (
+    add_admin,
+    clans,
+    del_admin,
+    game_data,
+    notifications,
+    rename_clan,
+    resource_status,
+)
 from tg.utils import Button, empty_filter, get_ids, get_user_link, get_username
 
 
@@ -16,17 +24,41 @@ def admins_main_menu(callback_query: CallbackQuery, bot: TeleBot):
     )
     bot.delete_state(user_id)
     keyboard = InlineKeyboardMarkup()
+    admins = get_admins_db()
+    group = admins.get_active_group(user_id)
+    if group is None:
+        keyboard.row(
+            Button("➕ Добавить клан", "admins/register_group").inline()
+        )
+        keyboard.row(Button("⬅️ Назад в меню", "home").inline())
+        bot.edit_message_text(
+            "<b>Админ-панель</b>\n\n"
+            "Сначала зарегистрируйте группу клана.",
+            chat_id,
+            message_id,
+            reply_markup=keyboard,
+        )
+        return
+
     keyboard.row(Button("👥 Список игроков", "admins/last_updates").inline())
     keyboard.row(Button("📣 Уведомления", "admins/notifications").inline())
     keyboard.row(Button("📤 Обновить Google Таблицу", "admins/game_data").inline())
     keyboard.row(
-        Button("👥 Список", "admins/admins_list").inline(),
-        Button("➕ Добавить", "admins/add_admins").inline(),
+        Button("➕ Добавить клан", "admins/register_group").inline()
     )
+    if len(admins.get_clans(user_id)) > 1:
+        keyboard.row(Button("🔄 Сменить клан", "admins/clans").inline())
+    keyboard.row(
+        Button("✏️ Переименовать клан", "admins/rename_clan").inline()
+    )
+    keyboard.row(Button("👥 Список администраторов", "admins/admins_list").inline())
+    keyboard.row(Button("➕ Добавить администраторов", "admins/add_admins").inline())
     keyboard.row(Button("🗑 Удалить администратора", "admins/del_admin").inline())
     keyboard.row(Button("⬅️ Назад в меню", "home").inline())
     bot.edit_message_text(
-        "<b>Админ-панель</b>\n\nВыберите действие.",
+        "<b>Админ-панель</b>\n"
+        f"Клан: <b>{formatting.escape_html(group.title)}</b>\n\n"
+        "Выберите действие.",
         chat_id,
         message_id,
         reply_markup=keyboard,
@@ -34,7 +66,10 @@ def admins_main_menu(callback_query: CallbackQuery, bot: TeleBot):
 
 
 def admins_list(callback_query: CallbackQuery, bot: TeleBot):
-    admins = get_admins_db().get_admins()
+    user_id = callback_query.from_user.id
+    admins_db = get_admins_db()
+    group = admins_db.get_active_group(user_id)
+    admins = [] if group is None else admins_db.get_admins(group.group_id)
     logger.debug(
         "Showing admin list to user_id=%s username=%s count=%d",
         callback_query.from_user.id,
@@ -69,8 +104,10 @@ def register_handlers(bot: TeleBot):
         pass_bot=True,
     )
     add_admin.register_handlers(bot)
+    clans.register_handlers(bot)
     del_admin.register_handlers(bot)
     game_data.register_handlers(bot)
     notifications.register_handlers(bot)
+    rename_clan.register_handlers(bot)
     resource_status.register_handlers(bot)
     logger.info("Admin handlers registered")

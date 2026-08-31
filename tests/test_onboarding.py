@@ -1,6 +1,4 @@
 from pathlib import Path
-from types import SimpleNamespace
-
 from telebot.types import CallbackQuery, Chat, Message, User
 
 from config.config import reset_config
@@ -9,6 +7,7 @@ reset_config(str(Path(__file__).parents[1] / "config" / "config_template.ini"))
 
 from resources.user_data import UserData
 from tg.onboarding import show_new_user_welcome
+from tg.user_data.common import ActiveUserResult
 
 
 def make_callback() -> CallbackQuery:
@@ -33,10 +32,11 @@ def callback_data(markup):
 def active_user(
     *, is_new_user: bool, group_tag_found: bool | None, tag: str
 ):
-    return SimpleNamespace(
+    return ActiveUserResult(
         user=UserData(user_id=42, username="tester", tag=tag),
         is_new_user=is_new_user,
         group_tag_found=group_tag_found,
+        clan_selection_required=False,
     )
 
 

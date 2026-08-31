@@ -16,6 +16,7 @@ reset_config(str(Path(__file__).parents[1] / "config" / "config_template.ini"))
 
 import tg.manager as manager
 import tg.navigation as navigation
+from resources.user_data import GameAccount
 from tg.manager import (
     VISIBLE_COMMANDS,
     cancel_command,
@@ -100,7 +101,15 @@ def prepare_home(monkeypatch, reminders_enabled=True):
         "tg.navigation.get_user_data_db",
         lambda: SimpleNamespace(
             get_accounts=lambda _user_id: [
-                SimpleNamespace(tag="Лидер", is_active=True)
+                GameAccount(
+                    1,
+                    42,
+                    "tester",
+                    "Лидер",
+                    True,
+                    -100123,
+                    "Test clan",
+                )
             ],
             reminders_enabled=lambda _user_id: reminders_enabled,
             set_reminders_enabled=lambda _user_id, _enabled: None,
@@ -118,7 +127,8 @@ def test_menu_command_cancels_active_state_and_opens_home(monkeypatch):
     assert bot.sent[0][1] == "Текущее действие отменено."
     assert isinstance(bot.sent[0][2], ReplyKeyboardRemove)
     assert bot.sent[1][1] == (
-        "Игровой аккаунт: <b>Лидер</b>\n\nВыберите раздел."
+        "Игровой аккаунт: <b>Лидер</b>\n"
+        "Клан: <b>Test clan</b>\n\nВыберите раздел."
     )
 
 
@@ -158,7 +168,8 @@ def test_cancel_with_active_state_cancels_and_opens_home(monkeypatch):
     assert bot.deleted_states == [42]
     assert isinstance(bot.sent[0][2], ReplyKeyboardRemove)
     assert bot.sent[1][1] == (
-        "Игровой аккаунт: <b>Лидер</b>\n\nВыберите раздел."
+        "Игровой аккаунт: <b>Лидер</b>\n"
+        "Клан: <b>Test clan</b>\n\nВыберите раздел."
     )
 
 
@@ -168,8 +179,24 @@ def test_home_shows_account_count_only_for_multiple_accounts(monkeypatch):
         "tg.navigation.get_user_data_db",
         lambda: SimpleNamespace(
             get_accounts=lambda _user_id: [
-                SimpleNamespace(tag="Main & Hero", is_active=True),
-                SimpleNamespace(tag="Alt", is_active=False),
+                GameAccount(
+                    1,
+                    42,
+                    "tester",
+                    "Main & Hero",
+                    True,
+                    -100123,
+                    "Test clan",
+                ),
+                GameAccount(
+                    2,
+                    42,
+                    "tester",
+                    "Alt",
+                    False,
+                    -100123,
+                    "Test clan",
+                ),
             ],
             reminders_enabled=lambda _user_id: True,
         ),
@@ -180,6 +207,7 @@ def test_home_shows_account_count_only_for_multiple_accounts(monkeypatch):
 
     assert bot.sent[0][1] == (
         "Игровой аккаунт: <b>Main &amp; Hero</b>\n"
+        "Клан: <b>Test clan</b>\n"
         "Всего аккаунтов: 2\n\n"
         "Выберите раздел."
     )
@@ -202,7 +230,15 @@ def test_reminders_can_be_toggled_from_home_menu(monkeypatch):
     state = {"enabled": True}
     database = SimpleNamespace(
         get_accounts=lambda _user_id: [
-            SimpleNamespace(tag="Лидер", is_active=True)
+            GameAccount(
+                1,
+                42,
+                "tester",
+                "Лидер",
+                True,
+                -100123,
+                "Test clan",
+            )
         ],
         reminders_enabled=lambda _user_id: state["enabled"],
         set_reminders_enabled=lambda _user_id, enabled: state.update(

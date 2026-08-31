@@ -10,6 +10,7 @@ from config.config import getconf
 from db.initializer import initialize_database
 from logger.app_logger import logger
 from tg.access import GroupAccessMiddleware
+from tg.clans import sync_migrated_clan_titles
 from tg.filters import add_custom_filters
 from tg.metrics import (
     APPLICATION_METRICS,
@@ -130,13 +131,11 @@ def initialize_databases():
     )
     logger.info(
         "Application databases initialized: admins=%d users=%d "
-        "release_views=%d access_group=%s",
+        "release_views=%d clans=%d",
         len(databases.admins.get_admins()),
         len(databases.user_data.get_users()),
         databases.release_views.get_users_count(),
-        "configured"
-        if databases.access_group.get_group_id() is not None
-        else "missing",
+        len(databases.access_group.get_groups()),
     )
     return databases.access_group
 
@@ -146,6 +145,7 @@ if __name__ == "__main__":
     try:
         webhook_settings = load_webhook_settings()
         access_group_db = initialize_databases()
+        sync_migrated_clan_titles(bot, access_group_db)
     except Exception:
         logger.exception(
             "Startup initialization failed; Sal Resources Manager is exiting"

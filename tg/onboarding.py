@@ -8,18 +8,17 @@ from tg.user_data.common import ensure_active_user
 from tg.utils import Button, get_ids, get_username
 
 
-def show_new_user_welcome(
-    message: Union[Message, CallbackQuery], bot: TeleBot
-) -> bool:
-    active_user = ensure_active_user(message, bot)
-    if not active_user.is_new_user:
-        return False
-
+def show_created_account_welcome(
+    message: Union[Message, CallbackQuery],
+    bot: TeleBot,
+    user,
+    group_tag_found: bool,
+) -> None:
     user_id, chat_id, message_id = get_ids(message)
-    account_name = formatting.escape_html(active_user.user.tag.value)
+    account_name = formatting.escape_html(user.tag.value)
     keyboard = InlineKeyboardMarkup(row_width=1)
 
-    if not active_user.group_tag_found:
+    if not group_tag_found:
         keyboard.add(
             Button("✏️ Переименовать аккаунт", "accounts/rename").inline()
         )
@@ -49,5 +48,21 @@ def show_new_user_welcome(
         "New user onboarding shown to user_id=%s username=%s",
         user_id,
         get_username(message),
+    )
+
+
+def show_new_user_welcome(
+    message: Union[Message, CallbackQuery], bot: TeleBot
+) -> bool:
+    active_user = ensure_active_user(message, bot)
+    if active_user.clan_selection_required:
+        return True
+    if not active_user.is_new_user:
+        return False
+    show_created_account_welcome(
+        message,
+        bot,
+        active_user.user,
+        bool(active_user.group_tag_found),
     )
     return True

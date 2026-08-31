@@ -8,6 +8,7 @@ from common.datetime_utils import now
 from db.initializer import get_user_data_db
 from logger.app_logger import logger
 from resources.user_data import UserData
+from tg.admins.common import get_active_admin_group
 from tg.utils import (
     Button,
     empty_filter,
@@ -99,7 +100,8 @@ def _split_report(report: str) -> List[str]:
 
 def last_updates(callback_query: CallbackQuery, bot: TeleBot) -> None:
     user_id, chat_id, message_id = get_ids(callback_query)
-    users = get_user_data_db().get_users()
+    group = get_active_admin_group(user_id)
+    users = get_user_data_db().get_users(group.group_id)
     report = build_last_updates_report(users, now().date())
     chunks = _split_report(report)
     keyboard = InlineKeyboardMarkup(row_width=1)

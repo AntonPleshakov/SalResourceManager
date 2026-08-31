@@ -11,7 +11,8 @@ from config.config import reset_config
 reset_config(str(Path(__file__).parents[1] / "config" / "config_template.ini"))
 
 import resources.user_data as user_data_resources
-from db.database import Database
+from db.access_group import AccessGroup, AccessGroupDB
+from db.database import Database as SQLiteDatabase
 from db.user_data import UserDataDB
 from resources.egg_levels import EGG_LEVELS, EggLevel
 from resources.user_data import (
@@ -32,15 +33,21 @@ from resources.war_rules.pets import calculate_pet_points, explain_pet_points
 from resources.war_rules.technologies import calculate_technology_points
 from tg.utils import format_points
 from tg.user_data import (
-    _get_group_tag,
     _value_input_hint,
     fill_tracked_fields,
     request_value,
     save_fill_value,
     save_value,
 )
+from tg.user_data.accounts import _get_group_tag
 from tg.user_data.common import ensure_active_user
 from tg.user_data.fill import skip_fill_value
+
+
+def Database(path):
+    database = SQLiteDatabase(path)
+    AccessGroupDB(database).add_group(-100123, "Test clan")
+    return database
 
 
 def make_callback(data: str) -> CallbackQuery:
@@ -96,90 +103,94 @@ def test_user_data_round_trip():
     }
 
 
-def test_group_tag_is_taken_from_chat_member_tag(monkeypatch):
-    class FakeAccessGroupDB:
-        def get_group_id(self):
-            return -100123
-
+def test_group_tag_is_taken_from_chat_member_tag():
     class FakeBot:
         def get_chat_member(self, group_id, user_id):
             assert group_id == -100123
             assert user_id == 42
-            return type("Member", (), {"tag": "Лидер"})()
+            return type(
+                "Member", (), {"status": "member", "tag": "Лидер"}
+            )()
 
-    monkeypatch.setattr(
-        "tg.user_data.get_access_group_db", lambda: FakeAccessGroupDB()
-    )
-
-    assert _get_group_tag(FakeBot(), 42) == "Лидер"
+    assert _get_group_tag(FakeBot(), 42, -100123) == "Лидер"
 
 
-def test_group_tag_prefers_chat_member_custom_title(monkeypatch):
-    class FakeAccessGroupDB:
-        def get_group_id(self):
-            return -100123
-
+def test_group_tag_prefers_chat_member_custom_title():
     class FakeBot:
         def get_chat_member(self, _group_id, _user_id):
             return type(
-                "Member", (), {"custom_title": "Офицер", "tag": "Лидер"}
+                "Member",
+                (),
+                {"status": "administrator", "custom_title": "Офицер"},
             )()
 
-    monkeypatch.setattr(
-        "tg.user_data.get_access_group_db", lambda: FakeAccessGroupDB()
-    )
-
-    assert _get_group_tag(FakeBot(), 42) == "Офицер"
+    assert _get_group_tag(FakeBot(), 42, -100123) == "Офицер"
 
 
-def test_first_game_account_is_created_from_group_tag(tmp_path, monkeypatch):
+def test_first_game_account_requires_clan_selection(tmp_path, monkeypatch):
     connection = Database(tmp_path / "database.db")
     database = UserDataDB(connection)
 
     class FakeAccessGroupDB:
-        def get_group_id(self):
-            return -100123
+        def get_groups(self):
+            return [AccessGroup(-100123, "Test clan")]
 
     class FakeBot:
+        def __init__(self):
+            self.edited = []
+
         def get_chat_member(self, group_id, user_id):
             assert (group_id, user_id) == (-100123, 42)
-            return SimpleNamespace(custom_title="Лидер")
+            return SimpleNamespace(status="member", custom_title="Лидер")
+
+        def edit_message_text(self, *args, **kwargs):
+            self.edited.append((args, kwargs))
 
     monkeypatch.setattr("tg.user_data.get_user_data_db", lambda: database)
     monkeypatch.setattr(
         "tg.user_data.get_access_group_db", lambda: FakeAccessGroupDB()
     )
 
-    result = ensure_active_user(make_callback("home"), FakeBot())
+    bot = FakeBot()
+    result = ensure_active_user(make_callback("home"), bot)
 
-    assert result.is_new_user is True
-    assert result.group_tag_found is True
-    assert result.user.tag.value == "Лидер"
-    assert [account.tag for account in database.get_accounts(42)] == ["Лидер"]
+    assert result.clan_selection_required is True
+    assert result.user is None
+    assert database.get_accounts(42) == []
+    button = bot.edited[0][1]["reply_markup"].keyboard[0][0]
+    assert button.callback_data == "accounts/create/-100123"
     connection.close()
 
 
-def test_first_game_account_uses_username_when_group_tag_is_missing(
+def test_first_game_account_is_not_created_without_available_clan(
     tmp_path, monkeypatch
 ):
     connection = Database(tmp_path / "database.db")
     database = UserDataDB(connection)
 
     class FakeAccessGroupDB:
-        def get_group_id(self):
-            return None
+        def get_groups(self):
+            return []
+
+    class FakeBot:
+        def __init__(self):
+            self.edited = []
+
+        def edit_message_text(self, *args, **kwargs):
+            self.edited.append((args, kwargs))
 
     monkeypatch.setattr("tg.user_data.get_user_data_db", lambda: database)
     monkeypatch.setattr(
         "tg.user_data.get_access_group_db", lambda: FakeAccessGroupDB()
     )
 
-    result = ensure_active_user(make_callback("home"), object())
+    bot = FakeBot()
+    result = ensure_active_user(make_callback("home"), bot)
 
-    assert result.is_new_user is True
-    assert result.group_tag_found is False
-    assert result.user.tag.value == "tester"
-    assert [account.tag for account in database.get_accounts(42)] == ["tester"]
+    assert result.clan_selection_required is True
+    assert result.user is None
+    assert database.get_accounts(42) == []
+    assert "Не удалось найти" in bot.edited[0][0][0]
     connection.close()
 
 

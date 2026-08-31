@@ -8,6 +8,7 @@ from telebot.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMar
 from db.initializer import get_user_data_db
 from logger.app_logger import logger
 from reports.game_data import GameDataReport
+from tg.admins.common import get_active_admin_group
 from tg.metrics import APPLICATION_METRICS
 from tg.utils import Button, empty_filter, get_ids, get_username
 
@@ -27,7 +28,10 @@ def export_game_data(callback_query: CallbackQuery, bot: TeleBot) -> None:
     started_at = monotonic()
     result = "failed"
     try:
-        url = GameDataReport().export(get_user_data_db().get_users())
+        group = get_active_admin_group(user_id)
+        url = GameDataReport().export(
+            get_user_data_db().get_users(group.group_id)
+        )
     except Exception as error:
         logger.exception(
             "Unable to export game data report for user_id=%s: %s",

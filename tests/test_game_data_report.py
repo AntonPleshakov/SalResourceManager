@@ -4,6 +4,9 @@ from prometheus_client import CollectorRegistry
 from telebot.types import CallbackQuery, Chat, Message, User
 
 from config.config import getconf, reset_config
+from db.access_group import AccessGroup, AccessGroupDB
+from db.admins import Admin, AdminsDB
+from db.database import Database
 from pygsheets.exceptions import WorksheetNotFound
 
 reset_config(str(Path(__file__).parents[1] / "config" / "config_template.ini"))
@@ -11,6 +14,7 @@ reset_config(str(Path(__file__).parents[1] / "config" / "config_template.ini"))
 from resources.user_data import UserData
 from reports.game_data import GameDataReport, USER_DATA_PAGE_NAME
 from tg.admins import admins_main_menu
+from tg.admins.clans import select_clan
 from tg.admins import game_data as game_data_module
 from tg.admins.game_data import export_game_data
 from tg.metrics import ApplicationMetrics
@@ -130,7 +134,18 @@ def test_report_creates_missing_worksheet():
 def test_admin_menu_contains_game_data_report(monkeypatch):
     monkeypatch.setattr(
         "tg.admins.get_admins_db",
-        lambda: type("Admins", (), {"get_admins": lambda _: []})(),
+        lambda: type(
+            "Admins",
+            (),
+            {
+                "get_active_group": lambda _, user_id: AccessGroup(
+                    -100123, "Test clan"
+                ),
+                "get_clans": lambda _, user_id: [
+                    AccessGroup(-100123, "Test clan")
+                ],
+            },
+        )(),
     )
     bot = FakeBot()
 
@@ -138,16 +153,42 @@ def test_admin_menu_contains_game_data_report(monkeypatch):
 
     markup = bot.edits[0][1]["reply_markup"]
     assert "admins/game_data" in callback_data(markup)
-    assert bot.edits[0][0][0] == "<b>Админ-панель</b>\n\nВыберите действие."
+    assert bot.edits[0][0][0] == (
+        "<b>Админ-панель</b>\nКлан: <b>Test clan</b>\n\nВыберите действие."
+    )
     assert [button.text for row in markup.keyboard for button in row] == [
         "👥 Список игроков",
         "📣 Уведомления",
         "📤 Обновить Google Таблицу",
-        "👥 Список",
-        "➕ Добавить",
+        "➕ Добавить клан",
+        "✏️ Переименовать клан",
+        "👥 Список администраторов",
+        "➕ Добавить администраторов",
         "🗑 Удалить администратора",
         "⬅️ Назад в меню",
     ]
+
+
+def test_admin_can_switch_active_clan(tmp_path, monkeypatch):
+    connection = Database(tmp_path / "database.db")
+    groups = AccessGroupDB(connection)
+    groups.add_group(-100001, "Alpha")
+    groups.add_group(-100002, "Beta")
+    admins = AdminsDB(connection)
+    admins.add_admin(Admin("admin", 42), -100001)
+    admins.add_admin(Admin("admin", 42), -100002)
+    monkeypatch.setattr("tg.admins.get_admins_db", lambda: admins)
+    monkeypatch.setattr("tg.admins.clans.get_admins_db", lambda: admins)
+    bot = FakeBot()
+
+    admins_main_menu(make_callback("admins"), bot)
+    assert "admins/clans" in callback_data(bot.edits[-1][1]["reply_markup"])
+
+    select_clan(make_callback("admins/clans/-100002"), bot)
+
+    assert admins.get_active_group(42) == AccessGroup(-100002, "Beta")
+    assert "Клан: <b>Beta</b>" in bot.edits[-1][0][0]
+    connection.close()
 
 
 def test_game_data_callback_exports_and_shows_url(monkeypatch):
@@ -162,7 +203,11 @@ def test_game_data_callback_exports_and_shows_url(monkeypatch):
     monkeypatch.setattr("tg.admins.game_data.GameDataReport", FakeReport)
     monkeypatch.setattr(
         "tg.admins.game_data.get_user_data_db",
-        lambda: type("Users", (), {"get_users": lambda _: users})(),
+        lambda: type("Users", (), {"get_users": lambda _, clan_id: users})(),
+    )
+    monkeypatch.setattr(
+        "tg.admins.game_data.get_active_admin_group",
+        lambda user_id: AccessGroup(-100123, "Test clan"),
     )
     registry = CollectorRegistry()
     monkeypatch.setattr(
@@ -193,7 +238,11 @@ def test_game_data_callback_reports_export_failure(monkeypatch):
     monkeypatch.setattr("tg.admins.game_data.GameDataReport", BrokenReport)
     monkeypatch.setattr(
         "tg.admins.game_data.get_user_data_db",
-        lambda: type("Users", (), {"get_users": lambda _: []})(),
+        lambda: type("Users", (), {"get_users": lambda _, clan_id: []})(),
+    )
+    monkeypatch.setattr(
+        "tg.admins.game_data.get_active_admin_group",
+        lambda user_id: AccessGroup(-100123, "Test clan"),
     )
     bot = FakeBot()
 

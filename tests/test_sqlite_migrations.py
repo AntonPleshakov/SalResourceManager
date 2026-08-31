@@ -83,6 +83,10 @@ def prepare_version_7_database(database_path, migrations, rows):
     copy_initial_migrations(migrations, 7)
     with sqlite3.connect(database_path) as connection:
         apply_migrations(connection, migrations)
+        connection.execute(
+            "INSERT INTO access_group (singleton, group_id) VALUES (1, ?)",
+            (-100123,),
+        )
         for row in rows:
             insert_legacy_user(connection, row)
 
@@ -100,6 +104,7 @@ def test_initial_migrations_have_one_global_continuous_history():
         "0007_add_pet_settings",
         "0008_add_game_accounts",
         "0009_add_reminder_preferences",
+        "0010_add_clans",
     ]
     assert all(
         "IF NOT EXISTS" not in migration.path.read_text(encoding="utf-8").upper()
@@ -124,9 +129,9 @@ def test_runner_applies_only_pending_migrations(tmp_path):
 
     assert [migration.version for migration in first_applied] == [1, 2]
     assert [migration.version for migration in second_applied] == [
-        3, 4, 5, 6, 7, 8, 9
+        3, 4, 5, 6, 7, 8, 9, 10
     ]
-    assert final_version == 9
+    assert final_version == 10
 
 
 def test_war_stages_table_is_removed_from_final_schema(tmp_path):
@@ -154,6 +159,11 @@ def test_game_account_migration_preserves_every_value_for_every_user(tmp_path):
     )
 
     with sqlite3.connect(database_path) as connection:
+        connection.execute(
+            "INSERT INTO admins (user_id, username) VALUES (?, ?)",
+            (900, "legacy_admin"),
+        )
+        connection.commit()
         applied = apply_migrations(connection, MIGRATIONS_DIR)
         migrated_rows = connection.execute(
             "SELECT ga.user_id, tu.username, ga.tag, "
@@ -174,10 +184,20 @@ def test_game_account_migration_preserves_every_value_for_every_user(tmp_path):
             "SELECT user_id, reminders_enabled FROM telegram_users "
             "ORDER BY user_id"
         ).fetchall()
+        account_clans = connection.execute(
+            "SELECT user_id, clan_id FROM game_accounts ORDER BY user_id"
+        ).fetchall()
+        admin_clans = connection.execute(
+            "SELECT user_id, group_id FROM admin_clans"
+        ).fetchall()
+        clan_titles = connection.execute(
+            "SELECT group_id, title_needs_sync FROM clans"
+        ).fetchall()
 
     assert [migration.label for migration in applied] == [
         "0008_add_game_accounts",
         "0009_add_reminder_preferences",
+        "0010_add_clans",
     ]
     expected_rows = [
         (
@@ -191,6 +211,9 @@ def test_game_account_migration_preserves_every_value_for_every_user(tmp_path):
     assert migrated_rows == expected_rows
     assert active_accounts == [(42, "Hero α"), (77, "Герой β")]
     assert reminder_preferences == [(42, 1), (77, 1)]
+    assert account_clans == [(42, -100123), (77, -100123)]
+    assert admin_clans == [(900, -100123)]
+    assert clan_titles == [(-100123, 1)]
 
 
 def test_game_account_migration_builds_expected_schema_and_constraints(tmp_path):
@@ -258,10 +281,10 @@ def test_game_account_migration_is_idempotent_after_success(tmp_path):
         ).fetchall()
         version = connection.execute("PRAGMA user_version").fetchone()[0]
 
-    assert [migration.version for migration in first_applied] == [8, 9]
+    assert [migration.version for migration in first_applied] == [8, 9, 10]
     assert second_applied == ()
     assert snapshot_after == snapshot_before
-    assert version == 9
+    assert version == 10
 
 
 def test_game_account_migration_rolls_back_drop_table_on_late_failure(tmp_path):
@@ -350,7 +373,7 @@ def test_runner_rejects_a_gap_in_migration_versions(tmp_path):
 
 def test_runner_rejects_a_database_from_a_newer_application(tmp_path):
     with sqlite3.connect(tmp_path / "database.db") as connection:
-        connection.execute("PRAGMA user_version = 10")
+        connection.execute("PRAGMA user_version = 11")
 
         with pytest.raises(MigrationError, match="newer than supported"):
             apply_migrations(connection)

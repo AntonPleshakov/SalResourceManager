@@ -15,13 +15,16 @@ from config.config import reset_config
 
 reset_config(str(Path(__file__).parents[1] / "config" / "config_template.ini"))
 
-from db.admins import Admin
+from db.access_group import AccessGroup, AccessGroupDB
+from db.admins import Admin, AdminsDB
+from db.database import Database
 from tg.admins.add_admin import (
     add_admins_approved,
     add_admins_confirmation,
     cancel_add_admins,
 )
 from tg.admins.del_admin import del_admin_approved, del_admin_options
+from tg.admins.rename_clan import rename_clan, request_clan_rename
 
 
 def make_callback(data: str = "approved") -> CallbackQuery:
@@ -71,6 +74,12 @@ class FakeBot:
     def set_state(self, user_id, state):
         self.states.append((user_id, state))
 
+    def add_data(self, user_id, **kwargs):
+        self.data.update(kwargs)
+
+    def get_chat_member(self, group_id, user_id):
+        return type("Member", (), {"status": "member"})()
+
 
 class RecordingBot:
     def __init__(self):
@@ -92,6 +101,33 @@ class RecordingBot:
         self.data.update(kwargs)
 
 
+class RenameClanBot:
+    def __init__(self):
+        self.data = {}
+        self.states = []
+        self.deleted_states = []
+        self.edits = []
+        self.sent = []
+
+    def set_state(self, user_id, state):
+        self.states.append((user_id, state))
+
+    def add_data(self, user_id, **kwargs):
+        self.data.update(kwargs)
+
+    def retrieve_data(self, user_id):
+        return nullcontext(self.data)
+
+    def delete_state(self, user_id):
+        self.deleted_states.append(user_id)
+
+    def edit_message_text(self, *args, **kwargs):
+        self.edits.append((args, kwargs))
+
+    def send_message(self, chat_id, text, **kwargs):
+        self.sent.append((chat_id, text, kwargs))
+
+
 def test_delete_admin_options_exclude_requester(monkeypatch):
     admins = [
         Admin("requester", 42),
@@ -101,9 +137,13 @@ def test_delete_admin_options_exclude_requester(monkeypatch):
     fake_db = type(
         "FakeAdminsDB",
         (),
-        {"get_admins": lambda _: admins},
+        {"get_admins": lambda _, group_id: admins},
     )()
     monkeypatch.setattr("tg.admins.del_admin.get_admins_db", lambda: fake_db)
+    monkeypatch.setattr(
+        "tg.admins.del_admin.get_active_admin_group",
+        lambda user_id: AccessGroup(-100123, "Test clan"),
+    )
     bot = FakeBot()
 
     del_admin_options(make_callback(), bot)
@@ -115,6 +155,7 @@ def test_delete_admin_options_exclude_requester(monkeypatch):
         for button in row
     ]
     assert callback_data == ["1", "101", "admins"]
+    assert bot.data["admin_group_title"] == "Test clan"
 
 
 def test_add_admins_finishes_when_private_notifications_fail(monkeypatch):
@@ -128,7 +169,20 @@ def test_add_admins_finishes_when_private_notifications_fail(monkeypatch):
     monkeypatch.setattr(
         "tg.admins.add_admin.home", lambda callback_query, bot: homes.append(callback_query)
     )
-    bot = FakeBot({"new_admins": new_admins})
+    fake_db = type(
+        "FakeAdminsDB",
+        (),
+        {
+            "is_admin": lambda _, user_id, group_id: True,
+            "add_admin": lambda _, admin, group_id: added.append(admin),
+        },
+    )()
+    monkeypatch.setattr(
+        "tg.admins.add_admin.get_admins_db", lambda: fake_db
+    )
+    bot = FakeBot(
+        {"new_admins": new_admins, "admin_group_id": -100123}
+    )
     callback = make_callback()
 
     add_admins_approved(callback, bot)
@@ -137,6 +191,69 @@ def test_add_admins_finishes_when_private_notifications_fail(monkeypatch):
     assert [attempt[0] for attempt in bot.send_attempts] == [101, 102]
     assert bot.callback_answers == [("callback-1", "Администраторы добавлены")]
     assert homes == [callback]
+
+
+def test_add_admins_result_names_rejected_users(monkeypatch):
+    new_admins = [Admin("accepted", 101), Admin("rejected", 102)]
+    added = []
+    homes = []
+    fake_db = type(
+        "FakeAdminsDB",
+        (),
+        {
+            "is_admin": lambda _, user_id, group_id: True,
+            "add_admin": lambda _, admin, group_id: added.append(admin),
+        },
+    )()
+    monkeypatch.setattr("tg.admins.add_admin.get_admins_db", lambda: fake_db)
+    monkeypatch.setattr(
+        "tg.admins.add_admin.home", lambda callback_query, bot: homes.append(callback_query)
+    )
+    bot = FakeBot({"new_admins": new_admins, "admin_group_id": -100123})
+    bot.get_chat_member = lambda group_id, user_id: type(
+        "Member",
+        (),
+        {"status": "member" if user_id == 101 else "left"},
+    )()
+    callback = make_callback()
+
+    add_admins_approved(callback, bot)
+
+    assert added == [new_admins[0]]
+    assert bot.callback_answers == [
+        (
+            "callback-1",
+            "Администраторы добавлены\n"
+            "rejected не добавлен: не состоит в клане",
+        )
+    ]
+    assert homes == [callback]
+
+
+def test_add_admins_omits_rejection_details_when_all_users_are_rejected(
+    monkeypatch,
+):
+    new_admins = [Admin("rejected", 102)]
+    fake_db = type(
+        "FakeAdminsDB",
+        (),
+        {
+            "is_admin": lambda _, user_id, group_id: True,
+            "add_admin": lambda _, admin, group_id: None,
+        },
+    )()
+    monkeypatch.setattr("tg.admins.add_admin.get_admins_db", lambda: fake_db)
+    monkeypatch.setattr("tg.admins.add_admin.home", lambda callback_query, bot: None)
+    bot = FakeBot({"new_admins": new_admins, "admin_group_id": -100123})
+    bot.get_chat_member = lambda group_id, user_id: type(
+        "Member", (), {"status": "left"}
+    )()
+
+    add_admins_approved(make_callback(), bot)
+
+    assert bot.callback_answers == [
+        ("callback-1", "Администраторы не добавлены")
+    ]
 
 
 def test_add_admins_can_be_cancelled_and_removes_reply_keyboard(monkeypatch):
@@ -179,20 +296,59 @@ def test_delete_admin_finishes_when_private_notification_fails(monkeypatch):
         "FakeAdminsDB",
         (),
         {
-            "get_admin": lambda _, user_id: admin,
-            "del_admin": lambda _, user_id: deleted.append(user_id),
+            "is_admin": lambda _, user_id, group_id: True,
+            "get_admin": lambda _, user_id, group_id: admin,
+            "del_admin": lambda _, user_id, group_id: deleted.append(user_id),
         },
     )()
     monkeypatch.setattr("tg.admins.del_admin.get_admins_db", lambda: fake_db)
     monkeypatch.setattr(
         "tg.admins.del_admin.home", lambda callback_query, bot: homes.append(callback_query)
     )
-    bot = FakeBot()
+    bot = FakeBot(
+        {
+            "admin_group_id": -100123,
+            "admin_group_title": "Test clan",
+        }
+    )
     callback = make_callback("approved/101")
 
     del_admin_approved(callback, bot)
 
     assert deleted == [101]
-    assert [attempt[0] for attempt in bot.send_attempts] == [101]
-    assert bot.callback_answers == [("callback-1", "Права администратора отозваны")]
+    assert bot.send_attempts == [
+        (
+            101,
+            "Ваши права администратора клана «Test clan» были отозваны.",
+        )
+    ]
+    assert bot.callback_answers == [
+        ("callback-1", "Права администратора клана отозваны")
+    ]
     assert homes == [callback]
+
+
+def test_admin_can_rename_active_clan(tmp_path, monkeypatch):
+    connection = Database(tmp_path / "database.db")
+    groups = AccessGroupDB(connection)
+    groups.add_group(-100123, "Old title")
+    admins = AdminsDB(connection)
+    admins.add_admin(Admin("requester", 42), -100123)
+    monkeypatch.setattr(
+        "tg.admins.rename_clan.get_access_group_db", lambda: groups
+    )
+    monkeypatch.setattr("tg.admins.rename_clan.get_admins_db", lambda: admins)
+    monkeypatch.setattr(
+        "tg.admins.rename_clan.get_active_admin_group",
+        lambda user_id: groups.get_group(-100123),
+    )
+    bot = RenameClanBot()
+
+    request_clan_rename(make_callback("admins/rename_clan"), bot)
+    rename_clan(make_message("  New   <clan>  "), bot)
+
+    assert bot.data["rename_clan_group_id"] == -100123
+    assert groups.get_group(-100123).title == "New <clan>"
+    assert bot.deleted_states == [42]
+    assert "New &lt;clan&gt;" in bot.sent[-1][1]
+    connection.close()

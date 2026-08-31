@@ -6,6 +6,7 @@ import pytest
 from telebot.types import CallbackQuery, Chat, Message, User
 
 from config.config import reset_config
+from db.access_group import AccessGroup
 
 reset_config(str(Path(__file__).parents[1] / "config" / "config_template.ini"))
 
@@ -44,7 +45,7 @@ class FakeUserDataDB:
     def __init__(self, users):
         self._users = users
 
-    def get_users(self):
+    def get_users(self, clan_id=None):
         return self._users
 
 
@@ -116,6 +117,10 @@ def test_standard_notification_ignores_stale_technologies(monkeypatch):
     monkeypatch.setattr(
         "tg.admins.notifications.now",
         lambda: datetime(2026, 8, 2, tzinfo=timezone.utc),
+    )
+    monkeypatch.setattr(
+        "tg.admins.notifications.get_active_admin_group",
+        lambda user_id: AccessGroup(-100123, "Test clan"),
     )
 
     class FakeBot:
@@ -193,6 +198,10 @@ def test_standard_notification_confirmation_is_compact_and_uses_snapshot(
         "tg.admins.notifications.now",
         lambda: datetime(2026, 8, 2, tzinfo=timezone.utc),
     )
+    monkeypatch.setattr(
+        "tg.admins.notifications.get_active_admin_group",
+        lambda user_id: AccessGroup(-100123, "Test clan"),
+    )
 
     class FakeBot:
         def __init__(self):
@@ -264,7 +273,17 @@ def test_standard_notification_shows_progress_before_sending(monkeypatch):
             or BroadcastResult(sent=1, failed=0)
         ),
     )
-    bot = NotificationFlowBot({"standard_notification_plan": plan})
+    monkeypatch.setattr(
+        "tg.admins.notifications.get_admins_db",
+        lambda: type(
+            "Admins",
+            (),
+            {"is_admin": lambda _, user_id, group_id: True},
+        )(),
+    )
+    bot = NotificationFlowBot(
+        {"standard_notification_plan": plan, "admin_group_id": -100123}
+    )
 
     send_standard_notification_confirmed(
         make_callback("admins/notifications/send_standard"), bot
@@ -280,17 +299,21 @@ def test_custom_notifications_show_progress_before_sending(monkeypatch):
     private_calls = []
     monkeypatch.setattr(
         "tg.admins.notifications.send_custom_notification",
-        lambda bot, text, admin_name: (
-            group_calls.append((text, admin_name))
+        lambda bot, text, admin_name, group_id: (
+            group_calls.append((text, admin_name, group_id))
             or BroadcastResult(sent=1, failed=0)
         ),
     )
     monkeypatch.setattr(
         "tg.admins.notifications.send_custom_private_notification",
-        lambda bot, text, admin_name: (
-            private_calls.append((text, admin_name))
+        lambda bot, text, admin_name, group_id: (
+            private_calls.append((text, admin_name, group_id))
             or BroadcastResult(sent=1, failed=0)
         ),
+    )
+    monkeypatch.setattr(
+        "tg.admins.notifications.get_active_admin_group",
+        lambda user_id: AccessGroup(-100123, "Test clan"),
     )
 
     group_bot = NotificationFlowBot(
@@ -308,8 +331,8 @@ def test_custom_notifications_show_progress_before_sending(monkeypatch):
 
     assert group_bot.edited[0][0][0] == "Отправляю уведомление в группу…"
     assert private_bot.edited[0][0][0] == "Отправляю личные уведомления…"
-    assert group_calls == [("Текст", "Admin")]
-    assert private_calls == [("Текст", "Admin")]
+    assert group_calls == [("Текст", "Admin", -100123)]
+    assert private_calls == [("Текст", "Admin", -100123)]
 
 
 def test_custom_notification_escapes_text_and_mentions_every_user():
@@ -371,15 +394,6 @@ def test_custom_notification_is_sent_to_access_group_with_sound(monkeypatch):
         "tg.admins.notifications.get_user_data_db", lambda: FakeUserDataDB(users)
     )
 
-    class FakeAccessGroupDB:
-        def get_group_id(self):
-            return -100123
-
-    monkeypatch.setattr(
-        "tg.admins.notifications.get_access_group_db",
-        lambda: FakeAccessGroupDB(),
-    )
-
     class FakeBot:
         def __init__(self):
             self.calls = []
@@ -389,7 +403,9 @@ def test_custom_notification_is_sent_to_access_group_with_sound(monkeypatch):
 
     bot = FakeBot()
 
-    result = send_custom_notification(bot, "Важный текст", "Admin")
+    result = send_custom_notification(
+        bot, "Важный текст", "Admin", -100123
+    )
 
     assert result == BroadcastResult(sent=1, failed=0)
     assert bot.calls[0][0] == -100123

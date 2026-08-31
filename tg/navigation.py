@@ -62,6 +62,11 @@ def show_home_menu(
             "Игровой аккаунт: "
             f"<b>{formatting.escape_html(active_account.tag)}</b>"
         )
+        if active_account.clan_title:
+            text_lines.append(
+                "Клан: "
+                f"<b>{formatting.escape_html(active_account.clan_title)}</b>"
+            )
         if len(accounts) > 1:
             text_lines.append(f"Всего аккаунтов: {len(accounts)}")
         text_lines.append("")
