@@ -42,6 +42,8 @@ from tg.user_data import (
 from tg.user_data.accounts import _get_group_tag
 from tg.user_data.common import ensure_active_user
 from tg.user_data.fill import skip_fill_value
+from tg.user_data.resources import build_resources_menu
+from tg.user_data.technologies import build_technologies_menu
 
 
 def Database(path):
@@ -101,6 +103,30 @@ def test_user_data_round_trip():
         "hatch_batches_ultimate",
         "hatch_batches_mythic",
     }
+
+
+def test_resource_and_technology_menus_use_embedded_rich_buttons():
+    user = UserData(
+        account_id=7,
+        user_id=42,
+        tag='Лидер <& "one"',
+        hammers=2_500,
+        forge_level=10,
+    )
+
+    resources = build_resources_menu(user)
+    technologies = build_technologies_menu(user)
+
+    assert resources.text is None
+    assert resources.keyboard is None
+    assert "<h2>Ресурсы</h2>" in resources.rich_message.html
+    assert "Лидер &lt;&amp; &quot;one&quot;" in resources.rich_message.html
+    assert "Молотки: <b>2.50к</b>" in resources.rich_message.html
+    assert 'data="user_data/edit/hammers"' in resources.rich_message.html
+    assert 'data="user_data/fill/resources"' in resources.rich_message.html
+    assert "<h2>Технологии</h2>" in technologies.rich_message.html
+    assert 'data="user_data/edit/forge_level"' in technologies.rich_message.html
+    assert 'data="user_data/fill/technologies"' in technologies.rich_message.html
 
 
 def test_group_tag_is_taken_from_chat_member_tag():
@@ -772,9 +798,15 @@ def test_single_value_edit_stores_compact_state_and_shows_current_value(
             self.data.update(data)
 
         def edit_message_text(
-            self, text, chat_id, message_id, reply_markup=None
+            self,
+            text=None,
+            chat_id=None,
+            message_id=None,
+            reply_markup=None,
+            rich_message=None,
         ):
-            self.edited.append((text, chat_id, message_id, reply_markup))
+            content = rich_message.html if rich_message is not None else text
+            self.edited.append((content, chat_id, message_id, reply_markup))
 
     monkeypatch.setattr(
         "tg.user_data.edit_value.get_active_user_or_prompt",
@@ -844,9 +876,15 @@ def test_single_value_edit_saves_to_selected_account(monkeypatch):
             self.deleted_states.append(user_id)
 
         def edit_message_text(
-            self, text, chat_id, message_id, reply_markup=None
+            self,
+            text=None,
+            chat_id=None,
+            message_id=None,
+            reply_markup=None,
+            rich_message=None,
         ):
-            self.edited.append((text, chat_id, message_id, reply_markup))
+            content = rich_message.html if rich_message is not None else text
+            self.edited.append((content, chat_id, message_id, reply_markup))
 
     message = SimpleNamespace(
         from_user=SimpleNamespace(id=42, username="tester", first_name="Tester"),
@@ -873,7 +911,8 @@ def test_single_value_edit_saves_to_selected_account(monkeypatch):
         "✅ Молотки: <b>1.50к</b> — значение зарегистрировано."
         in bot.edited[0][0]
     )
-    assert "<b>Ресурсы</b>" in bot.edited[0][0]
+    assert "<h2>Ресурсы</h2>" in bot.edited[0][0]
+    assert 'data="user_data/edit/hammers"' in bot.edited[0][0]
 
 
 def test_single_value_edit_reuses_prompt_for_invalid_input():

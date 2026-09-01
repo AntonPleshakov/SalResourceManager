@@ -1,9 +1,15 @@
 from dataclasses import dataclass
 from decimal import Decimal
+from html import escape
 from typing import Optional, Sequence, Union
 
-from telebot import TeleBot, formatting
-from telebot.types import CallbackQuery, InlineKeyboardMarkup, Message
+from telebot import TeleBot
+from telebot.types import (
+    CallbackQuery,
+    InlineKeyboardMarkup,
+    InputRichMessage,
+    Message,
+)
 
 from common.datetime_utils import format_last_update
 from logger.app_logger import logger
@@ -16,6 +22,7 @@ from resources.user_data import (
 )
 import tg.user_data as user_data
 from tg.clans import get_user_clans
+from tg.rich import button_row, callback_button, input_rich_message
 from tg.utils import Button, format_points, get_ids, get_username
 
 
@@ -29,23 +36,9 @@ class ActiveUserResult:
 
 @dataclass(frozen=True)
 class MenuContent:
-    text: str
-    keyboard: InlineKeyboardMarkup
-
-
-FIELD_BUTTON_TITLES = {
-    "mount_keys": "🔑 Ключи",
-    "skills": "🎟 Билеты",
-    "shells": "🥚 Скорлупа",
-    "hammers": "🔨 Молотки",
-    "pets": "🐾 Питомцы",
-    "unmerged_mounts": "🐎 Маунты",
-    "forge_level": "🔥 Кузница",
-    "skill_summon_cost": "🎟 Призыв навыков",
-    "extra_egg_chance": "🥚 Шанс яйца",
-    "mount_summon_cost": "🐎 Призыв маунта",
-    "extra_mount_chance": "✨ Доп. маунт",
-}
+    text: str | None = None
+    keyboard: InlineKeyboardMarkup | None = None
+    rich_message: InputRichMessage | None = None
 
 
 def ensure_active_user(
@@ -109,43 +102,73 @@ def build_section_menu(
     fields: Sequence[ResourceField],
     notice: str = "",
 ) -> MenuContent:
-    value_lines = []
+    parts = []
+    if notice:
+        parts.append(f"<blockquote>{notice}</blockquote>")
+    parts.extend(
+        (
+            f"<h2>{escape(title)}</h2>",
+            "<p>Игровой аккаунт: "
+            f"<b>{escape(str(user.tag.value))}</b></p>",
+        )
+    )
     for field in fields:
         value = user.get_value(field.name)
         if field in RESOURCE_FIELDS and Decimal(value) >= Decimal("1000"):
             value = format_points(Decimal(value))
-        line = f"{field.title}: <b>{value}</b>"
+        details = ""
         if field in TRACKED_FIELDS:
             updated_on = user.get_updated_on(field.name)
             updated_label = format_last_update(updated_on)
-            line += f" <i>(обновлено: {updated_label})</i>"
-        value_lines.append(line)
-    values = "\n".join(value_lines)
-    text = (
-        f"<b>{title}</b>\n"
-        f"Игровой аккаунт: <b>{formatting.escape_html(user.tag.value)}</b>\n\n"
-        f"{values}\n\nВыберите показатель для изменения."
-    )
-    if notice:
-        text = f"{notice}\n\n{text}"
-
-    keyboard = InlineKeyboardMarkup(row_width=2)
-    keyboard.row(
-        Button("🔄 Аккаунт", f"accounts/{section}").inline(),
-        Button("📝 Заполнить всё", f"user_data/fill/{section}").inline(),
-    )
-    keyboard.add(
-        *(
-            Button(
-                FIELD_BUTTON_TITLES.get(field.name, field.title),
-                f"user_data/edit/{field.name}",
-            ).inline()
-            for field in fields
+            details = f"<br><i>Обновлено: {escape(updated_label)}</i>"
+        parts.append(
+            "<p>"
+            f"{escape(field.title)}: <b>{escape(str(value))}</b>"
+            f"{details}<br>"
+            f"{callback_button('✏️ Изменить', f'user_data/edit/{field.name}')}"
+            "</p>"
+        )
+    parts.append(
+        button_row(
+            (
+                callback_button("🔄 Аккаунт", f"accounts/{section}"),
+                callback_button(
+                    "📝 Заполнить всё",
+                    f"user_data/fill/{section}",
+                    style="primary",
+                ),
+            )
         )
     )
-    keyboard.row(Button("⬅️ Назад в меню", "home").inline())
+    parts.append(
+        button_row(
+            (callback_button("⬅️ Назад в меню", "home"),),
+            align="left",
+        )
+    )
+    return MenuContent(rich_message=input_rich_message(parts))
 
-    return MenuContent(text, keyboard)
+
+def edit_menu_message(
+    bot: TeleBot,
+    chat_id: int,
+    message_id: int,
+    content: MenuContent,
+) -> None:
+    if content.rich_message is not None:
+        bot.edit_message_text(
+            chat_id=chat_id,
+            message_id=message_id,
+            rich_message=content.rich_message,
+        )
+        return
+
+    bot.edit_message_text(
+        content.text,
+        chat_id,
+        message_id,
+        reply_markup=content.keyboard,
+    )
 
 
 def deliver_menu(
@@ -155,12 +178,16 @@ def deliver_menu(
 ) -> None:
     if isinstance(update, CallbackQuery):
         callback_message = update.message
-        bot.edit_message_text(
-            content.text,
+        edit_menu_message(
+            bot,
             callback_message.chat.id,
             callback_message.id,
-            reply_markup=content.keyboard,
+            content,
         )
+        return
+
+    if content.rich_message is not None:
+        bot.send_rich_message(update.chat.id, content.rich_message)
         return
 
     bot.send_message(

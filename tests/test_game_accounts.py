@@ -45,11 +45,22 @@ class FakeBot:
     def delete_state(self, _user_id):
         pass
 
-    def edit_message_text(self, text, chat_id, message_id, reply_markup=None):
-        self.edited.append((text, chat_id, message_id, reply_markup))
+    def edit_message_text(
+        self,
+        text=None,
+        chat_id=None,
+        message_id=None,
+        reply_markup=None,
+        rich_message=None,
+    ):
+        content = rich_message.html if rich_message is not None else text
+        self.edited.append((content, chat_id, message_id, reply_markup))
 
     def send_message(self, chat_id, text, reply_markup=None):
         self.sent.append((text, chat_id, reply_markup))
+
+    def send_rich_message(self, chat_id, rich_message):
+        self.sent.append((rich_message.html, chat_id, None))
 
     def answer_callback_query(self, *args, **kwargs):
         self.callback_answers.append((args, kwargs))
@@ -217,6 +228,7 @@ def test_account_selector_returns_to_resource_screen_after_switch(
 
     assert database.get_active_account(42).account_id == first.account_id
     assert "Игровой аккаунт: <b>Main</b>" in bot.edited[-1][0]
+    assert 'data="user_data/edit/hammers"' in bot.edited[-1][0]
     connection.close()
 
 
@@ -238,7 +250,7 @@ def test_message_destination_sends_resource_menu(tmp_path, monkeypatch):
     assert bot.edited == []
     assert len(bot.sent) == 1
     assert "✅ Аккаунт сохранён." in bot.sent[0][0]
-    assert "<b>Ресурсы</b>" in bot.sent[0][0]
+    assert "<h2>Ресурсы</h2>" in bot.sent[0][0]
     connection.close()
 
 

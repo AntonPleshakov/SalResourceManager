@@ -13,8 +13,9 @@ from tg.metrics import ApplicationMetrics
 from tg.reminders import (
     ReminderKind,
     ScheduledReminder,
+    _account_reminder_message,
     _account_reminder_text,
-    _reminder_keyboard,
+    _reminder_buttons,
     _required_field_names,
     next_reminder,
     send_reminder,
@@ -68,21 +69,20 @@ def test_weekly_reminder_mentions_received_resources():
 
     assert "полученные в награду" in text
     assert "за войну и личный турнир" in text
-    assert "• Билетики навыков" in text
-    assert "• Молотки" in text
+    assert "<li>Билетики навыков</li>" in text
+    assert "<li>Молотки</li>" in text
     assert "Шанс на доп. маунта" not in text
 
 
-def test_reminder_keyboard_has_back_button():
-    keyboard = _reminder_keyboard({"extra_mount_chance", "hammers"})
+def test_reminder_has_embedded_navigation_buttons():
+    html = _reminder_buttons({"extra_mount_chance", "hammers"})
 
-    assert [button.callback_data for row in keyboard.keyboard for button in row] == [
-        "user_data/fill/tracked/3,10",
-        "resources",
-        "technologies",
-        "pets",
-        "home",
-    ]
+    assert 'data="user_data/fill/tracked/3,10"' in html
+    assert 'data="resources"' in html
+    assert 'data="technologies"' in html
+    assert 'data="pets"' in html
+    assert 'data="home"' in html
+    assert 'style="primary"' in html
 
 
 def test_send_reminder_sends_to_every_user_and_continues_after_error(monkeypatch):
@@ -94,8 +94,8 @@ def test_send_reminder_sends_to_every_user_and_continues_after_error(monkeypatch
         def __init__(self):
             self.calls = []
 
-        def send_message(self, user_id, text, reply_markup):
-            self.calls.append((user_id, text, reply_markup))
+        def send_rich_message(self, user_id, rich_message):
+            self.calls.append((user_id, rich_message))
             if user_id == 1:
                 raise RuntimeError("blocked")
 
@@ -137,7 +137,7 @@ def test_blocking_bot_disables_future_monday_reminders(monkeypatch):
             self.disabled.append((user_id, enabled))
 
     class FakeBot:
-        def send_message(self, _user_id, _text, reply_markup):
+        def send_rich_message(self, _user_id, _rich_message):
             raise BlockedError()
 
     database = FakeUserDataDB()
@@ -166,8 +166,8 @@ def test_reminder_combines_multiple_accounts_into_one_message(monkeypatch):
         def __init__(self):
             self.calls = []
 
-        def send_message(self, user_id, text, reply_markup):
-            self.calls.append((user_id, text, reply_markup))
+        def send_rich_message(self, user_id, rich_message):
+            self.calls.append((user_id, rich_message))
 
     monkeypatch.setattr("tg.reminders.get_user_data_db", lambda: FakeUserDataDB())
     bot = FakeBot()
@@ -179,17 +179,18 @@ def test_reminder_combines_multiple_accounts_into_one_message(monkeypatch):
 
     assert len(bot.calls) == 1
     assert bot.calls[0][0] == 1
-    assert "<b>Alpha</b>" in bot.calls[0][1]
-    assert "<b>Beta</b>" in bot.calls[0][1]
-    assert [
-        button.callback_data
-        for row in bot.calls[0][2].keyboard
-        for button in row
-    ] == [
-        "accounts/select/resources/11",
-        "accounts/select/resources/22",
-        "home",
-    ]
+    html = bot.calls[0][1].html
+    assert "<h3>Alpha</h3>" in html
+    assert "<h3>Beta</h3>" in html
+    assert 'data="accounts/select/resources/11"' in html
+    assert 'data="accounts/select/resources/22"' in html
+    assert 'data="home"' in html
+    assert (
+        html.index("<h3>Alpha</h3>")
+        < html.index('data="accounts/select/resources/11"')
+        < html.index("<h3>Beta</h3>")
+        < html.index('data="accounts/select/resources/22"')
+    )
 
 
 def test_weekly_reminder_skips_current_user_and_lists_missing_resources(
@@ -213,8 +214,8 @@ def test_weekly_reminder_skips_current_user_and_lists_missing_resources(
         def __init__(self):
             self.calls = []
 
-        def send_message(self, user_id, text, reply_markup):
-            self.calls.append((user_id, text, reply_markup))
+        def send_rich_message(self, user_id, rich_message):
+            self.calls.append((user_id, rich_message))
 
     monkeypatch.setattr("tg.reminders.get_user_data_db", lambda: FakeUserDataDB())
     bot = FakeBot()
@@ -222,5 +223,21 @@ def test_weekly_reminder_skips_current_user_and_lists_missing_resources(
     send_reminder(bot, reminder)
 
     assert [call[0] for call in bot.calls] == [2]
-    assert "Билетики навыков" in bot.calls[0][1]
-    assert "Молотки" not in bot.calls[0][1]
+    assert "Билетики навыков" in bot.calls[0][1].html
+    assert "Молотки" not in bot.calls[0][1].html
+
+
+def test_reminder_escapes_account_name_and_embeds_buttons():
+    reminder = ScheduledReminder(
+        dt(2026, 8, 3, 13), ReminderKind.WEEKLY_REWARD
+    )
+    user = UserData(account_id=7, user_id=1, tag='Alpha <& "one"')
+
+    message = _account_reminder_message(
+        reminder,
+        [(user, {"hammers"})],
+    )
+
+    assert "Alpha &lt;&amp; &quot;one&quot;" in message.html
+    assert 'data="user_data/fill/tracked/3"' in message.html
+    assert message.skip_entity_detection

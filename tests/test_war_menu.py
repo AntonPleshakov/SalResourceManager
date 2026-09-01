@@ -1,5 +1,6 @@
 from datetime import date, datetime
 from pathlib import Path
+import re
 from types import SimpleNamespace
 
 from telebot.types import CallbackQuery, Chat, Message, User
@@ -39,8 +40,16 @@ class FakeBot:
     def send_message(self, chat_id, text, reply_markup=None):
         self.sent.append((chat_id, text, reply_markup))
 
-    def edit_message_text(self, text, chat_id, message_id, reply_markup=None):
-        self.edited.append((text, chat_id, message_id, reply_markup))
+    def edit_message_text(
+        self,
+        text=None,
+        chat_id=None,
+        message_id=None,
+        reply_markup=None,
+        rich_message=None,
+    ):
+        content = rich_message.html if rich_message is not None else text
+        self.edited.append((content, chat_id, message_id, reply_markup))
 
     def delete_state(self, user_id):
         self.deleted_states.append(user_id)
@@ -69,6 +78,10 @@ class FakeUserDataDB:
 
 def callback_data(markup):
     return [button.callback_data for row in markup.keyboard for button in row]
+
+
+def rich_callback_data(html):
+    return re.findall(r'<tg-button[^>]+data="([^"]+)"', html)
 
 
 def test_home_contains_single_war_points_menu(monkeypatch):
@@ -143,21 +156,22 @@ def test_personal_war_calculator_uses_requesting_users_data(monkeypatch):
     text, _, _, markup = bot.edited[0]
     assert "Калькулятор очков войны" in text
     first_day_points = expected.points_by_day[1]
-    first_day_details = "\n".join(
-        f"• {activity.title}: <b>{format_points(points)}</b>"
+    first_day_details = "<br>".join(
+        f"{activity.title}: <b>{format_points(points)}</b>"
         for activity, points in expected.points_by_activity_by_day[1].items()
     )
-    assert (
-        f"<b>День 1: {format_points(first_day_points)}</b>\n"
-        f"{first_day_details}"
-    ) in text
-    assert "<b>Итого по активностям</b>" in text
-    assert f"Всего: <b>{format_points(expected.total)}</b>" in text
-    assert "war_calculator/details" in callback_data(markup)
-    assert "resources" in callback_data(markup)
-    assert "technologies" in callback_data(markup)
-    assert "pets" in callback_data(markup)
-    assert "war_menu" in callback_data(markup)
+    assert f'<td align="center"><b>1</b></td>' in text
+    assert first_day_details in text
+    assert f'<td align="right"><b>{format_points(first_day_points)}</b></td>' in text
+    assert "<caption>Итого по активностям</caption>" in text
+    assert f'<th align="right">{format_points(expected.total)}</th>' in text
+    buttons = rich_callback_data(text)
+    assert "war_calculator/details" in buttons
+    assert "resources" in buttons
+    assert "technologies" in buttons
+    assert "pets" in buttons
+    assert "war_menu" in buttons
+    assert markup is None
 
 
 def test_personal_war_details_menu_lists_every_configured_activity(monkeypatch):
@@ -170,7 +184,7 @@ def test_personal_war_details_menu_lists_every_configured_activity(monkeypatch):
     )
 
     text, _, _, markup = bot.edited[0]
-    buttons = callback_data(markup)
+    buttons = rich_callback_data(text)
     assert "Подробный расчёт" in text
     assert {
         f"war_calculator/details/{activity.value}" for activity in WarActivity
@@ -194,16 +208,17 @@ def test_personal_war_activity_details_explain_resources_and_formula(monkeypatch
     )
 
     text, _, _, markup = bot.edited[0]
-    assert "<b>Ковка</b>" in text
+    assert "<h2>Ковка</h2>" in text
     assert "Дни войны: 1, 3, 5" in text
     assert "Молотки: 300" in text
     assert "Уровень кузницы: 10" in text
     assert "Средние очки за один молоток" in text
     assert "очков" in text
-    assert callback_data(markup) == [
+    assert rich_callback_data(text) == [
         "war_calculator/details",
         "war_calculator",
     ]
+    assert markup is None
 
 
 def test_forge_details_explain_level_change_between_war_days(monkeypatch):
@@ -298,11 +313,13 @@ def test_personal_war_calculator_prompts_when_data_is_missing(monkeypatch):
     personal_war_points(make_callback(), bot)
 
     text, _, _, markup = bot.edited[0]
-    assert "заполните свои ресурсы" in text
-    assert callback_data(markup) == [
+    assert "<h2>Калькулятор очков войны</h2>" in text
+    assert "добавьте или выберите игровой аккаунт" in text
+    assert rich_callback_data(text) == [
         "accounts/war_calculator",
         "resources",
         "technologies",
         "pets",
         "war_menu",
     ]
+    assert markup is None

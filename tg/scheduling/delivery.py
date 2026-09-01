@@ -2,6 +2,7 @@ from datetime import date
 from typing import Sequence, Set
 
 from telebot import TeleBot
+from telebot.types import InputRichMessage
 
 from logger.app_logger import logger
 from resources.user_data import UserData
@@ -55,12 +56,11 @@ def deliver_reminder(
     reminder,
     user_id: int,
     accounts: Sequence[UserData],
-    text: str,
-    keyboard,
+    rich_message: InputRichMessage,
     blocked_error_type: type[Exception],
 ) -> bool:
     try:
-        bot.send_message(user_id, text, reply_markup=keyboard)
+        bot.send_rich_message(user_id, rich_message)
         metrics.reminders.labels(kind=reminder.kind.value, result="sent").inc()
         return True
     except Exception as error:

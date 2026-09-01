@@ -6,7 +6,11 @@ import resources.user_data as user_data_resources
 from logger.app_logger import logger
 import tg.user_data as user_data
 from tg.metrics import record_resource_update
-from tg.user_data.common import get_active_user_or_prompt, value_input_hint
+from tg.user_data.common import (
+    edit_menu_message,
+    get_active_user_or_prompt,
+    value_input_hint,
+)
 from tg.user_data.editing_common import (
     EditUserDataStates,
     PRIVATE_CALLBACK_HANDLER,
@@ -160,11 +164,11 @@ def _open_section(
     user_id, chat_id = get_ids(message)[:2]
     bot.delete_state(user_id)
     content = menu_builders[state.section](current_user, notice)
-    bot.edit_message_text(
-        content.text,
+    edit_menu_message(
+        bot,
         chat_id,
         state.prompt_message_id,
-        reply_markup=content.keyboard,
+        content,
     )
 
 

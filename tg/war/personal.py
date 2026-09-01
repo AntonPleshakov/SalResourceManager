@@ -1,7 +1,8 @@
 from collections import Counter
+from html import escape
 
-from telebot import TeleBot, formatting
-from telebot.types import CallbackQuery, InlineKeyboardMarkup
+from telebot import TeleBot
+from telebot.types import CallbackQuery
 
 from logger.app_logger import logger
 from resources.user_data import UserData
@@ -9,44 +10,59 @@ from resources.war import WarActivity, WarPointsCalculator
 from resources.war_rules.forge import explain_forge_occurrences
 import tg.war as war
 from tg.metrics import observe_score_calculation
-from tg.utils import Button, empty_filter, format_points, get_ids, get_username
+from tg.rich import button_row, callback_button, input_rich_message
+from tg.utils import empty_filter, format_points, get_ids, get_username
 
 
 def _personal_war_points_text(user: UserData) -> str:
     logger.info("Calculating personal war points user_id=%s", user.user_id.value)
     with observe_score_calculation("personal_summary"):
         report = WarPointsCalculator().calculate([user], war.WAR_STAGES)
-    lines = [
-        "<b>Калькулятор очков войны</b>",
-        f"Игровой аккаунт: <b>{formatting.escape_html(user.tag.value)}</b>",
-        "<i>Максимум по каждому дню</i>",
-        "",
-    ]
+    day_rows = []
     for day, points in report.points_by_day.items():
-        lines.append(f"<b>День {day}: {format_points(points)}</b>")
-        for activity, activity_points in report.points_by_activity_by_day[
-            day
-        ].items():
-            lines.append(
-                f"• {activity.title}: <b>{format_points(activity_points)}</b>"
-            )
-        lines.append("")
-    lines.extend(
-        [
-            "<b>Итого по активностям</b>",
-            *(
-                f"• {activity.title}: <b>{format_points(points)}</b>"
-                for activity, points in report.points_by_activity.items()
-            ),
-            "",
-            f"Всего: <b>{format_points(report.total)}</b>",
-            "",
-            "Максимум каждого дня считается отдельно. В итогах расходуемые "
-            "ресурсы учитываются один раз.",
-            "Расчёт сделан по вашим сохранённым ресурсам и технологиям.",
-        ]
+        activities = "<br>".join(
+            f"{escape(activity.title)}: <b>{format_points(activity_points)}</b>"
+            for activity, activity_points in report.points_by_activity_by_day[
+                day
+            ].items()
+        )
+        day_rows.append(
+            "<tr>"
+            f'<td align="center"><b>{day}</b></td>'
+            f"<td>{activities}</td>"
+            f'<td align="right"><b>{format_points(points)}</b></td>'
+            "</tr>"
+        )
+    activity_rows = "".join(
+        "<tr>"
+        f"<td>{escape(activity.title)}</td>"
+        f'<td align="right"><b>{format_points(points)}</b></td>'
+        "</tr>"
+        for activity, points in report.points_by_activity.items()
     )
-    return "\n".join(lines)
+    return "".join(
+        (
+            "<h2>Калькулятор очков войны</h2>",
+            "<p>Игровой аккаунт: "
+            f"<b>{escape(str(user.tag.value))}</b><br>"
+            "<i>Максимум по каждому дню</i></p>",
+            '<table bordered striped compact><caption>По дням</caption>',
+            "<tr><th>День</th><th>Активности</th><th>Очки</th></tr>",
+            *day_rows,
+            "</table>",
+            '<table bordered compact><caption>Итого по активностям</caption>',
+            "<tr><th>Активность</th><th>Очки</th></tr>",
+            activity_rows,
+            "<tr><th>Всего</th>"
+            f'<th align="right">{format_points(report.total)}</th></tr>',
+            "</table>",
+            "<details><summary>Как считается результат</summary>",
+            "<p>Максимум каждого дня считается отдельно. В итогах "
+            "расходуемые ресурсы учитываются один раз.</p>",
+            "<p>Расчёт сделан по вашим сохранённым ресурсам и "
+            "технологиям.</p></details>",
+        )
+    )
 
 
 def _configured_activities(stages) -> list[WarActivity]:
@@ -87,65 +103,84 @@ def _personal_war_activity_details_text(
             occurrences,
         )
         total_points = sum(occurrence_points)
-    lines = [
-        f"<b>{activity.title}</b>",
-        f"Игровой аккаунт: <b>{formatting.escape_html(user.tag.value)}</b>",
-        f"Дни войны: {_activity_days(war.WAR_STAGES, activity)}",
-        *(
-            f"Появление {index}: <b>{format_points(points)}</b>"
-            for index, points in enumerate(occurrence_points, start=1)
-        ),
-        f"Всего за войну: <b>{format_points(total_points)}</b>",
-        "",
+    occurrence_rows = "".join(
+        "<tr>"
+        f"<td>Появление {index}</td>"
+        f'<td align="right"><b>{format_points(points)}</b></td>'
+        "</tr>"
+        for index, points in enumerate(occurrence_points, start=1)
+    )
+    parts = [
+        f"<h2>{escape(activity.title)}</h2>",
+        "<p>Игровой аккаунт: "
+        f"<b>{escape(str(user.tag.value))}</b><br>"
+        f"Дни войны: {escape(_activity_days(war.WAR_STAGES, activity))}</p>",
+        '<table bordered compact><caption>Очки</caption>',
+        occurrence_rows,
+        "<tr><th>Всего за войну</th>"
+        f'<th align="right">{format_points(total_points)}</th></tr>',
+        "</table>",
     ]
     if activity == WarActivity.FORGE:
         for index, occurrence_details in enumerate(
             explain_forge_occurrences(user, occurrences),
             start=1,
         ):
-            lines.extend(
-                [
-                    f"<i>Появление {index}</i>",
-                    *(
-                        f"• {formatting.escape_html(value)}"
-                        for value in occurrence_details.inputs
-                    ),
-                    *(
-                        f"• {formatting.escape_html(calculation)}"
-                        for calculation in occurrence_details.calculations
-                    ),
-                    "",
-                ]
+            items = "".join(
+                f"<li>{escape(str(value))}</li>"
+                for value in (
+                    *occurrence_details.inputs,
+                    *occurrence_details.calculations,
+                )
             )
-        lines.extend(
-            [
-                "<i>Учёт повторений</i>",
-                "• Монеты считаются безлимитными",
-                "• К четвёртому дню уровень повышается на 1, только если "
-                "исходный уровень не выше 22",
-            ]
+            parts.append(
+                f"<details><summary>Появление {index}: расчёт</summary>"
+                f"<ul>{items}</ul></details>"
+            )
+        parts.append(
+            "<details><summary>Учёт повторений</summary><ul>"
+            "<li>Монеты считаются безлимитными</li>"
+            "<li>К четвёртому дню уровень повышается на 1, только если "
+            "исходный уровень не выше 22</li>"
+            "</ul></details>"
         )
-        return "\n".join(lines)
+        return "".join(parts)
 
-    lines.extend(
-        [
-            "<i>Исходные данные</i>",
-            *(f"• {formatting.escape_html(value)}" for value in details.inputs),
-            "",
-            "<i>Как получены очки</i>",
-            *(
-                f"• {formatting.escape_html(calculation)}"
-                for calculation in details.calculations
-            ),
-            "",
-            "<i>Учёт повторений</i>",
-            f"• Расходуемая часть: "
-            f"{format_points(details.consumable_points)} — один раз",
-            f"• Повторяемая часть: {format_points(details.repeatable_points)} × "
-            f"{occurrences}",
-        ]
+    input_items = "".join(
+        f"<li>{escape(str(value))}</li>" for value in details.inputs
     )
-    return "\n".join(lines)
+    calculation_items = "".join(
+        f"<li>{escape(str(calculation))}</li>"
+        for calculation in details.calculations
+    )
+    parts.extend(
+        (
+            "<details><summary>Исходные данные</summary>"
+            f"<ul>{input_items}</ul></details>",
+            "<details><summary>Как получены очки</summary>"
+            f"<ul>{calculation_items}</ul></details>",
+            "<details><summary>Учёт повторений</summary><ul>"
+            "<li>Расходуемая часть: "
+            f"{format_points(details.consumable_points)} — один раз</li>"
+            "<li>Повторяемая часть: "
+            f"{format_points(details.repeatable_points)} × {occurrences}</li>"
+            "</ul></details>",
+        )
+    )
+    return "".join(parts)
+
+
+def _edit_rich_message(
+    bot: TeleBot,
+    chat_id: int,
+    message_id: int,
+    parts: list[str],
+) -> None:
+    bot.edit_message_text(
+        chat_id=chat_id,
+        message_id=message_id,
+        rich_message=input_rich_message(parts),
+    )
 
 
 def personal_war_points(callback_query: CallbackQuery, bot: TeleBot) -> None:
@@ -156,44 +191,77 @@ def personal_war_points(callback_query: CallbackQuery, bot: TeleBot) -> None:
         get_username(callback_query),
     )
     user = war.get_user_data_db().get_user(user_id)
-    keyboard = InlineKeyboardMarkup(row_width=1)
     if user is None:
-        keyboard.add(
-            Button(
-                "🎮 Добавить или выбрать аккаунт", "accounts/war_calculator"
-            ).inline()
-        )
-        keyboard.row(
-            Button("📦 Ресурсы", "resources").inline(),
-            Button("🔬 Технологии", "technologies").inline(),
-        )
-        keyboard.add(Button("🐾 Настроить питомцев", "pets").inline())
-        keyboard.add(Button("⬅️ Назад к очкам войны", "war_menu").inline())
-        bot.edit_message_text(
-            "Сначала заполните свои ресурсы, технологии и настройки питомцев, "
-            "чтобы бот мог рассчитать очки войны.",
+        _edit_rich_message(
+            bot,
             chat_id,
             message_id,
-            reply_markup=keyboard,
+            [
+                "<h2>Калькулятор очков войны</h2>",
+                "<p>Сначала добавьте или выберите игровой аккаунт, затем "
+                "заполните его ресурсы, технологии и настройки питомцев.</p>",
+                button_row(
+                    (
+                        callback_button(
+                            "🎮 Добавить или выбрать аккаунт",
+                            "accounts/war_calculator",
+                            style="primary",
+                        ),
+                    )
+                ),
+                button_row(
+                    (
+                        callback_button("📦 Ресурсы", "resources"),
+                        callback_button("🔬 Технологии", "technologies"),
+                    )
+                ),
+                button_row(
+                    (callback_button("🐾 Настроить питомцев", "pets"),)
+                ),
+                button_row(
+                    (
+                        callback_button(
+                            "⬅️ Назад к очкам войны",
+                            "war_menu",
+                        ),
+                    ),
+                    align="left",
+                ),
+            ],
         )
         return
 
-    keyboard.add(
-        Button("🔄 Сменить аккаунт", "accounts/war_calculator").inline()
-    )
-    keyboard.add(Button("🧮 Подробный расчёт", "war_calculator/details").inline())
-    keyboard.row(
-        Button("📦 Ресурсы", "resources").inline(),
-        Button("🔬 Технологии", "technologies").inline(),
-    )
-    keyboard.add(Button("🐾 Настроить питомцев", "pets").inline())
-    keyboard.add(Button("⬅️ Назад к очкам войны", "war_menu").inline())
-    bot.edit_message_text(
+    parts = [
         _personal_war_points_text(user),
-        chat_id,
-        message_id,
-        reply_markup=keyboard,
-    )
+        button_row(
+            (
+                callback_button(
+                    "🔄 Сменить аккаунт", "accounts/war_calculator"
+                ),
+                callback_button(
+                    "🧮 Подробный расчёт",
+                    "war_calculator/details",
+                    style="primary",
+                ),
+            )
+        ),
+        button_row(
+            (
+                callback_button("📦 Ресурсы", "resources"),
+                callback_button("🔬 Технологии", "technologies"),
+            )
+        ),
+        button_row((callback_button("🐾 Настроить питомцев", "pets"),)),
+        button_row(
+            (
+                callback_button(
+                    "⬅️ Назад к очкам войны", "war_menu"
+                ),
+            ),
+            align="left",
+        ),
+    ]
+    _edit_rich_message(bot, chat_id, message_id, parts)
 
 
 def personal_war_details_menu(
@@ -208,24 +276,37 @@ def personal_war_details_menu(
     activities = _configured_activities(war.WAR_STAGES)
     with observe_score_calculation("personal_details"):
         report = WarPointsCalculator().calculate([user], war.WAR_STAGES)
-    keyboard = InlineKeyboardMarkup(row_width=1)
+    parts = [
+        "<h2>Подробный расчёт</h2>",
+        "<p>Игровой аккаунт: "
+        f"<b>{escape(str(user.tag.value))}</b></p>",
+        "<p>Выберите активность, чтобы увидеть использованные ресурсы "
+        "и формулу.</p>",
+    ]
     for activity in activities:
-        keyboard.add(
-            Button(
-                f"{activity.title} — "
-                f"{format_points(report.points_by_activity[activity])}",
-                f"war_calculator/details/{activity.value}",
-            ).inline()
+        parts.append(
+            button_row(
+                (
+                    callback_button(
+                        f"{activity.title} — "
+                        f"{format_points(report.points_by_activity[activity])}",
+                        f"war_calculator/details/{activity.value}",
+                    ),
+                )
+            )
         )
-    keyboard.add(Button("⬅️ Назад к отчёту по дням", "war_calculator").inline())
-    bot.edit_message_text(
-        "<b>Подробный расчёт</b>\n\n"
-        f"Игровой аккаунт: <b>{formatting.escape_html(user.tag.value)}</b>\n\n"
-        "Выберите активность, чтобы увидеть использованные ресурсы и формулу.",
-        chat_id,
-        message_id,
-        reply_markup=keyboard,
+    parts.append(
+        button_row(
+            (
+                callback_button(
+                    "⬅️ Назад к отчёту по дням",
+                    "war_calculator",
+                ),
+            ),
+            align="left",
+        )
     )
+    _edit_rich_message(bot, chat_id, message_id, parts)
 
 
 def personal_war_activity_details(
@@ -260,16 +341,21 @@ def personal_war_activity_details(
         )
         return
 
-    keyboard = InlineKeyboardMarkup(row_width=1)
-    keyboard.add(
-        Button("📋 Активности", "war_calculator/details").inline(),
-        Button("📊 По дням", "war_calculator").inline(),
-    )
-    bot.edit_message_text(
-        _personal_war_activity_details_text(user, activity),
+    _edit_rich_message(
+        bot,
         chat_id,
         message_id,
-        reply_markup=keyboard,
+        [
+            _personal_war_activity_details_text(user, activity),
+            button_row(
+                (
+                    callback_button(
+                        "📋 Активности", "war_calculator/details"
+                    ),
+                    callback_button("📊 По дням", "war_calculator"),
+                )
+            ),
+        ],
     )
 
 

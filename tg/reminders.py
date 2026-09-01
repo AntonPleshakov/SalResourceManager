@@ -1,11 +1,12 @@
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from enum import Enum
-from typing import Optional, Sequence, Set, Tuple
+from html import escape
+from typing import Sequence, Set, Tuple
 
-from telebot import TeleBot, formatting
+from telebot import TeleBot
 from telebot.apihelper import ApiTelegramException
-from telebot.types import InlineKeyboardMarkup
+from telebot.types import InputRichMessage
 
 from db.initializer import get_user_data_db
 from logger.app_logger import logger
@@ -16,13 +17,14 @@ from resources.user_data import (
     UserData,
 )
 from tg.metrics import APPLICATION_METRICS, ApplicationMetrics
+from tg.rich import button_row, callback_button, input_rich_message
 from tg.scheduling import ReminderScheduler
 from tg.scheduling.delivery import (
     deliver_reminder,
     missing_account_fields,
     record_skipped_reminder,
 )
-from tg.utils import Button, group_user_accounts
+from tg.utils import group_user_accounts
 
 
 REMINDER_HOUR = 13
@@ -62,79 +64,139 @@ def _required_field_names() -> Set[str]:
 
 def _reminder_intro() -> str:
     return (
-        "🎁 <b>Недельные награды</b>\n\n"
-        "Не забудьте обновить ресурсы, полученные в награду "
-        "за войну и личный турнир."
+        "<h2>🎁 Недельные награды</h2>"
+        "<p>Не забудьте обновить ресурсы, полученные в награду "
+        "за войну и личный турнир.</p>"
     )
+
+
+def _account_reminder_block(
+    user: UserData, field_names: Set[str], index: int
+) -> str:
+    tag = str(user.tag.value).strip() or f"Аккаунт {index}"
+    fields = "".join(
+        f"<li>{escape(field.title)}</li>"
+        for field in TRACKED_FIELDS
+        if field.name in field_names
+    )
+    return f"<h3>{escape(tag)}</h3><ul>{fields}</ul>"
 
 
 def _account_reminder_text(
     reminder: ScheduledReminder,
     account_fields: Sequence[Tuple[UserData, Set[str]]],
 ) -> str:
-    blocks = []
-    for index, (user, field_names) in enumerate(account_fields, start=1):
-        tag = str(user.tag.value).strip() or f"Аккаунт {index}"
-        fields = "\n".join(
-            f"• {field.title}"
-            for field in TRACKED_FIELDS
-            if field.name in field_names
-        )
-        blocks.append(f"<b>{formatting.escape_html(tag)}</b>\n{fields}")
+    blocks = "".join(
+        _account_reminder_block(user, field_names, index)
+        for index, (user, field_names) in enumerate(account_fields, start=1)
+    )
     return (
-        f"{_reminder_intro()}\n\n<b>Не обновлены сегодня:</b>\n\n"
-        + "\n\n".join(blocks)
+        f"{_reminder_intro()}<p><b>Не обновлены сегодня:</b></p>"
+        f"{blocks}"
     )
 
 
-def _reminder_keyboard(
-    field_names: Set[str],
-    account_fields: Optional[Sequence[Tuple[UserData, Set[str]]]] = None,
-    multiple_accounts: bool = False,
-) -> InlineKeyboardMarkup:
-    keyboard = InlineKeyboardMarkup(row_width=1)
-    if multiple_accounts and account_fields is not None:
-        resource_names = {field.name for field in RESOURCE_FIELDS}
-        technology_names = {field.name for field in TECHNOLOGY_FIELDS}
-        for index, (user, missing_names) in enumerate(account_fields, start=1):
-            tag = str(user.tag.value).strip() or f"Аккаунт {index}"
-            account_id = user.account_id.value
-            if missing_names & resource_names:
-                keyboard.add(
-                    Button(
-                        f"📦 Ресурсы · {tag}",
-                        f"accounts/select/resources/{account_id}",
-                    ).inline()
-                )
-            if missing_names & technology_names:
-                keyboard.add(
-                    Button(
-                        f"🔬 Технологии · {tag}",
-                        f"accounts/select/technologies/{account_id}",
-                    ).inline()
-                )
-        keyboard.add(Button("⬅️ Назад в меню", "home").inline())
-        return keyboard
-
-    field_indexes = ",".join(
+def _tracked_field_indexes(field_names: Set[str]) -> str:
+    return ",".join(
         str(index)
         for index, field in enumerate(TRACKED_FIELDS)
         if field.name in field_names
     )
-    if field_indexes:
-        keyboard.add(
-            Button(
-                "📝 Обновить данные",
-                f"user_data/fill/tracked/{field_indexes}",
-            ).inline()
+
+
+def _account_buttons(user: UserData, field_names: Set[str], index: int) -> str:
+    tag = str(user.tag.value).strip() or f"Аккаунт {index}"
+    account_id = user.account_id.value
+    resource_names = {field.name for field in RESOURCE_FIELDS}
+    technology_names = {field.name for field in TECHNOLOGY_FIELDS}
+    buttons = []
+    if field_names & resource_names:
+        buttons.append(
+            callback_button(
+                f"📦 Ресурсы · {tag}",
+                f"accounts/select/resources/{account_id}",
+                style="primary",
+            )
         )
-    keyboard.row(
-        Button("📦 Ресурсы", "resources").inline(),
-        Button("🔬 Технологии", "technologies").inline(),
+    if field_names & technology_names:
+        buttons.append(
+            callback_button(
+                f"🔬 Технологии · {tag}",
+                f"accounts/select/technologies/{account_id}",
+                style="primary",
+            )
+        )
+    return button_row(buttons) if buttons else ""
+
+
+def _reminder_buttons(
+    field_names: Set[str],
+) -> str:
+    field_indexes = _tracked_field_indexes(field_names)
+    parts = []
+    if field_indexes:
+        parts.append(
+            button_row(
+                (
+                    callback_button(
+                        "📝 Обновить данные",
+                        f"user_data/fill/tracked/{field_indexes}",
+                        style="primary",
+                    ),
+                )
+            )
+        )
+    parts.append(
+        button_row(
+            (
+                callback_button("📦 Ресурсы", "resources"),
+                callback_button("🔬 Технологии", "technologies"),
+            )
+        )
     )
-    keyboard.add(Button("🐾 Питомцы", "pets").inline())
-    keyboard.add(Button("⬅️ Назад в меню", "home").inline())
-    return keyboard
+    parts.append(
+        button_row((callback_button("🐾 Питомцы", "pets"),))
+    )
+    parts.append(
+        button_row(
+            (callback_button("⬅️ Назад в меню", "home"),),
+            align="left",
+        )
+    )
+    return "".join(parts)
+
+
+def _account_reminder_message(
+    reminder: ScheduledReminder,
+    account_fields: Sequence[Tuple[UserData, Set[str]]],
+    *,
+    multiple_accounts: bool = False,
+) -> InputRichMessage:
+    missing_names = {
+        field_name
+        for account_field in account_fields
+        for field_name in account_field[1]
+    }
+    if multiple_accounts:
+        account_blocks = "".join(
+            _account_reminder_block(user, field_names, index)
+            + _account_buttons(user, field_names, index)
+            for index, (user, field_names) in enumerate(
+                account_fields, start=1
+            )
+        )
+        html = (
+            f"{_reminder_intro()}<p><b>Не обновлены сегодня:</b></p>"
+            f"{account_blocks}"
+            + button_row(
+                (callback_button("⬅️ Назад в меню", "home"),),
+                align="left",
+            )
+        )
+    else:
+        html = _account_reminder_text(reminder, account_fields)
+        html += _reminder_buttons(missing_names)
+    return input_rich_message((html,))
 
 
 def send_reminder(
@@ -161,16 +223,6 @@ def send_reminder(
             skipped += 1
             record_skipped_reminder(metrics, reminder, user_id, accounts)
             continue
-        missing_names = {
-            field_name
-            for account_field in account_fields
-            for field_name in account_field[1]
-        }
-        keyboard = _reminder_keyboard(
-            missing_names,
-            account_fields if len(accounts) > 1 else None,
-            multiple_accounts=len(accounts) > 1,
-        )
         if deliver_reminder(
             bot,
             database,
@@ -178,8 +230,11 @@ def send_reminder(
             reminder,
             user_id,
             accounts,
-            _account_reminder_text(reminder, account_fields),
-            keyboard,
+            _account_reminder_message(
+                reminder,
+                account_fields,
+                multiple_accounts=len(accounts) > 1,
+            ),
             ApiTelegramException,
         ):
             sent += 1
