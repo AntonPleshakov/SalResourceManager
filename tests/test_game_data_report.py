@@ -17,7 +17,11 @@ from reports.game_data import GameDataReport, USER_DATA_PAGE_NAME
 from tg.admins import admins_main_menu
 from tg.admins.clans import select_clan
 from tg.admins import game_data as game_data_module
-from tg.admins.game_data import export_game_data
+from tg.admins.game_data import (
+    build_game_data_message,
+    export_game_data,
+    show_game_data,
+)
 from tg.metrics import ApplicationMetrics
 
 
@@ -75,11 +79,15 @@ class FakeClient:
 class FakeBot:
     def __init__(self):
         self.edits = []
+        self.markup_edits = []
         self.answers = []
         self.deleted_states = []
 
     def edit_message_text(self, *args, **kwargs):
         self.edits.append((args, kwargs))
+
+    def edit_message_reply_markup(self, *args, **kwargs):
+        self.markup_edits.append((args, kwargs))
 
     def answer_callback_query(self, *args, **kwargs):
         self.answers.append((args, kwargs))
@@ -172,7 +180,7 @@ def test_admin_menu_contains_game_data_report(monkeypatch):
     assert [button.text for row in markup.keyboard for button in row] == [
         "👥 Список игроков",
         "📣 Уведомления",
-        "📤 Обновить Google Таблицу",
+        "📊 Игровые данные",
         "➕ Добавить клан",
         "✏️ Переименовать клан",
         "👥 Список администраторов",
@@ -204,7 +212,70 @@ def test_admin_can_switch_active_clan(tmp_path, monkeypatch):
     connection.close()
 
 
-def test_game_data_callback_exports_and_shows_url(monkeypatch):
+def test_game_data_rich_message_contains_native_tables_and_escaped_values():
+    user = UserData(
+        account_id=7,
+        user_id=42,
+        username="player<&",
+        tag="Leader",
+        pets=9,
+    )
+
+    message = build_game_data_message("Clan <One>", [user])
+
+    assert "<h2>Игровые данные</h2>" in message.html
+    assert "Clan &lt;One&gt;" in message.html
+    assert "player&lt;&amp;" in message.html
+    assert message.html.count("<table bordered striped compact>") == 2
+    assert "Поля 1 из 2" in message.html
+    assert "Поля 2 из 2" in message.html
+    assert message.skip_entity_detection
+
+
+def test_game_data_rich_message_limits_large_preview():
+    users = [
+        UserData(
+            account_id=index,
+            user_id=index,
+            username=f"player-{index}",
+            tag="Очень длинное игровое имя",
+        )
+        for index in range(300)
+    ]
+
+    message = build_game_data_message("Large clan", users)
+
+    assert len(message.html.encode("utf-8")) <= 30_000
+    assert "Показано" in message.html
+    assert "из 300 аккаунтов" in message.html
+    assert "В Google экспортируются все данные" in message.html
+
+
+def test_game_data_callback_shows_table_before_export(monkeypatch):
+    users = [UserData(user_id=42, username="player")]
+    monkeypatch.setattr(
+        "tg.admins.game_data.get_user_data_db",
+        lambda: type("Users", (), {"get_users": lambda _, clan_id: users})(),
+    )
+    monkeypatch.setattr(
+        "tg.admins.game_data.get_active_admin_group",
+        lambda user_id: AccessGroup(-100123, "Test clan"),
+    )
+    bot = FakeBot()
+
+    show_game_data(make_callback(), bot)
+
+    assert bot.edits[0][0] == ()
+    rich_message = bot.edits[0][1]["rich_message"]
+    assert "<table bordered striped compact>" in rich_message.html
+    assert "player" in rich_message.html
+    assert callback_data(bot.edits[0][1]["reply_markup"]) == [
+        "admins/game_data/google",
+        "admins",
+    ]
+
+
+def test_google_export_callback_exports_and_shows_url(monkeypatch):
     users = [UserData(user_id=42, username="player")]
     exported = []
 
@@ -230,20 +301,23 @@ def test_game_data_callback_exports_and_shows_url(monkeypatch):
     )
     bot = FakeBot()
 
-    export_game_data(make_callback(), bot)
+    export_game_data(make_callback("admins/game_data/google"), bot)
 
     assert exported == users
-    assert bot.edits[0][0][0] == "Формирую игровые данные…"
-    markup = bot.edits[1][1]["reply_markup"]
+    markup = bot.markup_edits[0][1]["reply_markup"]
     assert markup.keyboard[0][0].url == "https://docs.google.test/report"
-    assert callback_data(markup) == ["admins"]
+    assert callback_data(markup) == ["admins/game_data", "admins"]
+    assert bot.answers[0][0] == (
+        "callback-1",
+        "Данные экспортированы в Google.",
+    )
     assert registry.get_sample_value(
         "srm_reports_total",
         {"report": "game_data", "result": "completed"},
     ) == 1
 
 
-def test_game_data_callback_reports_export_failure(monkeypatch):
+def test_google_export_callback_reports_failure(monkeypatch):
     class BrokenReport:
         def export(self, _users):
             raise RuntimeError("Google unavailable")
@@ -259,9 +333,9 @@ def test_game_data_callback_reports_export_failure(monkeypatch):
     )
     bot = FakeBot()
 
-    export_game_data(make_callback(), bot)
+    export_game_data(make_callback("admins/game_data/google"), bot)
 
-    assert bot.edits[0][0][0] == "Формирую игровые данные…"
-    assert "Не удалось сформировать" in bot.edits[1][0][0]
-    assert callback_data(bot.edits[1][1]["reply_markup"]) == ["admins"]
-    assert bot.answers == []
+    assert bot.markup_edits == []
+    assert bot.answers[0][0][0] == "callback-1"
+    assert "Не удалось экспортировать" in bot.answers[0][0][1]
+    assert bot.answers[0][1]["show_alert"]

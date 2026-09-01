@@ -42,7 +42,7 @@ def admins_main_menu(callback_query: CallbackQuery, bot: TeleBot):
 
     keyboard.row(Button("👥 Список игроков", "admins/last_updates").inline())
     keyboard.row(Button("📣 Уведомления", "admins/notifications").inline())
-    keyboard.row(Button("📤 Обновить Google Таблицу", "admins/game_data").inline())
+    keyboard.row(Button("📊 Игровые данные", "admins/game_data").inline())
     keyboard.row(
         Button("➕ Добавить клан", "admins/register_group").inline()
     )

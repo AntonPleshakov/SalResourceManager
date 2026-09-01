@@ -46,6 +46,10 @@ class GameDataReport:
             row[index] = format_last_update(updated_on)
         return row
 
+    @classmethod
+    def build_rows(cls, users: Iterable[UserData]) -> list[list[str]]:
+        return cls.HEADER + [cls._to_report_row(user) for user in users]
+
     def export(self, users: Iterable[UserData]) -> str:
         users = list(users)
         client = self._client or pygsheets.authorize(
@@ -57,9 +61,9 @@ class GameDataReport:
         except WorksheetNotFound:
             worksheet = spreadsheet.add_worksheet(USER_DATA_PAGE_NAME)
 
-        rows = self.HEADER + [
-            self._escape_formulas(self._to_report_row(user))
-            for user in users
+        report_rows = self.build_rows(users)
+        rows = report_rows[:1] + [
+            self._escape_formulas(row) for row in report_rows[1:]
         ]
         worksheet.clear()
         worksheet.update_values("A1", rows, extend=True)
