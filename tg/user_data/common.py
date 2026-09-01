@@ -5,6 +5,7 @@ from typing import Optional, Sequence, Union
 from telebot import TeleBot, formatting
 from telebot.types import CallbackQuery, InlineKeyboardMarkup, Message
 
+from common.datetime_utils import format_last_update
 from logger.app_logger import logger
 from resources.user_data import (
     RESOURCE_FIELDS,
@@ -116,9 +117,7 @@ def build_section_menu(
         line = f"{field.title}: <b>{value}</b>"
         if field in TRACKED_FIELDS:
             updated_on = user.get_updated_on(field.name)
-            updated_label = (
-                updated_on.strftime("%d.%m.%Y") if updated_on else "никогда"
-            )
+            updated_label = format_last_update(updated_on)
             line += f" <i>(обновлено: {updated_label})</i>"
         value_lines.append(line)
     values = "\n".join(value_lines)

@@ -3,6 +3,7 @@ from typing import Sequence, Union
 from telebot import TeleBot, formatting
 from telebot.types import CallbackQuery, InlineKeyboardMarkup, Message
 
+from common.datetime_utils import format_last_update
 from db.initializer import get_release_views_db
 from logger.app_logger import logger
 from resources.releases import CURRENT_VERSION, RELEASES, Release, unseen_releases
@@ -16,7 +17,8 @@ def format_release_notes(releases: Sequence[Release]) -> str:
             f"• {formatting.escape_html(change)}" for change in release.changes
         )
         sections.append(
-            f"<b>Версия {release.version}</b> · {release.released_on:%d.%m.%Y}\n"
+            f"<b>Версия {release.version}</b> · "
+            f"{format_last_update(release.released_on)}\n"
             f"{changes}"
         )
     return "🆕 <b>Что нового</b>\n\n" + "\n\n".join(sections)

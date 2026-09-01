@@ -4,7 +4,7 @@ from typing import Iterable, List
 from telebot import TeleBot, formatting
 from telebot.types import CallbackQuery, InlineKeyboardMarkup
 
-from common.datetime_utils import now
+from common.datetime_utils import format_last_update, now
 from db.initializer import get_user_data_db
 from logger.app_logger import logger
 from resources.user_data import UserData
@@ -21,29 +21,8 @@ from tg.utils import (
 MAX_TELEGRAM_MESSAGE_LENGTH = 4_096
 
 
-def _days_word(days: int) -> str:
-    if days % 10 == 1 and days % 100 != 11:
-        return "день"
-    if days % 10 in {2, 3, 4} and days % 100 not in {12, 13, 14}:
-        return "дня"
-    return "дней"
-
-
-def _format_last_update(updated_on: date | None, reference_date: date) -> str:
-    if updated_on is None:
-        return "никогда"
-
-    days_ago = (reference_date - updated_on).days
-    formatted_date = updated_on.strftime("%d.%m.%Y")
-    if days_ago < 0:
-        return formatted_date
-    if days_ago == 0:
-        relative = "сегодня"
-    elif days_ago == 1:
-        relative = "вчера"
-    else:
-        relative = f"{days_ago} {_days_word(days_ago)} назад"
-    return f"{relative} ({formatted_date})"
+def _format_last_update(updated_on: date | None) -> str:
+    return format_last_update(updated_on)
 
 
 def _user_link(user: UserData) -> str:
@@ -58,7 +37,6 @@ def _user_link(user: UserData) -> str:
 
 def build_last_updates_report(
     users: Iterable[UserData],
-    reference_date: date,
 ) -> str:
     sorted_users = sorted(
         users,
@@ -67,7 +45,7 @@ def build_last_updates_report(
     )
     user_blocks = [
         f"• {_user_link(user)} — "
-        f"{_format_last_update(user.get_last_updated_on(), reference_date)}"
+        f"{_format_last_update(user.get_last_updated_on())}"
         for user in sorted_users
     ]
     header = (
@@ -102,7 +80,7 @@ def last_updates(callback_query: CallbackQuery, bot: TeleBot) -> None:
     user_id, chat_id, message_id = get_ids(callback_query)
     group = get_active_admin_group(user_id)
     users = get_user_data_db().get_users(group.group_id)
-    report = build_last_updates_report(users, now().date())
+    report = build_last_updates_report(users)
     chunks = _split_report(report)
     keyboard = InlineKeyboardMarkup(row_width=1)
     keyboard.add(Button("⬅️ Назад в админ-панель", "admins").inline())

@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 
 import pytest
@@ -97,12 +97,17 @@ def test_latest_release_is_version_1_7_0():
     assert [release.version for release in unseen_releases("1.6.0")] == ["1.7.0"]
 
 
-def test_release_notes_contain_version_changes_and_date():
-    text = format_release_notes(RELEASES[-1:])
+def test_release_notes_contain_version_changes_and_date(monkeypatch):
+    release = Release("test", date(2026, 8, 2), ("Изменение",))
+    monkeypatch.setattr(
+        "common.datetime_utils.now", lambda: datetime(2026, 8, 3, 12)
+    )
 
-    assert f"Версия {CURRENT_VERSION}" in text
-    assert RELEASES[-1].released_on.strftime("%d.%m.%Y") in text
-    assert RELEASES[-1].changes[0] in text
+    text = format_release_notes((release,))
+
+    assert "Версия test" in text
+    assert "вчера (02.08.2026)" in text
+    assert "Изменение" in text
 
 
 def test_unseen_release_is_marked_only_after_successful_display(monkeypatch):

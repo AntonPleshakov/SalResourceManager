@@ -1,3 +1,4 @@
+from datetime import date, datetime
 from pathlib import Path
 
 from prometheus_client import CollectorRegistry
@@ -11,7 +12,7 @@ from pygsheets.exceptions import WorksheetNotFound
 
 reset_config(str(Path(__file__).parents[1] / "config" / "config_template.ini"))
 
-from resources.user_data import UserData
+from resources.user_data import UPDATED_AT_FIELDS, UserData
 from reports.game_data import GameDataReport, USER_DATA_PAGE_NAME
 from tg.admins import admins_main_menu
 from tg.admins.clans import select_clan
@@ -102,11 +103,16 @@ def callback_data(markup):
     ]
 
 
-def test_report_replaces_google_worksheet_with_sqlite_snapshot():
+def test_report_replaces_google_worksheet_with_sqlite_snapshot(monkeypatch):
     worksheet = FakeWorksheet()
     spreadsheet = FakeSpreadsheet(worksheet)
     client = FakeClient(spreadsheet)
-    users = [UserData(user_id=42, username="player", pets=7)]
+    user = UserData(user_id=42, username="player", pets=7)
+    user.mark_updated("pets", date(2026, 8, 2))
+    users = [user]
+    monkeypatch.setattr(
+        "common.datetime_utils.now", lambda: datetime(2026, 8, 2, 12)
+    )
 
     url = GameDataReport(client).export(users)
 
@@ -114,7 +120,14 @@ def test_report_replaces_google_worksheet_with_sqlite_snapshot():
     assert spreadsheet.requested_worksheet == USER_DATA_PAGE_NAME
     assert worksheet.cleared
     assert worksheet.start == "A1"
-    assert worksheet.values == GameDataReport.HEADER + [users[0].to_row()]
+    expected_row = users[0].to_row()
+    parameter_names = list(users[0].params())
+    for update_field in UPDATED_AT_FIELDS.values():
+        expected_row[parameter_names.index(update_field)] = "никогда"
+    expected_row[parameter_names.index("pets_updated_on")] = (
+        "сегодня (02.08.2026)"
+    )
+    assert worksheet.values == GameDataReport.HEADER + [expected_row]
     assert worksheet.extend
     assert worksheet.shown_dimensions == [(1, worksheet.cols, "COLUMNS")]
     assert worksheet.frozen_rows == 1
