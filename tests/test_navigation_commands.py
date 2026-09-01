@@ -26,6 +26,14 @@ from tg.manager import (
 )
 
 
+REMINDER_NOTICE = (
+    "Настройка напоминаний влияет только на автоматическое уведомление по "
+    "понедельникам и не отключает сообщения администраторов.\n"
+    "Пожалуйста, не выключайте уведомления от бота в Telegram, чтобы не "
+    "пропустить сообщения администраторов."
+)
+
+
 def make_message(text: str) -> Message:
     user = User(42, False, "Tester", username="tester")
     return Message(
@@ -81,7 +89,7 @@ class FakeBot:
         self.commands.append((commands, scope))
 
 
-def prepare_home(monkeypatch, reminders_enabled=True):
+def prepare_home(monkeypatch):
     monkeypatch.setattr("tg.navigation.show_new_user_welcome", lambda *_: False)
     monkeypatch.setattr(
         "tg.navigation.show_unseen_releases",
@@ -111,7 +119,7 @@ def prepare_home(monkeypatch, reminders_enabled=True):
                     "Test clan",
                 )
             ],
-            reminders_enabled=lambda _user_id: reminders_enabled,
+            reminders_enabled=lambda _user_id: True,
             set_reminders_enabled=lambda _user_id, _enabled: None,
         ),
     )
@@ -128,7 +136,8 @@ def test_menu_command_cancels_active_state_and_opens_home(monkeypatch):
     assert isinstance(bot.sent[0][2], ReplyKeyboardRemove)
     assert bot.sent[1][1] == (
         "Игровой аккаунт: <b>Лидер</b>\n"
-        "Клан: <b>Test clan</b>\n\nВыберите раздел."
+        "Клан: <b>Test clan</b>\n\nВыберите раздел.\n\n"
+        + REMINDER_NOTICE
     )
 
 
@@ -169,7 +178,8 @@ def test_cancel_with_active_state_cancels_and_opens_home(monkeypatch):
     assert isinstance(bot.sent[0][2], ReplyKeyboardRemove)
     assert bot.sent[1][1] == (
         "Игровой аккаунт: <b>Лидер</b>\n"
-        "Клан: <b>Test clan</b>\n\nВыберите раздел."
+        "Клан: <b>Test clan</b>\n\nВыберите раздел.\n\n"
+        + REMINDER_NOTICE
     )
 
 
@@ -209,12 +219,13 @@ def test_home_shows_account_count_only_for_multiple_accounts(monkeypatch):
         "Игровой аккаунт: <b>Main &amp; Hero</b>\n"
         "Клан: <b>Test clan</b>\n"
         "Всего аккаунтов: 2\n\n"
-        "Выберите раздел."
+        "Выберите раздел.\n\n"
+        + REMINDER_NOTICE
     )
 
 
-def test_home_menu_shows_reminder_action_for_current_state(monkeypatch):
-    prepare_home(monkeypatch, reminders_enabled=False)
+def test_home_menu_explains_scope_of_enabled_reminders(monkeypatch):
+    prepare_home(monkeypatch)
     bot = FakeBot()
 
     navigation.home(make_message("/menu"), bot)
@@ -223,10 +234,11 @@ def test_home_menu_shows_reminder_action_for_current_state(monkeypatch):
     reminder_button = next(
         button for button in buttons if button.callback_data == "reminders/toggle"
     )
-    assert reminder_button.text == "🔔 Включить напоминания"
+    assert reminder_button.text == "🔕 Выключить напоминания"
+    assert REMINDER_NOTICE in bot.sent[-1][1]
 
 
-def test_reminders_can_be_toggled_from_home_menu(monkeypatch):
+def test_monday_reminders_can_be_toggled_from_home_menu(monkeypatch):
     state = {"enabled": True}
     database = SimpleNamespace(
         get_accounts=lambda _user_id: [
@@ -255,9 +267,7 @@ def test_reminders_can_be_toggled_from_home_menu(monkeypatch):
     navigation.toggle_reminders(make_callback("reminders/toggle"), bot)
 
     assert state["enabled"] is False
-    buttons = [
-        button for row in bot.sent[-1][2].keyboard for button in row
-    ]
+    buttons = [button for row in bot.sent[-1][2].keyboard for button in row]
     assert any(
         button.text == "🔔 Включить напоминания"
         and button.callback_data == "reminders/toggle"

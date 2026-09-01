@@ -15,7 +15,6 @@ from resources.user_data import (
     TRACKED_FIELDS,
     UserData,
 )
-from resources.war import WAR_STAGES, WarActivity
 from tg.metrics import APPLICATION_METRICS, ApplicationMetrics
 from tg.scheduling import ReminderScheduler
 from tg.scheduling.delivery import (
@@ -30,7 +29,6 @@ REMINDER_HOUR = 13
 
 
 class ReminderKind(str, Enum):
-    DAILY = "daily"
     WEEKLY_REWARD = "weekly_reward"
 
 
@@ -38,90 +36,36 @@ class ReminderKind(str, Enum):
 class ScheduledReminder:
     time: datetime
     kind: ReminderKind
-    war_day: Optional[int] = None
 
 
-# Tuesday through Saturday are war days 1 through 5. Their reminders are sent
-# on the following day, Wednesday through Sunday. Monday has a separate reminder.
-REMINDERS_BY_WEEKDAY = {
-    0: (ReminderKind.WEEKLY_REWARD, None),
-    2: (ReminderKind.DAILY, 1),
-    3: (ReminderKind.DAILY, 2),
-    4: (ReminderKind.DAILY, 3),
-    5: (ReminderKind.DAILY, 4),
-    6: (ReminderKind.DAILY, 5),
-}
-
-UPDATED_FIELDS_BY_ACTIVITY = {
-    WarActivity.FORGING: frozenset({"hammers"}),
-    WarActivity.SKILLS: frozenset({"skills"}),
-    WarActivity.MOUNTS: frozenset({"mount_keys", "unmerged_mounts"}),
-    WarActivity.PETS: frozenset({"shells", "pets"}),
-    WarActivity.FORGE: frozenset({"forge_level"}),
-    WarActivity.TECHNOLOGIES: frozenset(
-        field.name for field in TECHNOLOGY_FIELDS
-    ),
-}
-
-
-def next_reminders(
-    moment: datetime, hour: int = REMINDER_HOUR
-) -> dict[ReminderKind, ScheduledReminder]:
+def next_reminder(moment: datetime, hour: int = REMINDER_HOUR) -> ScheduledReminder:
     if moment.tzinfo is None:
         raise ValueError("Reminder time must be timezone-aware")
     if not 0 <= hour <= 23:
         raise ValueError("Reminder hour must be between 0 and 23")
 
-    reminders: dict[ReminderKind, ScheduledReminder] = {}
     for days_ahead in range(8):
         day = moment + timedelta(days=days_ahead)
-        reminder = REMINDERS_BY_WEEKDAY.get(day.weekday())
-        if reminder is None:
+        if day.weekday() != 0:
             continue
         candidate = day.replace(hour=hour, minute=0, second=0, microsecond=0)
         if candidate < moment:
             continue
-        kind, war_day = reminder
-        reminders.setdefault(kind, ScheduledReminder(candidate, kind, war_day))
-        if len(reminders) == len(ReminderKind):
-            return reminders
+        return ScheduledReminder(candidate, ReminderKind.WEEKLY_REWARD)
 
-    raise RuntimeError("Unable to find all next resource reminders")
+    raise RuntimeError("Unable to find the next resource reminder")
 
 
-def next_reminder(moment: datetime, hour: int = REMINDER_HOUR) -> ScheduledReminder:
-    return min(next_reminders(moment, hour).values(), key=lambda item: item.time)
+def _required_field_names() -> Set[str]:
+    return {field.name for field in RESOURCE_FIELDS}
 
 
-def _required_field_names(reminder: ScheduledReminder) -> Set[str]:
-    if reminder.kind == ReminderKind.WEEKLY_REWARD:
-        return {field.name for field in RESOURCE_FIELDS}
-
-    stages = WAR_STAGES.get(reminder.war_day, ())
-    return {
-        resource_name
-        for activity in stages
-        for resource_name in UPDATED_FIELDS_BY_ACTIVITY.get(activity, ())
-    }
-
-
-def _reminder_intro(reminder: ScheduledReminder) -> str:
-    if reminder.kind == ReminderKind.WEEKLY_REWARD:
-        return (
-            "🎁 <b>Недельные награды</b>\n\n"
-            "Не забудьте обновить ресурсы, полученные в награду "
-            "за войну и личный турнир."
-        )
-
-    stages = WAR_STAGES.get(reminder.war_day, ())
-    stage_titles = ", ".join(activity.title for activity in stages)
-    text = (
-        f"⏰ <b>Обновите данные после {reminder.war_day}-го дня войны</b>\n\n"
-        "Проверьте и обновите показатели, которые могли измениться вчера."
+def _reminder_intro() -> str:
+    return (
+        "🎁 <b>Недельные награды</b>\n\n"
+        "Не забудьте обновить ресурсы, полученные в награду "
+        "за войну и личный турнир."
     )
-    if stage_titles:
-        text += f"\n\nЭтапы дня: {stage_titles}."
-    return text
 
 
 def _account_reminder_text(
@@ -138,7 +82,7 @@ def _account_reminder_text(
         )
         blocks.append(f"<b>{formatting.escape_html(tag)}</b>\n{fields}")
     return (
-        f"{_reminder_intro(reminder)}\n\n<b>Не обновлены сегодня:</b>\n\n"
+        f"{_reminder_intro()}\n\n<b>Не обновлены сегодня:</b>\n\n"
         + "\n\n".join(blocks)
     )
 
@@ -202,11 +146,10 @@ def send_reminder(
     skipped = 0
     database = get_user_data_db()
     users = database.get_users_with_reminders_enabled()
-    required_names = _required_field_names(reminder)
+    required_names = _required_field_names()
     logger.info(
-        "Sending resource reminder kind=%s war_day=%s recipients=%d resources=%d",
+        "Sending resource reminder kind=%s recipients=%d resources=%d",
         reminder.kind.value,
-        reminder.war_day,
         len(group_user_accounts(users)),
         len(required_names),
     )

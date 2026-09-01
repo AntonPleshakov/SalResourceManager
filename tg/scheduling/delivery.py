@@ -73,7 +73,8 @@ def deliver_reminder(
         if is_blocked:
             database.set_reminders_enabled(user_id, False)
             logger.info(
-                "Resource reminders disabled after bot block for user_id=%s",
+                "Monday resource reminders disabled after bot block "
+                "for user_id=%s",
                 user_id,
             )
         logger.warning(

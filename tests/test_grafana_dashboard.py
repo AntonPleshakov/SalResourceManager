@@ -61,13 +61,16 @@ def test_user_dashboard_uses_actionable_prometheus_metrics() -> None:
         "srm_last_resource_update_timestamp_seconds",
         "srm_score_calculations_total",
         "srm_access_checks_total",
-        "srm_reminders_total",
-        "srm_reminder_runs_total",
-        "srm_next_reminder_timestamp_seconds",
         "srm_reports_total",
         "srm_report_duration_seconds_bucket",
     ):
         assert metric in queries
+    for metric in (
+        "srm_reminders_total",
+        "srm_reminder_runs_total",
+        "srm_next_reminder_timestamp_seconds",
+    ):
+        assert metric not in queries
     assert "reqps" not in json.dumps(dashboard)
     assert "* 60" in queries
     assert dashboard["templating"]["list"][0]["name"] == "slow_threshold"

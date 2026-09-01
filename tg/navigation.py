@@ -71,6 +71,16 @@ def show_home_menu(
             text_lines.append(f"Всего аккаунтов: {len(accounts)}")
         text_lines.append("")
     text_lines.append("Выберите раздел.")
+    text_lines.extend(
+        (
+            "",
+            "Настройка напоминаний влияет только на автоматическое "
+            "уведомление по понедельникам и не отключает сообщения "
+            "администраторов.",
+            "Пожалуйста, не выключайте уведомления от бота в Telegram, "
+            "чтобы не пропустить сообщения администраторов.",
+        )
+    )
     text = "\n".join(text_lines)
     if isinstance(message, CallbackQuery):
         bot.edit_message_text(text, chat_id, message_id, reply_markup=keyboard)
@@ -102,7 +112,7 @@ def toggle_reminders(callback_query: CallbackQuery, bot: TeleBot) -> None:
     enabled = not database.reminders_enabled(user_id)
     database.set_reminders_enabled(user_id, enabled)
     logger.info(
-        "Resource reminders toggled enabled=%s for user_id=%s username=%s",
+        "Monday resource reminders toggled enabled=%s for user_id=%s username=%s",
         enabled,
         user_id,
         get_username(callback_query),

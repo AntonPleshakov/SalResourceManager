@@ -9,7 +9,6 @@ from config.config import reset_config
 reset_config(str(Path(__file__).parents[1] / "config" / "config_template.ini"))
 
 from resources.user_data import UserData
-from resources.war import WarActivity
 from tg.metrics import ApplicationMetrics
 from tg.reminders import (
     ReminderKind,
@@ -18,7 +17,6 @@ from tg.reminders import (
     _reminder_keyboard,
     _required_field_names,
     next_reminder,
-    next_reminders,
     send_reminder,
 )
 
@@ -31,34 +29,26 @@ def account_reminder_text(reminder: ScheduledReminder) -> str:
     user = UserData(account_id=1, user_id=1, tag="Alpha")
     return _account_reminder_text(
         reminder,
-        [(user, _required_field_names(reminder))],
+        [(user, _required_field_names())],
     )
 
 
 @pytest.mark.parametrize(
-    ("moment", "expected_time", "kind", "war_day"),
+    ("moment", "expected_time"),
     [
-        (
-            dt(2026, 8, 3, 12),
-            dt(2026, 8, 3, 13),
-            ReminderKind.WEEKLY_REWARD,
-            None,
-        ),
-        (dt(2026, 8, 3, 14), dt(2026, 8, 5, 13), ReminderKind.DAILY, 1),
-        (dt(2026, 8, 4, 12), dt(2026, 8, 5, 13), ReminderKind.DAILY, 1),
-        (dt(2026, 8, 8, 14), dt(2026, 8, 9, 13), ReminderKind.DAILY, 5),
-        (
-            dt(2026, 8, 9, 14),
-            dt(2026, 8, 10, 13),
-            ReminderKind.WEEKLY_REWARD,
-            None,
-        ),
+        (dt(2026, 8, 3, 12), dt(2026, 8, 3, 13)),
+        (dt(2026, 8, 3, 14), dt(2026, 8, 10, 13)),
+        (dt(2026, 8, 4, 12), dt(2026, 8, 10, 13)),
+        (dt(2026, 8, 9, 14), dt(2026, 8, 10, 13)),
     ],
 )
-def test_next_reminder(moment, expected_time, kind, war_day):
+def test_next_reminder_is_only_scheduled_on_monday(moment, expected_time):
     reminder = next_reminder(moment)
 
-    assert reminder == ScheduledReminder(expected_time, kind, war_day)
+    assert reminder == ScheduledReminder(
+        expected_time,
+        ReminderKind.WEEKLY_REWARD,
+    )
 
 
 def test_next_reminder_requires_timezone():
@@ -66,52 +56,9 @@ def test_next_reminder_requires_timezone():
         next_reminder(datetime(2026, 8, 3, 12))
 
 
-def test_next_reminders_returns_fresh_timestamp_for_each_kind():
-    reminders = next_reminders(dt(2026, 8, 19, 14))
-
-    assert reminders == {
-        ReminderKind.DAILY: ScheduledReminder(
-            dt(2026, 8, 20, 13), ReminderKind.DAILY, 2
-        ),
-        ReminderKind.WEEKLY_REWARD: ScheduledReminder(
-            dt(2026, 8, 24, 13), ReminderKind.WEEKLY_REWARD
-        ),
-    }
-
-
-def test_daily_reminder_mentions_hardcoded_war_stages():
-    text = account_reminder_text(
-        ScheduledReminder(dt(2026, 8, 5, 13), ReminderKind.DAILY, 1)
-    )
-
-    assert "1-го дня войны" in text
-    assert "Ковка, Подземелья, Навыки" in text
-    assert "Не обновлены сегодня:" in text
-    assert "• Билетики навыков" in text
-    assert "• Молотки" in text
-    assert "Ключи маунтов" not in text
-
-
-def test_daily_reminder_deduplicates_resources_and_keeps_catalog_order(monkeypatch):
-    monkeypatch.setattr(
-        "tg.reminders.WAR_STAGES",
-        {
-            3: (
-                WarActivity.PETS,
-                WarActivity.MOUNTS,
-                WarActivity.PETS,
-            )
-        },
-    )
-
-    text = account_reminder_text(
-        ScheduledReminder(dt(2026, 8, 7, 13), ReminderKind.DAILY, 3)
-    )
-
-    assert text.count("• Скорлупа") == 1
-    assert text.index("• Ключи маунтов") < text.index("• Скорлупа")
-    assert text.index("• Скорлупа") < text.index("• Питомцы")
-    assert text.index("• Питомцы") < text.index("• Необъединённые маунты")
+def test_next_reminder_validates_hour():
+    with pytest.raises(ValueError):
+        next_reminder(dt(2026, 8, 3), 24)
 
 
 def test_weekly_reminder_mentions_received_resources():
@@ -121,6 +68,9 @@ def test_weekly_reminder_mentions_received_resources():
 
     assert "полученные в награду" in text
     assert "за войну и личный турнир" in text
+    assert "• Билетики навыков" in text
+    assert "• Молотки" in text
+    assert "Шанс на доп. маунта" not in text
 
 
 def test_reminder_keyboard_has_back_button():
@@ -171,7 +121,7 @@ def test_send_reminder_sends_to_every_user_and_continues_after_error(monkeypatch
     ) == 1
 
 
-def test_blocking_bot_disables_future_resource_reminders(monkeypatch):
+def test_blocking_bot_disables_future_monday_reminders(monkeypatch):
     class BlockedError(Exception):
         error_code = 403
         description = "Forbidden: bot was blocked by the user"
@@ -242,13 +192,16 @@ def test_reminder_combines_multiple_accounts_into_one_message(monkeypatch):
     ]
 
 
-def test_daily_reminder_skips_current_user_and_lists_only_missing_resources(
+def test_weekly_reminder_skips_current_user_and_lists_missing_resources(
     monkeypatch,
 ):
-    reminder = ScheduledReminder(dt(2026, 8, 5, 13), ReminderKind.DAILY, 1)
+    reminder = ScheduledReminder(
+        dt(2026, 8, 3, 13),
+        ReminderKind.WEEKLY_REWARD,
+    )
     current_user = UserData(user_id=1, username="current")
     partial_user = UserData(user_id=2, username="partial")
-    for resource_name in ("hammers", "skills"):
+    for resource_name in _required_field_names():
         current_user.mark_updated(resource_name, reminder.time.date())
     partial_user.mark_updated("hammers", reminder.time.date())
 
@@ -271,87 +224,3 @@ def test_daily_reminder_skips_current_user_and_lists_only_missing_resources(
     assert [call[0] for call in bot.calls] == [2]
     assert "Билетики навыков" in bot.calls[0][1]
     assert "Молотки" not in bot.calls[0][1]
-
-
-def test_daily_reminder_is_not_sent_when_day_has_no_tracked_fields(monkeypatch):
-    class FakeUserDataDB:
-        def get_users_with_reminders_enabled(self):
-            return [UserData(user_id=1, username="tester")]
-
-    class FakeBot:
-        def __init__(self):
-            self.calls = []
-
-        def send_message(self, *args, **kwargs):
-            self.calls.append((args, kwargs))
-
-    monkeypatch.setattr("tg.reminders.get_user_data_db", lambda: FakeUserDataDB())
-    monkeypatch.setattr(
-        "tg.reminders.WAR_STAGES",
-        {
-            2: (
-                WarActivity.DUNGEONS,
-                WarActivity.DUNGEONS,
-                WarActivity.DUNGEONS,
-            )
-        },
-    )
-    bot = FakeBot()
-
-    send_reminder(
-        bot,
-        ScheduledReminder(dt(2026, 8, 6, 13), ReminderKind.DAILY, 2),
-    )
-
-    assert bot.calls == []
-
-
-def test_technology_reminder_lists_only_outdated_technologies(monkeypatch):
-    reminder = ScheduledReminder(dt(2026, 8, 6, 13), ReminderKind.DAILY, 2)
-    user = UserData(user_id=1, username="tester")
-    for field_name in (
-        "forge_level",
-        "skill_summon_cost",
-        "extra_egg_chance",
-        "mount_summon_cost",
-    ):
-        user.mark_updated(field_name, reminder.time.date())
-
-    class FakeUserDataDB:
-        def get_users_with_reminders_enabled(self):
-            return [user]
-
-    class FakeBot:
-        def __init__(self):
-            self.calls = []
-
-        def send_message(self, *args, **kwargs):
-            self.calls.append((args, kwargs))
-
-    monkeypatch.setattr("tg.reminders.get_user_data_db", lambda: FakeUserDataDB())
-    monkeypatch.setattr(
-        "tg.reminders.WAR_STAGES",
-        {
-            2: (
-                WarActivity.TECHNOLOGIES,
-                WarActivity.DUNGEONS,
-                WarActivity.DUNGEONS,
-            )
-        },
-    )
-    bot = FakeBot()
-
-    send_reminder(bot, reminder)
-
-    assert len(bot.calls) == 1
-    text = bot.calls[0][0][1]
-    keyboard = bot.calls[0][1]["reply_markup"]
-    assert "Шанс на доп. маунта" in text
-    assert "Уровень кузницы" not in text
-    assert [button.callback_data for row in keyboard.keyboard for button in row] == [
-        "user_data/fill/tracked/10",
-        "resources",
-        "technologies",
-        "pets",
-        "home",
-    ]

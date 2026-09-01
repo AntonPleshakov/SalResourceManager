@@ -25,15 +25,13 @@ class ReminderScheduler:
         self._thread: Optional[Thread] = None
 
     def _run(self) -> None:
-        from tg.reminders import next_reminders, send_reminder
+        from tg.reminders import next_reminder, send_reminder
 
         while not self._stop_event.is_set():
-            upcoming = next_reminders(self._clock(), self._hour)
-            for scheduled in upcoming.values():
-                self._metrics.next_reminder_timestamp.labels(
-                    kind=scheduled.kind.value
-                ).set(scheduled.time.timestamp())
-            reminder = min(upcoming.values(), key=lambda item: item.time)
+            reminder = next_reminder(self._clock(), self._hour)
+            self._metrics.next_reminder_timestamp.labels(
+                kind=reminder.kind.value
+            ).set(reminder.time.timestamp())
             delay = max((reminder.time - self._clock()).total_seconds(), 0)
             logger.debug(
                 "Next resource reminder kind=%s scheduled_at=%s delay_seconds=%.0f",
