@@ -22,7 +22,11 @@ class FillContext:
     current_user: UserData
 
 
-def fill_prompt(context: FillContext, error: str = "") -> str:
+def fill_prompt(
+    context: FillContext,
+    error: str = "",
+    notice: str = "",
+) -> str:
     state = context.state
     field = state.current_field
     current_value = format_field_value(
@@ -30,15 +34,16 @@ def fill_prompt(context: FillContext, error: str = "") -> str:
         context.current_user.get_value(field.name),
     )
     error_line = f"⚠️ {error}\n\n" if error else ""
+    notice_line = f"{notice}\n\n" if notice else ""
     return (
-        f"<b>Заполнение: {state.config.title} "
-        f"({state.index + 1}/{len(state.fields)})</b>\n\n"
+        f"{notice_line}"
+        f"<b>{field.title} · {state.index + 1} из {len(state.fields)}</b>\n\n"
         f"{account_line(state.account_tag)}"
         f"{error_line}"
-        f"Текущее значение: <b>{current_value}</b>\n\n"
-        f"Введите значение для «{field.title}».\n"
+        f"Сейчас сохранено: <b>{current_value}</b>\n\n"
+        "Отправьте новое значение.\n"
         f"{value_input_hint(field)}\n\n"
-        "Чтобы оставить текущее значение без изменений, нажмите «Пропустить»."
+        "Чтобы ничего не менять, нажмите «Пропустить»."
     )
 
 
@@ -56,10 +61,11 @@ def show_fill_step(
     bot: TeleBot,
     context: FillContext,
     error: str = "",
+    notice: str = "",
 ) -> None:
     chat_id = get_ids(update)[1]
     bot.edit_message_text(
-        fill_prompt(context, error),
+        fill_prompt(context, error, notice),
         chat_id,
         context.state.prompt_message_id,
         reply_markup=fill_keyboard(context.state),

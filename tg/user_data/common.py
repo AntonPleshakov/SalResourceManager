@@ -26,6 +26,12 @@ class ActiveUserResult:
     clan_selection_required: bool = False
 
 
+@dataclass(frozen=True)
+class MenuContent:
+    text: str
+    keyboard: InlineKeyboardMarkup
+
+
 FIELD_BUTTON_TITLES = {
     "mount_keys": "🔑 Ключи",
     "skills": "🎟 Билеты",
@@ -95,27 +101,13 @@ def get_active_user_or_prompt(
     return ensure_active_user(message, bot).user
 
 
-def section_menu(
-    message: Union[Message, CallbackQuery],
-    bot: TeleBot,
+def build_section_menu(
+    user: UserData,
     title: str,
     section: str,
     fields: Sequence[ResourceField],
     notice: str = "",
-) -> None:
-    user_id, chat_id, message_id = get_ids(message)
-    username = get_username(message)
-    logger.debug(
-        "Opening user data section=%s for user_id=%s username=%s",
-        section,
-        user_id,
-        username,
-    )
-    bot.delete_state(user_id)
-    user = get_active_user_or_prompt(message, bot)
-    if user is None:
-        return
-
+) -> MenuContent:
     value_lines = []
     for field in fields:
         value = user.get_value(field.name)
@@ -154,10 +146,54 @@ def section_menu(
     )
     keyboard.row(Button("⬅️ Назад в меню", "home").inline())
 
-    if isinstance(message, CallbackQuery):
-        bot.edit_message_text(text, chat_id, message_id, reply_markup=keyboard)
-    else:
-        bot.send_message(chat_id, text, reply_markup=keyboard)
+    return MenuContent(text, keyboard)
+
+
+def deliver_menu(
+    update: Union[Message, CallbackQuery],
+    bot: TeleBot,
+    content: MenuContent,
+) -> None:
+    if isinstance(update, CallbackQuery):
+        callback_message = update.message
+        bot.edit_message_text(
+            content.text,
+            callback_message.chat.id,
+            callback_message.id,
+            reply_markup=content.keyboard,
+        )
+        return
+
+    bot.send_message(
+        update.chat.id,
+        content.text,
+        reply_markup=content.keyboard,
+    )
+
+
+def show_section_menu(
+    update: Union[Message, CallbackQuery],
+    bot: TeleBot,
+    title: str,
+    section: str,
+    fields: Sequence[ResourceField],
+    notice: str = "",
+) -> None:
+    user_id = get_ids(update)[0]
+    username = get_username(update)
+    logger.debug(
+        "Opening user data section=%s for user_id=%s username=%s",
+        section,
+        user_id,
+        username,
+    )
+    bot.delete_state(user_id)
+    user = get_active_user_or_prompt(update, bot)
+    if user is None:
+        return
+
+    content = build_section_menu(user, title, section, fields, notice)
+    deliver_menu(update, bot, content)
 
 
 def value_input_hint(field: ResourceField) -> str:
@@ -170,9 +206,5 @@ def value_input_hint(field: ResourceField) -> str:
     if field.name == "extra_mount_chance":
         return "Введите целое число от 0 до 50 (%)."
     if field.name in THOUSAND_INPUT_FIELDS:
-        return (
-            "Введите количество в тысячах. Можно использовать запятую или "
-            "точку и до трёх знаков после неё. Например: 0.12 и 0,12 "
-            "будут восприняты как 120."
-        )
+        return "Введите число в тысячах: 0.12 или 0,12 = 120."
     return "Введите целое неотрицательное число."

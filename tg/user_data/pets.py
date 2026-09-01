@@ -5,21 +5,18 @@ from telebot.types import CallbackQuery, InlineKeyboardMarkup, Message
 
 from logger.app_logger import logger
 from resources.egg_levels import EGG_LEVELS, EggLevel, format_hatch_batch_count
+from resources.user_data import UserData
 import tg.user_data as user_data
 from tg.metrics import record_resource_update
-from tg.user_data.common import get_active_user_or_prompt
+from tg.user_data.common import (
+    MenuContent,
+    deliver_menu,
+    get_active_user_or_prompt,
+)
 from tg.utils import Button, empty_filter, get_ids, get_username
 
 
-def pets_menu(
-    message: Union[Message, CallbackQuery], bot: TeleBot, notice: str = ""
-) -> None:
-    user_id, chat_id, message_id = get_ids(message)
-    username = get_username(message)
-    bot.delete_state(user_id)
-    user = get_active_user_or_prompt(message, bot)
-    if user is None:
-        return
+def build_pets_menu(user: UserData, notice: str = "") -> MenuContent:
     max_level = EggLevel(user.max_egg_level.value)
     batch_lines = []
     total_batches = 0
@@ -54,13 +51,24 @@ def pets_menu(
     keyboard.row(Button("📅 Пакеты в день", "pets/batches").inline())
     keyboard.row(Button("⬅️ Назад в меню", "home").inline())
 
+    return MenuContent(text, keyboard)
+
+
+def pets_menu(
+    update: Union[Message, CallbackQuery], bot: TeleBot, notice: str = ""
+) -> None:
+    user_id = get_ids(update)[0]
+    username = get_username(update)
+    bot.delete_state(user_id)
+    user = get_active_user_or_prompt(update, bot)
+    if user is None:
+        return
+    content = build_pets_menu(user, notice)
+
     logger.debug(
         "Opening pet settings for user_id=%s username=%s", user_id, username
     )
-    if isinstance(message, CallbackQuery):
-        bot.edit_message_text(text, chat_id, message_id, reply_markup=keyboard)
-    else:
-        bot.send_message(chat_id, text, reply_markup=keyboard)
+    deliver_menu(update, bot, content)
 
 
 def max_egg_level_menu(callback_query: CallbackQuery, bot: TeleBot) -> None:

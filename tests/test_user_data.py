@@ -709,8 +709,14 @@ def test_parse_thousand_based_resource_value():
     assert parse_editable_field_value("pets", "1 500") == 1_500
 
 
-def test_parse_thousand_based_resource_value_rejects_extra_precision():
-    for value in ("", "-1", "1.5555", "1 500"):
+def test_parse_thousand_based_resource_value_ignores_extra_precision():
+    assert parse_editable_field_value("skills", "1.5559") == 1_555
+    assert parse_editable_field_value("skills", "1,9999") == 1_999
+    assert parse_editable_field_value("skills", "0.0009") == 0
+
+
+def test_parse_thousand_based_resource_value_rejects_invalid_input():
+    for value in ("", "-1", "1.", "1 500", "text"):
         try:
             parse_editable_field_value("skills", value)
         except ValueError:
@@ -728,9 +734,9 @@ def test_value_input_hints_show_actual_limits():
     assert _value_input_hint(EDITABLE_FIELDS["extra_mount_chance"]) == (
         "Введите целое число от 0 до 50 (%)."
     )
-    hint = _value_input_hint(EDITABLE_FIELDS["hammers"])
-    assert "запятую или точку" in hint
-    assert "Например: 0.12 и 0,12 будут восприняты как 120" in hint
+    assert _value_input_hint(EDITABLE_FIELDS["hammers"]) == (
+        "Введите число в тысячах: 0.12 или 0,12 = 120."
+    )
 
 
 def test_input_parser_errors_are_in_russian():
@@ -742,11 +748,13 @@ def test_input_parser_errors_are_in_russian():
         raise AssertionError("Invalid input must be rejected")
 
     try:
-        parse_editable_field_value("hammers", "1.5555")
+        parse_editable_field_value("hammers", "не число")
     except ValueError as error:
-        assert "не более чем с тремя знаками" in str(error)
+        assert str(error) == (
+            "Нужно ввести неотрицательное число с запятой или точкой"
+        )
     else:
-        raise AssertionError("Extra precision must be rejected")
+        raise AssertionError("Invalid resource input must be rejected")
 
 
 def test_single_value_edit_stores_compact_state_and_shows_current_value(
@@ -783,7 +791,11 @@ def test_single_value_edit_stores_compact_state_and_shows_current_value(
     request_value(make_callback("user_data/edit/hammers"), bot)
 
     assert bot.data == {
-        "value_edit_state": {"field_name": "hammers", "account_id": 7}
+        "value_edit_state": {
+            "field_name": "hammers",
+            "account_id": 7,
+            "prompt_message_id": 1,
+        }
     }
     assert "Текущее значение: <b>2.50к</b>" in bot.edited[0][0]
     assert bot.edited[0][3].keyboard[0][0].callback_data == "resources"
@@ -793,13 +805,21 @@ def test_single_value_edit_saves_to_selected_account(monkeypatch):
     class FakeUserDataDB:
         def __init__(self):
             self.saved = []
+            self.user = UserData(
+                account_id=7,
+                user_id=42,
+                username="tester",
+                tag="Лидер",
+            )
 
         def set_value(
             self, user_id, username, field_name, value, *, account_id
         ):
+            self.user.set_value(field_name, value)
             self.saved.append(
                 (user_id, username, field_name, value, account_id)
             )
+            return self.user
 
     class FakeBot:
         def __init__(self):
@@ -807,11 +827,26 @@ def test_single_value_edit_saves_to_selected_account(monkeypatch):
                 "value_edit_state": {
                     "field_name": "hammers",
                     "account_id": 7,
+                    "prompt_message_id": 15,
                 }
             }
+            self.deleted = []
+            self.deleted_states = []
+            self.edited = []
 
         def retrieve_data(self, _user_id):
             return nullcontext(self.data)
+
+        def delete_message(self, chat_id, message_id):
+            self.deleted.append((chat_id, message_id))
+
+        def delete_state(self, user_id):
+            self.deleted_states.append(user_id)
+
+        def edit_message_text(
+            self, text, chat_id, message_id, reply_markup=None
+        ):
+            self.edited.append((text, chat_id, message_id, reply_markup))
 
     message = SimpleNamespace(
         from_user=SimpleNamespace(id=42, username="tester", first_name="Tester"),
@@ -820,23 +855,61 @@ def test_single_value_edit_saves_to_selected_account(monkeypatch):
         text="1.5",
     )
     database = FakeUserDataDB()
-    opened = []
     updates = []
     monkeypatch.setattr("tg.user_data.get_user_data_db", lambda: database)
     monkeypatch.setattr(
         "tg.user_data.edit_value.record_resource_update",
         lambda category, field: updates.append((category, field)),
     )
-    monkeypatch.setattr(
-        "tg.user_data.resources_menu",
-        lambda message, bot, notice: opened.append(notice),
-    )
-
-    save_value(message, FakeBot())
+    bot = FakeBot()
+    save_value(message, bot)
 
     assert database.saved == [(42, "tester", "hammers", 1_500, 7)]
     assert updates == [("resources", "hammers")]
-    assert opened == ["✅ Молотки: <b>1.50к</b> — сохранено."]
+    assert bot.deleted == [(42, 1)]
+    assert bot.deleted_states == [42]
+    assert bot.edited[0][1:3] == (42, 15)
+    assert (
+        "✅ Молотки: <b>1.50к</b> — значение зарегистрировано."
+        in bot.edited[0][0]
+    )
+    assert "<b>Ресурсы</b>" in bot.edited[0][0]
+
+
+def test_single_value_edit_reuses_prompt_for_invalid_input():
+    class FakeBot:
+        def __init__(self):
+            self.data = {
+                "value_edit_state": {
+                    "field_name": "hammers",
+                    "account_id": 7,
+                    "prompt_message_id": 15,
+                }
+            }
+            self.edited = []
+
+        def retrieve_data(self, _user_id):
+            return nullcontext(self.data)
+
+        def edit_message_text(
+            self, text, chat_id, message_id, reply_markup=None
+        ):
+            self.edited.append((text, chat_id, message_id, reply_markup))
+
+    message = SimpleNamespace(
+        from_user=SimpleNamespace(id=42, username="tester", first_name="Tester"),
+        chat=SimpleNamespace(id=42),
+        id=99,
+        text="не число",
+    )
+    bot = FakeBot()
+
+    save_value(message, bot)
+
+    assert len(bot.edited) == 1
+    assert bot.edited[0][1:3] == (42, 15)
+    assert "Значение для «Молотки» не подходит" in bot.edited[0][0]
+    assert "Введите число в тысячах" in bot.edited[0][0]
 
 
 def test_fill_all_rejects_invalid_value_before_advancing_to_next_field(
@@ -894,7 +967,7 @@ def test_fill_all_rejects_invalid_value_before_advancing_to_next_field(
 
     assert bot.data["fill_state"]["index"] == 0
     assert "Значение не подходит" in bot.edited[0][0]
-    assert "Текущее значение: <b>10</b>" in bot.edited[0][0]
+    assert "Сейчас сохранено: <b>10</b>" in bot.edited[0][0]
     assert "от 1 до 35" in bot.edited[0][0]
 
 
@@ -939,7 +1012,9 @@ def test_reminder_fill_starts_with_only_requested_fields(monkeypatch):
         "extra_mount_chance",
     )
     assert "Молотки" in bot.edited[0][0]
-    assert "Текущее значение: <b>2.50к</b>" in bot.edited[0][0]
+    assert "<b>Молотки · 1 из 2</b>" in bot.edited[0][0]
+    assert "данные из напоминания" not in bot.edited[0][0]
+    assert "Сейчас сохранено: <b>2.50к</b>" in bot.edited[0][0]
     assert [
         button.callback_data
         for row in bot.edited[0][3].keyboard
@@ -989,6 +1064,7 @@ def test_reminder_fill_saves_only_requested_fields(monkeypatch):
                 },
             }
             self.edited = []
+            self.deleted = []
 
         def retrieve_data(self, _user_id):
             return nullcontext(self.data)
@@ -1003,6 +1079,9 @@ def test_reminder_fill_saves_only_requested_fields(monkeypatch):
 
         def delete_state(self, _user_id):
             pass
+
+        def delete_message(self, chat_id, message_id):
+            self.deleted.append((chat_id, message_id))
 
     def message(text):
         return SimpleNamespace(
@@ -1036,8 +1115,15 @@ def test_reminder_fill_saves_only_requested_fields(monkeypatch):
         ("resources", "hammers"),
         ("technologies", "extra_mount_chance"),
     ]
-    assert "Текущее значение: <b>5</b>" in bot.edited[0][0]
+    assert bot.deleted == [(42, 1), (42, 1)]
+    assert "Сейчас сохранено: <b>5</b>" in bot.edited[0][0]
+    assert bot.edited[0][0].startswith(
+        "✅ Молотки: <b>1.50к</b> — значение зарегистрировано."
+    )
     assert "Заполнение завершено" in bot.edited[-1][0]
+    assert bot.edited[-1][0].startswith(
+        "✅ Шанс на доп. маунта: <b>10</b> — значение зарегистрировано."
+    )
     assert bot.edited[-1][3].keyboard[0][0].callback_data == "home"
 
 
@@ -1095,7 +1181,7 @@ def test_fill_all_can_skip_values_without_changing_them(monkeypatch):
 
     assert current_user.hammers.value == 2_500
     assert current_user.extra_mount_chance.value == 5
-    assert "Текущее значение: <b>5</b>" in bot.edited[0][0]
+    assert "Сейчас сохранено: <b>5</b>" in bot.edited[0][0]
     assert "Заполнение завершено" in bot.edited[-1][0]
     assert bot.deleted_states == [42]
 

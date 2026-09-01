@@ -20,6 +20,7 @@ from tg.user_data.accounts import (
     request_delete,
     select_account,
 )
+from tg.user_data.account.routing import open_destination
 
 
 def make_callback(data: str) -> CallbackQuery:
@@ -27,6 +28,12 @@ def make_callback(data: str) -> CallbackQuery:
     chat = Chat(42, "private")
     message = Message(1, telegram_user, 0, chat, "text", {"text": "menu"}, None)
     return CallbackQuery("callback-1", telegram_user, data, "", None, message)
+
+
+def make_message(text: str = "value") -> Message:
+    telegram_user = User(42, False, "Tester", username="telegram_user")
+    chat = Chat(42, "private")
+    return Message(2, telegram_user, 0, chat, "text", {"text": text}, None)
 
 
 class FakeBot:
@@ -193,6 +200,28 @@ def test_account_selector_returns_to_resource_screen_after_switch(
 
     assert database.get_active_account(42).account_id == first.account_id
     assert "Игровой аккаунт: <b>Main</b>" in bot.edited[-1][0]
+    connection.close()
+
+
+def test_message_destination_sends_resource_menu(tmp_path, monkeypatch):
+    connection = Database(tmp_path / "database.db")
+    register_test_clan(connection)
+    database = UserDataDB(connection)
+    database.add_account(42, "telegram_user", "Main")
+    monkeypatch.setattr("tg.user_data.get_user_data_db", lambda: database)
+    bot = FakeBot()
+
+    open_destination(
+        make_message(),
+        bot,
+        "resources",
+        "✅ Аккаунт сохранён.",
+    )
+
+    assert bot.edited == []
+    assert len(bot.sent) == 1
+    assert "✅ Аккаунт сохранён." in bot.sent[0][0]
+    assert "<b>Ресурсы</b>" in bot.sent[0][0]
     connection.close()
 
 

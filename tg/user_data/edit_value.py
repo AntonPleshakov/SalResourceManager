@@ -1,4 +1,5 @@
-from telebot import TeleBot
+from telebot import TeleBot, formatting
+from telebot.apihelper import ApiTelegramException
 from telebot.types import CallbackQuery, InlineKeyboardMarkup, Message
 
 import resources.user_data as user_data_resources
@@ -83,9 +84,16 @@ def _reply_value_error(
     show_hint: bool = False,
 ) -> None:
     hint = f"\n{value_input_hint(state.field)}" if show_hint else ""
-    bot.reply_to(
-        message,
-        f"Значение для «{state.field.title}» не подходит: {error}{hint}",
+    escaped_error = formatting.escape_html(str(error))
+    keyboard = InlineKeyboardMarkup(row_width=1)
+    keyboard.add(Button("✖️ Отмена", state.section).inline())
+    bot.edit_message_text(
+        f"⚠️ Значение для «{state.field.title}» не подходит: "
+        f"{escaped_error}\n\n"
+        f"Отправьте новое значение.{hint}",
+        get_ids(message)[1],
+        state.prompt_message_id,
+        reply_markup=keyboard,
     )
 
 
@@ -113,10 +121,10 @@ def _persist_value(
     bot: TeleBot,
     state: ValueEditState,
     value: int,
-) -> bool:
+) -> user_data_resources.UserData | None:
     user_id = get_ids(message)[0]
     try:
-        user_data.get_user_data_db().set_value(
+        updated_user = user_data.get_user_data_db().set_value(
             user_id,
             get_username(message),
             state.field_name,
@@ -124,7 +132,7 @@ def _persist_value(
             account_id=state.account_id,
         )
         record_resource_update(state.section, state.field_name)
-        return True
+        return updated_user
     except ValueError as error:
         logger.warning(
             "Rejected user data value user_id=%s username=%s field=%s reason=%s",
@@ -134,21 +142,44 @@ def _persist_value(
             error,
         )
         _reply_value_error(message, bot, state, error)
-        return False
+        return None
 
 
 def _open_section(
     message: Message,
     bot: TeleBot,
-    section: str,
+    state: ValueEditState,
+    current_user: user_data_resources.UserData,
     notice: str,
 ) -> None:
-    menus = {
-        "resources": user_data.resources_menu,
-        "technologies": user_data.technologies_menu,
-        "pets": user_data.pets_menu,
+    menu_builders = {
+        "resources": user_data.resources.build_resources_menu,
+        "technologies": user_data.technologies.build_technologies_menu,
+        "pets": user_data.pets.build_pets_menu,
     }
-    menus[section](message, bot, notice)
+    user_id, chat_id = get_ids(message)[:2]
+    bot.delete_state(user_id)
+    content = menu_builders[state.section](current_user, notice)
+    bot.edit_message_text(
+        content.text,
+        chat_id,
+        state.prompt_message_id,
+        reply_markup=content.keyboard,
+    )
+
+
+def _delete_registered_input(message: Message, bot: TeleBot) -> None:
+    _, chat_id, message_id = get_ids(message)
+    try:
+        bot.delete_message(chat_id, message_id)
+    except ApiTelegramException as error:
+        logger.warning(
+            "Unable to delete registered value input chat_id=%s "
+            "message_id=%s reason=%s",
+            chat_id,
+            message_id,
+            error,
+        )
 
 
 def request_value(callback_query: CallbackQuery, bot: TeleBot) -> None:
@@ -157,7 +188,7 @@ def request_value(callback_query: CallbackQuery, bot: TeleBot) -> None:
         _reject_unknown_field(callback_query, bot, field_name)
         return
 
-    user_id = get_ids(callback_query)[0]
+    user_id, _, message_id = get_ids(callback_query)
     current_user = get_active_user_or_prompt(
         callback_query,
         bot,
@@ -165,6 +196,7 @@ def request_value(callback_query: CallbackQuery, bot: TeleBot) -> None:
     state = ValueEditState(
         field_name=field_name,
         account_id=current_user.account_id.value,
+        prompt_message_id=message_id,
     )
     logger.info(
         "User data edit started user_id=%s username=%s field=%s",
@@ -187,7 +219,8 @@ def save_value(message: Message, bot: TeleBot) -> None:
     value = _parse_value(message, bot, state)
     if value is None:
         return
-    if not _persist_value(message, bot, state, value):
+    current_user = _persist_value(message, bot, state, value)
+    if current_user is None:
         return
 
     logger.info(
@@ -197,11 +230,13 @@ def save_value(message: Message, bot: TeleBot) -> None:
         state.field_name,
     )
     displayed_value = format_field_value(state.field, value)
+    _delete_registered_input(message, bot)
     _open_section(
         message,
         bot,
-        state.section,
-        f"✅ {state.field.title}: <b>{displayed_value}</b> — сохранено.",
+        state,
+        current_user,
+        f"✅ {state.field.title}: <b>{displayed_value}</b> — значение зарегистрировано.",
     )
 
 

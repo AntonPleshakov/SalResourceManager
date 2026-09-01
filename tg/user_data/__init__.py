@@ -16,7 +16,7 @@ from resources.user_data import (
 from tg.user_data import accounts, edit_value, fill, pets, resources, technologies
 from tg.user_data.accounts import GameAccountStates, accounts_menu
 from tg.user_data.common import (
-    section_menu as _section_menu,
+    show_section_menu as _section_menu,
     value_input_hint as _value_input_hint,
 )
 from tg.user_data.edit_value import request_value, save_value

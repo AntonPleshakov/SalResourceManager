@@ -28,7 +28,6 @@ PRIVATE_TEXT_HANDLER = {
 
 @dataclass(frozen=True)
 class FillSection:
-    title: str
     fields: tuple[user_data_resources.ResourceField, ...] | None
     finish_callback: str
     finish_button: str
@@ -36,19 +35,16 @@ class FillSection:
 
 FILL_SECTIONS = {
     "resources": FillSection(
-        title="ресурсы",
         fields=user_data_resources.RESOURCE_FIELDS,
         finish_callback="resources",
         finish_button="Вернуться к ресурсам",
     ),
     "technologies": FillSection(
-        title="технологии",
         fields=user_data_resources.TECHNOLOGY_FIELDS,
         finish_callback="technologies",
         finish_button="Вернуться к технологиям",
     ),
     "reminder": FillSection(
-        title="данные из напоминания",
         fields=None,
         finish_callback="home",
         finish_button="Назад в меню",
@@ -69,6 +65,7 @@ VALUE_EDIT_SECTIONS = {
 class ValueEditState:
     field_name: str
     account_id: int
+    prompt_message_id: int
 
     @property
     def field(self) -> user_data_resources.ResourceField:
@@ -79,8 +76,10 @@ class ValueEditState:
         return VALUE_EDIT_SECTIONS[self.field_name]
 
     def is_valid(self) -> bool:
-        return self.field_name in VALUE_EDIT_SECTIONS and isinstance(
-            self.account_id, int
+        return (
+            self.field_name in VALUE_EDIT_SECTIONS
+            and isinstance(self.account_id, int)
+            and isinstance(self.prompt_message_id, int)
         )
 
 

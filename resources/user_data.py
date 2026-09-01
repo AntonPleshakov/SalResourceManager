@@ -103,13 +103,14 @@ def parse_editable_field_value(field_name: str, value: str) -> int:
         return validate_editable_field_value(field_name, parsed)
 
     normalized = value.strip().replace(",", ".")
-    if not re.fullmatch(r"\d+(?:\.\d{1,3})?", normalized):
+    if not re.fullmatch(r"\d+(?:\.\d+)?", normalized):
         raise ValueError(
-            "Нужно ввести неотрицательное число не более чем с тремя "
-            "знаками после запятой или точки"
+            "Нужно ввести неотрицательное число с запятой или точкой"
         )
     whole, fraction = normalized.partition(".")[::2]
-    parsed = int(whole) * 1_000 + int((fraction or "0").ljust(3, "0"))
+    parsed = int(whole) * 1_000 + int(
+        (fraction[:3] or "0").ljust(3, "0")
+    )
     return validate_editable_field_value(field_name, parsed)
 
 

@@ -1,4 +1,5 @@
 from telebot import TeleBot, formatting
+from telebot.apihelper import ApiTelegramException
 from telebot.types import CallbackQuery, InlineKeyboardMarkup, Message
 
 import resources.user_data as user_data_resources
@@ -10,6 +11,8 @@ from tg.user_data.editing_common import (
     FILL_SECTIONS,
     FillState,
     VALUE_EDIT_SECTIONS,
+    account_line,
+    format_field_value,
     load_state,
     save_state,
 )
@@ -157,7 +160,12 @@ def _persist_fill_value(
         return None
 
 
-def _complete_fill(update: Update, bot: TeleBot, state: FillState) -> None:
+def _complete_fill(
+    update: Update,
+    bot: TeleBot,
+    state: FillState,
+    notice: str = "",
+) -> None:
     user_id, chat_id = get_ids(update)[:2]
     bot.delete_state(user_id)
     logger.info(
@@ -175,9 +183,13 @@ def _complete_fill(update: Update, bot: TeleBot, state: FillState) -> None:
             state.config.finish_callback,
         ).inline()
     )
+    notice_line = f"{notice}\n\n" if notice else ""
     bot.edit_message_text(
-        "✅ Заполнение завершено. Введённые значения сохранены, "
-        "пропущенные не изменены.",
+        f"{notice_line}"
+        f"<b>Заполнение завершено</b>\n\n"
+        f"{account_line(state.account_tag)}"
+        "Все введённые значения зарегистрированы. "
+        "Пропущенные показатели не изменены.",
         chat_id,
         state.prompt_message_id,
         reply_markup=keyboard,
@@ -188,9 +200,10 @@ def _advance_fill(
     update: Update,
     bot: TeleBot,
     context: FillContext,
+    notice: str = "",
 ) -> None:
     if context.state.is_last_step:
-        _complete_fill(update, bot, context.state)
+        _complete_fill(update, bot, context.state, notice)
         return
 
     next_state = context.state.next_step()
@@ -209,7 +222,22 @@ def _advance_fill(
         update,
         bot,
         FillContext(state=next_state, current_user=context.current_user),
+        notice=notice,
     )
+
+
+def _delete_registered_input(message: Message, bot: TeleBot) -> None:
+    _, chat_id, message_id = get_ids(message)
+    try:
+        bot.delete_message(chat_id, message_id)
+    except ApiTelegramException as error:
+        logger.warning(
+            "Unable to delete registered fill input chat_id=%s "
+            "message_id=%s reason=%s",
+            chat_id,
+            message_id,
+            error,
+        )
 
 
 def _start_fill(
@@ -282,10 +310,14 @@ def save_fill_value(message: Message, bot: TeleBot) -> None:
     current_user = _persist_fill_value(message, bot, context, value)
     if current_user is None:
         return
+    field = context.state.current_field
+    displayed_value = format_field_value(field, value)
+    _delete_registered_input(message, bot)
     _advance_fill(
         message,
         bot,
         FillContext(state=context.state, current_user=current_user),
+        f"✅ {field.title}: <b>{displayed_value}</b> — значение зарегистрировано.",
     )
 
 

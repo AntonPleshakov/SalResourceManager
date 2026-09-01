@@ -17,22 +17,22 @@ def requested_destination(message: Union[Message, CallbackQuery]) -> str:
 
 
 def open_destination(
-    message: Union[Message, CallbackQuery],
+    update: Union[Message, CallbackQuery],
     bot: TeleBot,
     destination: str,
     notice: str = "",
 ) -> None:
     if destination == "resources":
-        user_data.resources_menu(message, bot, notice)
+        user_data.resources_menu(update, bot, notice)
     elif destination == "technologies":
-        user_data.technologies_menu(message, bot, notice)
+        user_data.technologies_menu(update, bot, notice)
     elif destination == "pets":
-        user_data.pets_menu(message, bot, notice)
+        user_data.pets_menu(update, bot, notice)
     elif destination == "war_calculator":
         from tg.war.personal import personal_war_points
 
-        personal_war_points(message, bot)
+        personal_war_points(update, bot)
     else:
         from tg.user_data.account.menu import accounts_menu
 
-        accounts_menu(message, bot, notice)
+        accounts_menu(update, bot, notice)
