@@ -79,7 +79,7 @@ def show_home_menu(
 
 
 def start(message: Union[Message, CallbackQuery], bot: TeleBot) -> None:
-    user_id, _, _ = get_ids(message)
+    user_id = get_ids(message)[0]
     bot.delete_state(user_id)
     if _show_onboarding(message, bot):
         return
@@ -89,7 +89,7 @@ def start(message: Union[Message, CallbackQuery], bot: TeleBot) -> None:
 
 
 def home(message: Union[Message, CallbackQuery], bot: TeleBot) -> None:
-    user_id, _, _ = get_ids(message)
+    user_id = get_ids(message)[0]
     bot.delete_state(user_id)
     if _show_onboarding(message, bot):
         return
@@ -97,7 +97,7 @@ def home(message: Union[Message, CallbackQuery], bot: TeleBot) -> None:
 
 
 def toggle_reminders(callback_query: CallbackQuery, bot: TeleBot) -> None:
-    user_id, _, _ = get_ids(callback_query)
+    user_id = get_ids(callback_query)[0]
     database = get_user_data_db()
     enabled = not database.reminders_enabled(user_id)
     database.set_reminders_enabled(user_id, enabled)

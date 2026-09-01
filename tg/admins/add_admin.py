@@ -56,7 +56,7 @@ def add_admins(callback_query: CallbackQuery, bot: TeleBot):
 
 
 def cancel_add_admins(message: Message, bot: TeleBot):
-    user_id, chat_id, _ = get_ids(message)
+    user_id, chat_id = get_ids(message)[:2]
     logger.info(
         "Admin addition cancelled by user_id=%s username=%s",
         user_id,
@@ -108,7 +108,7 @@ def add_admins_confirmation(message: Message, bot: TeleBot):
 
 
 def add_admins_approved(callback_query: CallbackQuery, bot: TeleBot):
-    user_id, _, _ = get_ids(callback_query)
+    user_id = get_ids(callback_query)[0]
     with bot.retrieve_data(user_id) as data:
         new_admins = data.pop("new_admins")
         group_id = data.get("admin_group_id")

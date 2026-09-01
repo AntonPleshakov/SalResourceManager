@@ -53,7 +53,7 @@ def _configured_activities(stages) -> list[WarActivity]:
     return list(
         dict.fromkeys(
             activity
-            for _, activities in sorted(stages.items())
+            for activities in (stages[day] for day in sorted(stages))
             for activity in activities
         )
     )

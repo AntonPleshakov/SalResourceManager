@@ -2,7 +2,6 @@ from typing import Union
 
 import telebot.apihelper
 from telebot import ExceptionHandler, TeleBot
-from telebot.handler_backends import BaseMiddleware
 from telebot.types import CallbackQuery, InlineKeyboardMarkup, Message
 
 import tg.manager
@@ -21,6 +20,7 @@ from tg.metrics import (
     start_metrics_server,
     TelegramMetricsMiddleware,
 )
+from tg.middleware import NoOpPostProcessMiddleware, NoOpPreProcessMiddleware
 from tg.reminders import ReminderScheduler
 from tg.utils import (
     Button,
@@ -41,13 +41,13 @@ bot = TeleBot(
 )
 
 
-class AlwaysAnswerCallbackQueryMiddleware(BaseMiddleware):
+class AlwaysAnswerCallbackQueryMiddleware(NoOpPostProcessMiddleware):
     def __init__(self, telegram_bot: TeleBot):
         super().__init__()
         self.update_types = ["callback_query"]
         self._bot = telegram_bot
 
-    def pre_process(self, message: CallbackQuery, data: dict) -> None:
+    def pre_process(self, message: CallbackQuery, _: dict) -> None:
         logger.debug(
             "Processing callback query for user_id=%s username=%s",
             message.from_user.id,
@@ -59,33 +59,22 @@ class AlwaysAnswerCallbackQueryMiddleware(BaseMiddleware):
             logger.info("Unable to answer callback query: %s", error)
         return None
 
-    def post_process(
-        self, message: CallbackQuery, data: dict, exception: BaseException | None
-    ) -> None:
-        pass
-
-
-class UserFacingErrorMiddleware(BaseMiddleware):
+class UserFacingErrorMiddleware(NoOpPreProcessMiddleware):
     def __init__(self, telegram_bot: TeleBot):
         super().__init__()
         self.update_types = ["message", "callback_query"]
         self._bot = telegram_bot
 
-    def pre_process(
-        self, update: Union[Message, CallbackQuery], data: dict
-    ) -> None:
-        return None
-
     def post_process(
         self,
         update: Union[Message, CallbackQuery],
-        data: dict,
+        _: dict,
         exception: BaseException | None,
     ) -> None:
         if exception is None:
             return
 
-        user_id, chat_id, _ = get_ids(update)
+        user_id, chat_id = get_ids(update)[:2]
         keyboard = InlineKeyboardMarkup(row_width=1)
         keyboard.add(Button("Вернуться в меню", "home").inline())
         try:
@@ -110,7 +99,7 @@ class BotExceptionHandler(ExceptionHandler):
 
 
 def permission_denied_message(message: Union[Message, CallbackQuery]):
-    user_id, chat_id, _ = get_ids(message)
+    user_id, chat_id = get_ids(message)[:2]
     logger.info(
         "Permission denied for user_id=%s username=%s",
         user_id,

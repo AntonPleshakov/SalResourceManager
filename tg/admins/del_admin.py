@@ -117,7 +117,7 @@ def del_admin_approved(callback_query: CallbackQuery, bot: TeleBot):
         get_username(callback_query),
     )
     get_admins_db().del_admin(admin_id, group_id)
-    user_id, _, _ = get_ids(callback_query)
+    user_id = get_ids(callback_query)[0]
     bot.delete_state(user_id)
     bot.answer_callback_query(
         callback_query.id, "Права администратора клана отозваны"

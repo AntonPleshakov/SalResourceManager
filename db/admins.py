@@ -8,19 +8,17 @@ from parameters.int_param import IntParam
 from parameters.str_param import StrParam
 
 from .access_group import AccessGroup
-from .database import Database
+from .repository import DatabaseRepository
 
 
 class Admin(Parameters):
     def __init__(self, username: str = None, user_id: int = None):
+        super().__init__()
         self.username: StrParam = StrParam("Username", username)
         self.user_id: IntParam = IntParam("ID", user_id)
 
 
-class AdminsDB:
-    def __init__(self, database: Database):
-        self._database = database
-
+class AdminsDB(DatabaseRepository):
     def add_admin(self, admin: Admin, group_id: Optional[int] = None) -> None:
         logger.info(
             "DB: adding admin user_id=%s username=%s group_id=%s",

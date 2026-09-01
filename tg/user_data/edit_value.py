@@ -41,7 +41,7 @@ def _show_value_prompt(
     state: ValueEditState,
     current_user: user_data_resources.UserData,
 ) -> None:
-    _, chat_id, message_id = get_ids(callback_query)
+    chat_id, message_id = get_ids(callback_query)[1:]
     keyboard = InlineKeyboardMarkup(row_width=1)
     keyboard.add(Button("✖️ Отмена", state.section).inline())
     current_value = format_field_value(
@@ -60,7 +60,7 @@ def _show_value_prompt(
 
 
 def _stop_invalid_edit(message: Message, bot: TeleBot) -> None:
-    user_id, chat_id, _ = get_ids(message)
+    user_id, chat_id = get_ids(message)[:2]
     logger.warning(
         "Invalid edit state for user_id=%s username=%s",
         user_id,
@@ -114,7 +114,7 @@ def _persist_value(
     state: ValueEditState,
     value: int,
 ) -> bool:
-    user_id, _, _ = get_ids(message)
+    user_id = get_ids(message)[0]
     try:
         user_data.get_user_data_db().set_value(
             user_id,
@@ -157,11 +157,10 @@ def request_value(callback_query: CallbackQuery, bot: TeleBot) -> None:
         _reject_unknown_field(callback_query, bot, field_name)
         return
 
-    user_id, _, _ = get_ids(callback_query)
+    user_id = get_ids(callback_query)[0]
     current_user = get_active_user_or_prompt(
         callback_query,
         bot,
-        VALUE_EDIT_SECTIONS[field_name],
     )
     state = ValueEditState(
         field_name=field_name,
@@ -179,7 +178,7 @@ def request_value(callback_query: CallbackQuery, bot: TeleBot) -> None:
 
 
 def save_value(message: Message, bot: TeleBot) -> None:
-    user_id, _, _ = get_ids(message)
+    user_id = get_ids(message)[0]
     state = load_state(bot, user_id, VALUE_STATE_KEY, ValueEditState)
     if state is None:
         _stop_invalid_edit(message, bot)

@@ -45,7 +45,7 @@ def _show_notes(
 def mark_current_release_seen(
     message: Union[Message, CallbackQuery],
 ) -> None:
-    user_id, _, _ = get_ids(message)
+    user_id = get_ids(message)[0]
     try:
         get_release_views_db().mark_seen(
             user_id,
@@ -59,7 +59,7 @@ def mark_current_release_seen(
 def show_unseen_releases(
     message: Union[Message, CallbackQuery], bot: TeleBot
 ) -> bool:
-    user_id, _, _ = get_ids(message)
+    user_id = get_ids(message)[0]
     username = get_username(message)
     try:
         release_views = get_release_views_db()

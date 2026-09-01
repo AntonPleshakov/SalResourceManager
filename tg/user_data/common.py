@@ -44,7 +44,7 @@ FIELD_BUTTON_TITLES = {
 def ensure_active_user(
     message: Union[Message, CallbackQuery], bot: TeleBot
 ) -> ActiveUserResult:
-    user_id, _, _ = get_ids(message)
+    user_id = get_ids(message)[0]
     username = get_username(message)
     database = user_data.get_user_data_db()
     account = database.get_active_account(user_id)
@@ -76,7 +76,7 @@ def ensure_active_user(
         if groups
         else "Не удалось найти зарегистрированный клан, в котором вы состоите."
     )
-    _, chat_id, message_id = get_ids(message)
+    chat_id, message_id = get_ids(message)[1:]
     if isinstance(message, CallbackQuery):
         bot.edit_message_text(text, chat_id, message_id, reply_markup=keyboard)
     else:
@@ -90,7 +90,7 @@ def ensure_active_user(
 
 
 def get_active_user_or_prompt(
-    message: Union[Message, CallbackQuery], bot: TeleBot, return_to: str = "home"
+    message: Union[Message, CallbackQuery], bot: TeleBot
 ):
     return ensure_active_user(message, bot).user
 
@@ -112,7 +112,7 @@ def section_menu(
         username,
     )
     bot.delete_state(user_id)
-    user = get_active_user_or_prompt(message, bot, section)
+    user = get_active_user_or_prompt(message, bot)
     if user is None:
         return
 

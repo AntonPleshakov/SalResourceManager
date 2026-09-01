@@ -73,6 +73,35 @@ def log(message: str) -> None:
     print(f"[configure] {message}", flush=True)
 
 
+def _cleanup_remote_files(
+    settings: Settings,
+    remote_dir: str,
+    quoted_dir: str,
+) -> None:
+    names = (
+        "configure-remote.sh",
+        "generate-webhook-certificate.sh",
+        "compose.yaml",
+        "prometheus.yml",
+        "grafana-datasources.yml",
+        "grafana-dashboards.yml",
+        "grafana-dashboard.json",
+        "grafana-system-dashboard.json",
+        "config.ini",
+        "gapi_service_file.json",
+        "ghcr-credentials",
+    )
+    quoted_files = " ".join(
+        shlex.quote(f"{remote_dir}/{name}") for name in names
+    )
+    cleanup = f"rm -f {quoted_files}; rmdir {quoted_dir} 2>/dev/null || true"
+    try:
+        run_command(ssh_command(settings, cleanup), quiet=True)
+    except (OSError, subprocess.CalledProcessError):
+        # Cleanup is best-effort and must not hide the original failure.
+        pass
+
+
 def configure_server(settings: Settings) -> None:
     require_local_prerequisites(settings)
     remote_dir = f"/tmp/sal-resource-manager-configure-{uuid.uuid4().hex}"
@@ -118,32 +147,3 @@ def configure_server(settings: Settings) -> None:
     finally:
         if remote_created:
             _cleanup_remote_files(settings, remote_dir, quoted_dir)
-
-
-def _cleanup_remote_files(
-    settings: Settings,
-    remote_dir: str,
-    quoted_dir: str,
-) -> None:
-    names = (
-        "configure-remote.sh",
-        "generate-webhook-certificate.sh",
-        "compose.yaml",
-        "prometheus.yml",
-        "grafana-datasources.yml",
-        "grafana-dashboards.yml",
-        "grafana-dashboard.json",
-        "grafana-system-dashboard.json",
-        "config.ini",
-        "gapi_service_file.json",
-        "ghcr-credentials",
-    )
-    quoted_files = " ".join(
-        shlex.quote(f"{remote_dir}/{name}") for name in names
-    )
-    cleanup = f"rm -f {quoted_files}; rmdir {quoted_dir} 2>/dev/null || true"
-    try:
-        run_command(ssh_command(settings, cleanup), quiet=True)
-    except (OSError, subprocess.CalledProcessError):
-        # Cleanup is best-effort and must not hide the original failure.
-        pass

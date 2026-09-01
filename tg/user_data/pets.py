@@ -17,7 +17,7 @@ def pets_menu(
     user_id, chat_id, message_id = get_ids(message)
     username = get_username(message)
     bot.delete_state(user_id)
-    user = get_active_user_or_prompt(message, bot, "pets")
+    user = get_active_user_or_prompt(message, bot)
     if user is None:
         return
     max_level = EggLevel(user.max_egg_level.value)
@@ -64,8 +64,8 @@ def pets_menu(
 
 
 def max_egg_level_menu(callback_query: CallbackQuery, bot: TeleBot) -> None:
-    user_id, chat_id, message_id = get_ids(callback_query)
-    user = get_active_user_or_prompt(callback_query, bot, "pets")
+    chat_id, message_id = get_ids(callback_query)[1:]
+    user = get_active_user_or_prompt(callback_query, bot)
     if user is None:
         return
     current_level = EggLevel(user.max_egg_level.value)
@@ -112,8 +112,8 @@ def _cleared_batch_counts(user, level: EggLevel):
 def _apply_max_egg_level(
     callback_query: CallbackQuery, bot: TeleBot, level: EggLevel
 ) -> None:
-    user_id, _, _ = get_ids(callback_query)
-    user = get_active_user_or_prompt(callback_query, bot, "pets")
+    user_id = get_ids(callback_query)[0]
+    user = get_active_user_or_prompt(callback_query, bot)
     if user is None:
         return
 
@@ -144,12 +144,12 @@ def save_max_egg_level(callback_query: CallbackQuery, bot: TeleBot) -> None:
     if level is None:
         return
 
-    user = get_active_user_or_prompt(callback_query, bot, "pets")
+    user = get_active_user_or_prompt(callback_query, bot)
     if user is None:
         return
     cleared_batches = _cleared_batch_counts(user, level)
     if level < EggLevel(user.max_egg_level.value) and cleared_batches:
-        _, chat_id, message_id = get_ids(callback_query)
+        chat_id, message_id = get_ids(callback_query)[1:]
         cleared_lines = "\n".join(
             f"• {candidate.label}: <b>{format_hatch_batch_count(count)}</b>"
             for candidate, count in reversed(cleared_batches)
@@ -185,8 +185,8 @@ def confirm_max_egg_level(callback_query: CallbackQuery, bot: TeleBot) -> None:
 
 
 def hatch_batches_menu(callback_query: CallbackQuery, bot: TeleBot) -> None:
-    user_id, chat_id, message_id = get_ids(callback_query)
-    user = get_active_user_or_prompt(callback_query, bot, "pets")
+    chat_id, message_id = get_ids(callback_query)[1:]
+    user = get_active_user_or_prompt(callback_query, bot)
     if user is None:
         return
     max_level = EggLevel(user.max_egg_level.value)
@@ -230,9 +230,9 @@ def change_hatch_batch_count(callback_query: CallbackQuery, bot: TeleBot) -> Non
         )
         return
 
-    user_id, _, _ = get_ids(callback_query)
+    user_id = get_ids(callback_query)[0]
     username = get_username(callback_query)
-    user = get_active_user_or_prompt(callback_query, bot, "pets")
+    user = get_active_user_or_prompt(callback_query, bot)
     if user is None:
         return
     if level > EggLevel(user.max_egg_level.value):

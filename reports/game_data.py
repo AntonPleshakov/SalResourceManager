@@ -23,6 +23,13 @@ class GameDataReport:
     def __init__(self, client: Client = None):
         self._client = client
 
+    @staticmethod
+    def _escape_formulas(row: list[str]) -> list[str]:
+        return [
+            f"'{value}" if value.startswith(("=", "+")) else value
+            for value in row
+        ]
+
     def export(self, users: Iterable[UserData]) -> str:
         users = list(users)
         client = self._client or pygsheets.authorize(
@@ -41,10 +48,3 @@ class GameDataReport:
         worksheet.frozen_rows = len(self.HEADER)
         logger.info("Game data report exported: users=%d", len(users))
         return spreadsheet.url
-
-    @staticmethod
-    def _escape_formulas(row: list[str]) -> list[str]:
-        return [
-            f"'{value}" if value.startswith(("=", "+")) else value
-            for value in row
-        ]

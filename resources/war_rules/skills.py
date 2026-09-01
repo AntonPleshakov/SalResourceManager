@@ -60,7 +60,3 @@ def explain_skill_points(user: UserData) -> ActivityDetails:
             f"{format_calculation_number(points)} очков",
         ),
     )
-
-
-def calculate_skill_points(user: UserData) -> Decimal:
-    return explain_skill_points(user).points

@@ -68,7 +68,7 @@ def _group_selection_keyboard() -> ReplyKeyboardMarkup:
 
 
 def request_group_registration(update: CallbackQuery, bot: TeleBot) -> None:
-    user_id, chat_id, _ = get_ids(update)
+    user_id, chat_id = get_ids(update)[:2]
     logger.info(
         "Access group selection requested by user_id=%s username=%s",
         user_id,
@@ -89,49 +89,6 @@ def request_group_registration(update: CallbackQuery, bot: TeleBot) -> None:
         reply_markup=_group_selection_keyboard(),
     )
     bot.set_state(user_id, GroupRegistrationStates.select_group)
-
-
-def register_selected_group(message: Message, bot: TeleBot) -> None:
-    """Register a group selected by an existing bot administrator."""
-    user_id = message.from_user.id
-    bot.delete_state(user_id)
-    shared_chat = message.chat_shared
-    logger.info(
-        "Access group registration requested by user_id=%s username=%s "
-        "chat_id=%s request_id=%s",
-        user_id,
-        get_username(message),
-        shared_chat.chat_id,
-        shared_chat.request_id,
-    )
-
-    if not get_admins_db().is_admin(user_id):
-        logger.warning(
-            "Access group registration rejected for non-admin user_id=%s username=%s",
-            user_id,
-            get_username(message),
-        )
-        bot.reply_to(message, NOT_ADMIN_MESSAGE, reply_markup=ReplyKeyboardRemove())
-        return
-
-    if shared_chat.request_id != GROUP_REGISTRATION_REQUEST_ID:
-        logger.warning(
-            "Access group registration rejected for unexpected request_id=%s",
-            shared_chat.request_id,
-        )
-        bot.reply_to(
-            message,
-            INVALID_GROUP_SELECTION_MESSAGE,
-            reply_markup=ReplyKeyboardRemove(),
-        )
-        return
-
-    _register_group(message, bot, shared_chat.chat_id, check_user_admin=False)
-
-
-def register_current_group(message: Message, bot: TeleBot) -> None:
-    """Register the Telegram group in which the command was sent."""
-    _register_group(message, bot, message.chat.id, check_user_admin=True)
 
 
 def _register_group(
@@ -214,6 +171,49 @@ def _register_group(
         REGISTRATION_SUCCESS_MESSAGE.format(title=title),
         reply_markup=reply_markup,
     )
+
+
+def register_selected_group(message: Message, bot: TeleBot) -> None:
+    """Register a group selected by an existing bot administrator."""
+    user_id = message.from_user.id
+    bot.delete_state(user_id)
+    shared_chat = message.chat_shared
+    logger.info(
+        "Access group registration requested by user_id=%s username=%s "
+        "chat_id=%s request_id=%s",
+        user_id,
+        get_username(message),
+        shared_chat.chat_id,
+        shared_chat.request_id,
+    )
+
+    if not get_admins_db().is_admin(user_id):
+        logger.warning(
+            "Access group registration rejected for non-admin user_id=%s username=%s",
+            user_id,
+            get_username(message),
+        )
+        bot.reply_to(message, NOT_ADMIN_MESSAGE, reply_markup=ReplyKeyboardRemove())
+        return
+
+    if shared_chat.request_id != GROUP_REGISTRATION_REQUEST_ID:
+        logger.warning(
+            "Access group registration rejected for unexpected request_id=%s",
+            shared_chat.request_id,
+        )
+        bot.reply_to(
+            message,
+            INVALID_GROUP_SELECTION_MESSAGE,
+            reply_markup=ReplyKeyboardRemove(),
+        )
+        return
+
+    _register_group(message, bot, shared_chat.chat_id, check_user_admin=False)
+
+
+def register_current_group(message: Message, bot: TeleBot) -> None:
+    """Register the Telegram group in which the command was sent."""
+    _register_group(message, bot, message.chat.id, check_user_admin=True)
 
 
 def register_handlers(bot: TeleBot) -> None:

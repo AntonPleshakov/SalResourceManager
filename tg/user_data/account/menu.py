@@ -1,0 +1,84 @@
+from typing import Union
+
+from telebot import TeleBot, formatting
+from telebot.types import CallbackQuery, InlineKeyboardMarkup, Message
+
+import tg.user_data as user_data
+from tg.user_data.account.routing import DESTINATIONS, requested_destination
+from tg.user_data.common import ensure_active_user
+from tg.utils import Button, get_ids, get_username
+
+
+def accounts_menu(
+    message: Union[Message, CallbackQuery], bot: TeleBot, notice: str = ""
+) -> None:
+    user_id, chat_id, message_id = get_ids(message)
+    bot.delete_state(user_id)
+    database = user_data.get_user_data_db()
+    database.update_username(user_id, get_username(message))
+    accounts = database.get_accounts(user_id)
+    if not accounts:
+        active_user = ensure_active_user(message, bot)
+        if active_user.user is None:
+            return
+        accounts = database.get_accounts(user_id)
+    active = next((account for account in accounts if account.is_active), None)
+    destination = requested_destination(message)
+    lines = ["<b>Игровые аккаунты</b>"]
+    if accounts:
+        active_tag = (
+            formatting.escape_html(active.tag)
+            if active is not None
+            else "не выбран"
+        )
+        clan_title = formatting.escape_html(active.clan_title) if active else ""
+        lines.extend(
+            [
+                "",
+                f"Активный аккаунт: <b>{active_tag}</b>.",
+                f"Клан: <b>{clan_title}</b>.",
+            ]
+        )
+        if len(accounts) > 1:
+            lines.extend(
+                ["", "Выберите другой аккаунт, чтобы переключиться."]
+            )
+    else:
+        lines.extend(
+            [
+                "",
+                "Добавьте игровой аккаунт. Для каждого аккаунта ресурсы "
+                "и очки учитываются отдельно.",
+            ]
+        )
+    if notice:
+        lines = [notice, "", *lines]
+
+    keyboard = InlineKeyboardMarkup(row_width=1)
+    for account in accounts:
+        if account.is_active:
+            continue
+        keyboard.add(
+            Button(
+                f"🔄 {account.tag} · {account.clan_title}",
+                f"accounts/select/{destination}/{account.account_id}",
+            ).inline()
+        )
+    account_actions = [
+        Button("➕ Добавить", f"accounts/add/{destination}").inline()
+    ]
+    if active is not None:
+        account_actions.append(
+            Button("✏️ Переименовать", "accounts/rename").inline()
+        )
+    keyboard.row(*account_actions)
+    if len(accounts) > 1:
+        keyboard.add(Button("🗑 Удалить аккаунт", "accounts/delete").inline())
+    back_callback = destination if destination in DESTINATIONS else "home"
+    keyboard.add(Button("⬅️ Назад", back_callback).inline())
+
+    text = "\n".join(lines)
+    if isinstance(message, CallbackQuery):
+        bot.edit_message_text(text, chat_id, message_id, reply_markup=keyboard)
+    else:
+        bot.send_message(chat_id, text, reply_markup=keyboard)

@@ -1,4 +1,4 @@
-from parameters import Param
+from parameters import Param, raw_parameter_value
 
 
 class BoolParam(Param):
@@ -6,8 +6,7 @@ class BoolParam(Param):
         super().__init__(view)
         self.value: bool = value
 
-    def __bool__(self):
-        return self.value
+    __bool__ = raw_parameter_value
 
     def value_repr(self) -> str:
         return "Включено" if self.value else "Отключено"

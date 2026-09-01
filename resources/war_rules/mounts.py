@@ -1,23 +1,11 @@
 from decimal import Decimal
-from typing import Tuple
-
 from resources.user_data import UserData
 from resources.war_rules.details import ActivityDetails, format_calculation_number
+from resources.war_rules.mount_packages import summon_packages as _summon_packages
 
 
 MOUNT_CREATION_POINTS = 1_080
 MOUNT_MERGE_POINTS = 1_080
-MOUNT_SUMMON_PACKAGES: Tuple[Tuple[int, int], ...] = (
-    (50, 2_500),
-    (15, 750),
-    (1, 50),
-)
-
-
-def calculate_mount_points(user: UserData) -> Decimal:
-    return explain_mount_points(user).points
-
-
 def explain_mount_points(user: UserData) -> ActivityDetails:
     base_mounts, remaining_keys, package_calculations = _summon_packages(
         user.mount_keys.value,
@@ -68,35 +56,5 @@ def explain_mount_points(user: UserData) -> ActivityDetails:
     )
 
 
-def _summon_packages(
-    keys: int, discount: int
-) -> tuple[int, int, Tuple[str, ...]]:
-    summoned_mounts = 0
-    remaining_keys = keys
-    calculations = []
-    for mount_count, base_cost in MOUNT_SUMMON_PACKAGES:
-        cost = _discounted_cost(base_cost, discount)
-        package_count, remaining_keys = divmod(remaining_keys, cost)
-        summoned_mounts += package_count * mount_count
-        if package_count:
-            calculations.append(
-                f"Пакеты по {mount_count}: цена "
-                f"{format_calculation_number(base_cost)} со скидкой {discount}% → "
-                f"{format_calculation_number(cost)} ключей; "
-                f"{package_count} пак. → "
-                f"{format_calculation_number(package_count * mount_count)} маунтов"
-            )
-    return summoned_mounts, remaining_keys, tuple(calculations)
-
-
-def _summoned_mount_count(
-    keys: int, discount: int, extra_mount_chance: int
-) -> Decimal:
-    summoned_mounts, _, _ = _summon_packages(keys, discount)
-    return Decimal(summoned_mounts) * (
-        Decimal("1") + Decimal(extra_mount_chance) / Decimal("100")
-    )
-
-
-def _discounted_cost(base_cost: int, discount: int) -> int:
-    return (base_cost * (100 - discount) + 99) // 100
+def calculate_mount_points(user: UserData) -> Decimal:
+    return explain_mount_points(user).points

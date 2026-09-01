@@ -56,6 +56,45 @@ def load_migrations(directory: Path = MIGRATIONS_DIR) -> Tuple[Migration, ...]:
     return tuple(migrations)
 
 
+def _strip_comments(statement: str) -> str:
+    without_blocks = re.sub(r"/\*.*?\*/", "", statement, flags=re.DOTALL)
+    return re.sub(r"--[^\n]*(?:\n|$)", "", without_blocks).strip()
+
+
+def _get_user_version(connection: sqlite3.Connection) -> int:
+    return int(connection.execute("PRAGMA user_version").fetchone()[0])
+
+
+def _read_statements(path: Path) -> Tuple[str, ...]:
+    script = path.read_text(encoding="utf-8")
+    statements = []
+    buffer = ""
+    for character in script:
+        buffer += character
+        if character == ";" and sqlite3.complete_statement(buffer):
+            statements.append(buffer.strip())
+            buffer = ""
+
+    if _strip_comments(buffer).strip():
+        raise MigrationError(
+            f"Migration {path.name} contains an incomplete SQL statement"
+        )
+    return tuple(statement for statement in statements if _strip_comments(statement))
+
+
+def _validate_statement(statement: str, migration: Migration) -> None:
+    normalized = _strip_comments(statement).lstrip()
+    first_word = normalized.partition(" ")[0].rstrip(";").upper()
+    if first_word in TRANSACTION_STATEMENTS:
+        raise MigrationError(
+            f"Migration {migration.label} must not manage transactions"
+        )
+    if re.match(r"(?is)^PRAGMA\s+(?:main\.)?user_version\b", normalized):
+        raise MigrationError(
+            f"Migration {migration.label} must not set user_version"
+        )
+
+
 def apply_migrations(
     connection: sqlite3.Connection,
     directory: Path = MIGRATIONS_DIR,
@@ -102,42 +141,3 @@ def apply_migrations(
 
         applied.append(migration)
         logger.info("SQLite: migration %s applied", migration.label)
-
-
-def _get_user_version(connection: sqlite3.Connection) -> int:
-    return int(connection.execute("PRAGMA user_version").fetchone()[0])
-
-
-def _read_statements(path: Path) -> Tuple[str, ...]:
-    script = path.read_text(encoding="utf-8")
-    statements = []
-    buffer = ""
-    for character in script:
-        buffer += character
-        if character == ";" and sqlite3.complete_statement(buffer):
-            statements.append(buffer.strip())
-            buffer = ""
-
-    if _strip_comments(buffer).strip():
-        raise MigrationError(
-            f"Migration {path.name} contains an incomplete SQL statement"
-        )
-    return tuple(statement for statement in statements if _strip_comments(statement))
-
-
-def _validate_statement(statement: str, migration: Migration) -> None:
-    normalized = _strip_comments(statement).lstrip()
-    first_word = normalized.partition(" ")[0].rstrip(";").upper()
-    if first_word in TRANSACTION_STATEMENTS:
-        raise MigrationError(
-            f"Migration {migration.label} must not manage transactions"
-        )
-    if re.match(r"(?is)^PRAGMA\s+(?:main\.)?user_version\b", normalized):
-        raise MigrationError(
-            f"Migration {migration.label} must not set user_version"
-        )
-
-
-def _strip_comments(statement: str) -> str:
-    without_blocks = re.sub(r"/\*.*?\*/", "", statement, flags=re.DOTALL)
-    return re.sub(r"--[^\n]*(?:\n|$)", "", without_blocks).strip()

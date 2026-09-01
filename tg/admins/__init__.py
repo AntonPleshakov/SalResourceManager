@@ -81,7 +81,7 @@ def admins_list(callback_query: CallbackQuery, bot: TeleBot):
     )
     keyboard = InlineKeyboardMarkup(row_width=1)
     keyboard.add(Button("⬅️ Назад в админ-панель", "admins").inline())
-    _, chat_id, message_id = get_ids(callback_query)
+    chat_id, message_id = get_ids(callback_query)[1:]
     bot.edit_message_text(text, chat_id, message_id, reply_markup=keyboard)
 
 

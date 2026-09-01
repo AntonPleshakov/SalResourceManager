@@ -5,7 +5,7 @@ from typing import List, Optional
 
 from logger.app_logger import logger
 
-from .database import Database
+from .repository import DatabaseRepository
 
 
 @dataclass(frozen=True)
@@ -14,10 +14,7 @@ class AccessGroup:
     title: str
 
 
-class AccessGroupDB:
-    def __init__(self, database: Database):
-        self._database = database
-
+class AccessGroupDB(DatabaseRepository):
     def get_groups(self) -> List[AccessGroup]:
         rows = self._database.fetch_all(
             "SELECT group_id, title FROM clans ORDER BY title, group_id"

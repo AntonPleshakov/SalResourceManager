@@ -66,7 +66,6 @@ def _expected_points_per_hammer(forge_level: int) -> Decimal:
         for weapon_index, chance in enumerate(chances)
     )
 
-
 def explain_forging_points(user: UserData) -> ActivityDetails:
     expected_points = _expected_points_per_hammer(user.forge_level.value)
     points = Decimal(user.hammers.value) * expected_points
@@ -85,7 +84,3 @@ def explain_forging_points(user: UserData) -> ActivityDetails:
             f"{format_calculation_number(points)} очков",
         ),
     )
-
-
-def calculate_forging_points(user: UserData) -> Decimal:
-    return explain_forging_points(user).points

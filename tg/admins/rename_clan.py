@@ -15,6 +15,12 @@ class RenameClanStates(StatesGroup):
     title = State()
 
 
+def _back_keyboard() -> InlineKeyboardMarkup:
+    keyboard = InlineKeyboardMarkup(row_width=1)
+    keyboard.add(Button("⬅️ Назад в админ-панель", "admins").inline())
+    return keyboard
+
+
 def request_clan_rename(callback_query: CallbackQuery, bot: TeleBot) -> None:
     user_id, chat_id, message_id = get_ids(callback_query)
     group = get_active_admin_group(user_id)
@@ -33,7 +39,7 @@ def request_clan_rename(callback_query: CallbackQuery, bot: TeleBot) -> None:
 
 
 def rename_clan(message: Message, bot: TeleBot) -> None:
-    user_id, chat_id, _ = get_ids(message)
+    user_id, chat_id = get_ids(message)[:2]
     with bot.retrieve_data(user_id) as data:
         group_id = data.get("rename_clan_group_id")
 
@@ -74,14 +80,6 @@ def rename_clan(message: Message, bot: TeleBot) -> None:
         f"{formatting.escape_html(group.title)}</b>.",
         reply_markup=_back_keyboard(),
     )
-
-
-def _back_keyboard() -> InlineKeyboardMarkup:
-    keyboard = InlineKeyboardMarkup(row_width=1)
-    keyboard.add(Button("⬅️ Назад в админ-панель", "admins").inline())
-    return keyboard
-
-
 def register_handlers(bot: TeleBot) -> None:
     logger.debug("Registering rename-clan handlers")
     bot.register_callback_query_handler(

@@ -11,16 +11,46 @@ from resources.war_rules.details import ActivityDetails, format_calculation_numb
 
 PET_OR_EGG_MERGE_POINTS = 2_250
 SHELLS_PER_EGG = 100
-COMMON_EGG_POINTS = EggLevel.COMMON.points
-RARE_EGG_POINTS = EggLevel.RARE.points
-EPIC_EGG_POINTS = EggLevel.EPIC.points
-LEGENDARY_EGG_POINTS = EggLevel.LEGENDARY.points
-ULTIMATE_EGG_POINTS = EggLevel.ULTIMATE.points
-MYTHIC_EGG_POINTS = EggLevel.MYTHIC.points
+def _daily_hatching_points(user: UserData) -> Decimal:
+    max_level = EggLevel(user.max_egg_level.value)
+    eggs_per_batch = user.eggs_per_hatch_batch.value
+    return sum(
+        (
+            Decimal(getattr(user, level.batch_field_name).value)
+            * eggs_per_batch
+            * level.points
+            for level in EGG_LEVELS
+            if level <= max_level
+        ),
+        Decimal("0"),
+    )
 
 
-def calculate_pet_points(user: UserData) -> Decimal:
-    return explain_pet_points(user).points
+def _daily_hatching_calculation(user: UserData, max_level: EggLevel) -> str:
+    parts = []
+    for level in reversed(EGG_LEVELS):
+        if level > max_level:
+            continue
+        batches = getattr(user, level.batch_field_name).value
+        if batches <= 0:
+            continue
+        parts.append(
+            f"{format_hatch_batch_count(batches)} {level.english_name} × "
+            f"{user.eggs_per_hatch_batch.value} яйца × "
+            f"{format_calculation_number(level.points)}"
+        )
+    expression = " + ".join(parts) if parts else "нет пакетов"
+    return (
+        f"Вылупление в день войны: {expression} = "
+        f"{format_calculation_number(_daily_hatching_points(user))} очков"
+    )
+
+
+def _purchased_egg_count(user: UserData) -> Decimal:
+    base_eggs = Decimal(user.shells.value) / SHELLS_PER_EGG
+    return base_eggs * (
+        Decimal("1") + Decimal(user.extra_egg_chance.value) / Decimal("100")
+    )
 
 
 def explain_pet_points(user: UserData) -> ActivityDetails:
@@ -84,43 +114,5 @@ def explain_pet_points(user: UserData) -> ActivityDetails:
     )
 
 
-def _daily_hatching_points(user: UserData) -> Decimal:
-    max_level = EggLevel(user.max_egg_level.value)
-    eggs_per_batch = user.eggs_per_hatch_batch.value
-    return sum(
-        (
-            Decimal(getattr(user, level.batch_field_name).value)
-            * eggs_per_batch
-            * level.points
-            for level in EGG_LEVELS
-            if level <= max_level
-        ),
-        Decimal("0"),
-    )
-
-
-def _daily_hatching_calculation(user: UserData, max_level: EggLevel) -> str:
-    parts = []
-    for level in reversed(EGG_LEVELS):
-        if level > max_level:
-            continue
-        batches = getattr(user, level.batch_field_name).value
-        if batches <= 0:
-            continue
-        parts.append(
-            f"{format_hatch_batch_count(batches)} {level.english_name} × "
-            f"{user.eggs_per_hatch_batch.value} яйца × "
-            f"{format_calculation_number(level.points)}"
-        )
-    expression = " + ".join(parts) if parts else "нет пакетов"
-    return (
-        f"Вылупление в день войны: {expression} = "
-        f"{format_calculation_number(_daily_hatching_points(user))} очков"
-    )
-
-
-def _purchased_egg_count(user: UserData) -> Decimal:
-    base_eggs = Decimal(user.shells.value) / SHELLS_PER_EGG
-    return base_eggs * (
-        Decimal("1") + Decimal(user.extra_egg_chance.value) / Decimal("100")
-    )
+def calculate_pet_points(user: UserData) -> Decimal:
+    return explain_pet_points(user).points

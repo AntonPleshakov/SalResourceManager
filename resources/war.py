@@ -40,14 +40,6 @@ class WarActivity(str, Enum):
             WarActivity.PETS: "Питомцы",
         }[self]
 
-    @classmethod
-    def from_storage(cls, value: str) -> "WarActivity":
-        for activity in cls:
-            if value in {activity.value, activity.title}:
-                return activity
-        raise ValueError(f"Unknown war activity: {value}")
-
-
 WarStage = Tuple[WarActivity, WarActivity, WarActivity]
 
 WAR_STAGES: Mapping[int, WarStage] = MappingProxyType(
@@ -117,7 +109,7 @@ class WarPointsCalculator:
         details = self._details_rules[activity](user)
         return (
             details.points,
-            *(details.repeatable_points for _ in range(occurrence_count - 1)),
+            *((details.repeatable_points,) * (occurrence_count - 1)),
         )
 
     def calculate(

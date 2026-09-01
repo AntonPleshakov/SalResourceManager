@@ -20,7 +20,3 @@ def explain_dungeon_points(_: UserData) -> ActivityDetails:
             f"{format_calculation_number(points)} очков",
         ),
     )
-
-
-def calculate_dungeon_points(user: UserData) -> Decimal:
-    return explain_dungeon_points(user).points

@@ -108,9 +108,30 @@ def parse_editable_field_value(field_name: str, value: str) -> int:
             "Нужно ввести неотрицательное число не более чем с тремя "
             "знаками после запятой или точки"
         )
-    whole, _, fraction = normalized.partition(".")
+    whole, fraction = normalized.partition(".")[::2]
     parsed = int(whole) * 1_000 + int((fraction or "0").ljust(3, "0"))
     return validate_editable_field_value(field_name, parsed)
+
+
+def _initialize_user_data(instance, values: dict) -> None:
+    identity_fields = (
+        ("account_id", IntParam, "Игровой аккаунт ID"),
+        ("user_id", IntParam, "Telegram ID"),
+        ("username", StrParam, "Telegram username"),
+        ("tag", StrParam, "Имя игрового аккаунта"),
+    )
+    for name, parameter_type, title in identity_fields:
+        setattr(instance, name, parameter_type(title, values[name]))
+    for field in TRACKED_FIELDS:
+        setattr(instance, field.name, IntParam(field.title, values[field.name]))
+        updated_name = UPDATED_AT_FIELDS[field.name]
+        setattr(
+            instance,
+            updated_name,
+            StrParam(f"{field.title} — обновлено", values[updated_name]),
+        )
+    for field in PET_SETTINGS_FIELDS:
+        setattr(instance, field.name, IntParam(field.title, values[field.name]))
 
 
 class UserData(Parameters):
@@ -151,90 +172,8 @@ class UserData(Parameters):
         mount_summon_cost_updated_on: str = "",
         extra_mount_chance_updated_on: str = "",
     ):
-        self.account_id = IntParam("Игровой аккаунт ID", account_id)
-        self.user_id = IntParam("Telegram ID", user_id)
-        self.username = StrParam("Telegram username", username)
-        self.tag = StrParam("Имя игрового аккаунта", tag)
-        self.mount_keys = IntParam("Ключи маунтов", mount_keys)
-        self.mount_keys_updated_on = StrParam(
-            "Ключи маунтов — обновлено", mount_keys_updated_on
-        )
-        self.skills = IntParam("Билетики навыков", skills)
-        self.skills_updated_on = StrParam(
-            "Билетики навыков — обновлено", skills_updated_on
-        )
-        self.shells = IntParam("Скорлупа", shells)
-        self.shells_updated_on = StrParam(
-            "Скорлупа — обновлено", shells_updated_on
-        )
-        self.hammers = IntParam("Молотки", hammers)
-        self.hammers_updated_on = StrParam(
-            "Молотки — обновлено", hammers_updated_on
-        )
-        self.pets = IntParam("Питомцы и яйца", pets)
-        self.pets_updated_on = StrParam(
-            "Питомцы и яйца — обновлено", pets_updated_on
-        )
-        self.unmerged_mounts = IntParam(
-            "Необъединённые маунты", unmerged_mounts
-        )
-        self.unmerged_mounts_updated_on = StrParam(
-            "Необъединённые маунты — обновлено", unmerged_mounts_updated_on
-        )
-        self.forge_level = IntParam("Уровень кузницы", forge_level)
-        self.forge_level_updated_on = StrParam(
-            "Уровень кузницы — обновлено", forge_level_updated_on
-        )
-        self.skill_summon_cost = IntParam(
-            "Снижение стоимости призыва навыков (%)", skill_summon_cost
-        )
-        self.skill_summon_cost_updated_on = StrParam(
-            "Снижение стоимости призыва навыков (%) — обновлено",
-            skill_summon_cost_updated_on,
-        )
-        self.extra_egg_chance = IntParam(
-            "Доп. шанс на яйцо", extra_egg_chance
-        )
-        self.extra_egg_chance_updated_on = StrParam(
-            "Доп. шанс на яйцо — обновлено", extra_egg_chance_updated_on
-        )
-        self.mount_summon_cost = IntParam(
-            "Снижение стоимости призыва маунта (%)", mount_summon_cost
-        )
-        self.mount_summon_cost_updated_on = StrParam(
-            "Снижение стоимости призыва маунта (%) — обновлено",
-            mount_summon_cost_updated_on,
-        )
-        self.extra_mount_chance = IntParam(
-            "Шанс на доп. маунта", extra_mount_chance
-        )
-        self.extra_mount_chance_updated_on = StrParam(
-            "Шанс на доп. маунта — обновлено", extra_mount_chance_updated_on
-        )
-        self.eggs_per_hatch_batch = IntParam(
-            "Яиц в одном пакете", eggs_per_hatch_batch
-        )
-        self.max_egg_level = IntParam(
-            "Максимальный уровень яйца", max_egg_level
-        )
-        self.hatch_batches_common = IntParam(
-            "Пакеты Common в день", hatch_batches_common
-        )
-        self.hatch_batches_rare = IntParam(
-            "Пакеты Rare в день", hatch_batches_rare
-        )
-        self.hatch_batches_epic = IntParam(
-            "Пакеты Epic в день", hatch_batches_epic
-        )
-        self.hatch_batches_legendary = IntParam(
-            "Пакеты Legendary в день", hatch_batches_legendary
-        )
-        self.hatch_batches_ultimate = IntParam(
-            "Пакеты Ultimate в день", hatch_batches_ultimate
-        )
-        self.hatch_batches_mythic = IntParam(
-            "Пакеты Mythic в день", hatch_batches_mythic
-        )
+        super().__init__()
+        _initialize_user_data(self, locals())
 
     def get_updated_on(self, field_name: str) -> Optional[date]:
         parameter_name = UPDATED_AT_FIELDS.get(field_name)

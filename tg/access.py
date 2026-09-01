@@ -1,7 +1,7 @@
 from typing import Union
 
 from telebot import TeleBot, util
-from telebot.handler_backends import BaseMiddleware, CancelUpdate
+from telebot.handler_backends import CancelUpdate
 from telebot.types import (
     CallbackQuery,
     InlineKeyboardButton,
@@ -13,6 +13,7 @@ from db.access_group import AccessGroupDB
 from logger.app_logger import logger
 from tg.clans import is_group_member
 from tg.metrics import APPLICATION_METRICS, ApplicationMetrics
+from tg.middleware import NoOpPostProcessMiddleware
 from tg.utils import get_ids, get_username
 
 
@@ -53,7 +54,7 @@ def _get_chat_type(update: Union[Message, CallbackQuery]) -> str | None:
     return update.chat.type
 
 
-class GroupAccessMiddleware(BaseMiddleware):
+class GroupAccessMiddleware(NoOpPostProcessMiddleware):
     def __init__(
         self,
         bot: TeleBot,
@@ -119,7 +120,7 @@ class GroupAccessMiddleware(BaseMiddleware):
             )
 
     def pre_process(
-        self, update: Union[Message, CallbackQuery], data: dict
+        self, update: Union[Message, CallbackQuery], _: dict
     ) -> CancelUpdate | None:
         if _get_chat_type(update) != "private":
             if is_group_registration_command(update):
@@ -132,7 +133,7 @@ class GroupAccessMiddleware(BaseMiddleware):
 
         groups = self._access_group_db.get_groups()
         if not groups:
-            user_id, _, _ = get_ids(update)
+            user_id = get_ids(update)[0]
             logger.info(
                 "Group access denied for user_id=%s username=%s: "
                 "group is not configured",
@@ -143,7 +144,7 @@ class GroupAccessMiddleware(BaseMiddleware):
             self._metrics.access_checks.labels(result="unconfigured").inc()
             return CancelUpdate()
 
-        user_id, _, _ = get_ids(update)
+        user_id = get_ids(update)[0]
         errors = []
         for group in groups:
             try:
@@ -180,11 +181,3 @@ class GroupAccessMiddleware(BaseMiddleware):
         )
         self._metrics.access_checks.labels(result="denied").inc()
         return CancelUpdate()
-
-    def post_process(
-        self,
-        update: Union[Message, CallbackQuery],
-        data: dict,
-        exception: BaseException | None,
-    ) -> None:
-        pass

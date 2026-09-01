@@ -4,13 +4,10 @@ from typing import Dict, Optional
 
 from logger.app_logger import logger
 
-from .database import Database
+from .repository import DatabaseRepository
 
 
-class ReleaseViewsDB:
-    def __init__(self, database: Database):
-        self._database = database
-
+class ReleaseViewsDB(DatabaseRepository):
     def get_last_seen_version(self, user_id: int) -> Optional[str]:
         row = self._database.fetch_one(
             "SELECT last_seen_version FROM release_views WHERE user_id = ?",

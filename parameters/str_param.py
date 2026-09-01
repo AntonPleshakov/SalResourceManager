@@ -1,4 +1,4 @@
-from parameters import Param
+from parameters import Param, raw_parameter_value
 
 
 class StrParam(Param):
@@ -6,8 +6,7 @@ class StrParam(Param):
         super().__init__(view)
         self.value: str = value
 
-    def value_repr(self) -> str:
-        return self.value
+    value_repr = raw_parameter_value
 
     def set_value(self, value: str):
         self.value = value
