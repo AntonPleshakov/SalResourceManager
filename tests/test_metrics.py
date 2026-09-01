@@ -370,6 +370,31 @@ def test_player_account_metrics_are_calculated_at_scrape_time() -> None:
     ) == 2
 
 
+def test_clan_metrics_are_calculated_at_scrape_time() -> None:
+    registry = CollectorRegistry()
+    clans = [
+        (-100123, "Alpha", 2, 3),
+        (-100456, "Beta", 0, 0),
+    ]
+    register_player_account_metrics(
+        lambda: (), registry, clan_account_counts=lambda: clans
+    )
+
+    assert registry.get_sample_value("srm_clans") == 2
+    alpha = {"clan_id": "-100123", "clan_title": "Alpha"}
+    beta = {"clan_id": "-100456", "clan_title": "Beta"}
+    assert registry.get_sample_value("srm_clan_users", alpha) == 2
+    assert registry.get_sample_value("srm_clan_accounts", alpha) == 3
+    assert registry.get_sample_value("srm_clan_users", beta) == 0
+    assert registry.get_sample_value("srm_clan_accounts", beta) == 0
+
+    clans[:] = [(-100123, "Alpha renamed", 3, 4)]
+    renamed = {"clan_id": "-100123", "clan_title": "Alpha renamed"}
+    assert registry.get_sample_value("srm_clans") == 1
+    assert registry.get_sample_value("srm_clan_users", renamed) == 3
+    assert registry.get_sample_value("srm_clan_accounts", renamed) == 4
+
+
 def test_metrics_server_exposes_prometheus_text_format() -> None:
     metrics_server = start_metrics_server(port=0, listen="127.0.0.1")
     try:

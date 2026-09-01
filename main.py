@@ -116,7 +116,8 @@ def initialize_databases():
     logger.info("Initializing application databases")
     databases = initialize_database()
     register_player_account_metrics(
-        lambda: databases.user_data.get_account_counts().values()
+        lambda: databases.user_data.get_account_counts().values(),
+        clan_account_counts=databases.user_data.get_clan_account_counts,
     )
     logger.info(
         "Application databases initialized: admins=%d users=%d "

@@ -59,6 +59,18 @@ class UserDataQueries:
         )
         return {int(user_id): int(count) for user_id, count in rows}
 
+    def get_clan_account_counts(self) -> List[tuple[int, str, int, int]]:
+        rows = self._database.fetch_all(
+            "SELECT c.group_id, c.title, COUNT(DISTINCT ga.user_id), "
+            "COUNT(ga.account_id) FROM clans c "
+            "LEFT JOIN game_accounts ga ON ga.clan_id = c.group_id "
+            "GROUP BY c.group_id, c.title ORDER BY c.title, c.group_id"
+        )
+        return [
+            (int(group_id), str(title), int(user_count), int(account_count))
+            for group_id, title, user_count, account_count in rows
+        ]
+
     def get_accounts(self, user_id: int) -> List[GameAccount]:
         rows = self._database.fetch_all(
             "SELECT ga.account_id, ga.user_id, tu.username, ga.tag, "

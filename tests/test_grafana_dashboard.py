@@ -51,6 +51,9 @@ def test_user_dashboard_uses_actionable_prometheus_metrics() -> None:
         "srm_ready",
         "srm_users",
         "srm_accounts",
+        "srm_clans",
+        "srm_clan_users",
+        "srm_clan_accounts",
         "srm_users_by_account_count",
         "srm_requests_total",
         "srm_request_duration_seconds_bucket",
@@ -76,6 +79,15 @@ def test_user_dashboard_uses_actionable_prometheus_metrics() -> None:
     assert dashboard["templating"]["list"][0]["name"] == "slow_threshold"
     assert 'le="$slow_threshold"' in queries
     assert "by (le, handler)" in queries
+    assert any(panel["title"] == "Кланы" for panel in dashboard["panels"])
+    assert any(
+        panel["title"] == "Пользователи по кланам"
+        for panel in dashboard["panels"]
+    )
+    assert any(
+        panel["title"] == "Игровые аккаунты по кланам"
+        for panel in dashboard["panels"]
+    )
 
 
 def test_system_dashboard_uses_process_limits_and_runtime_metrics() -> None:

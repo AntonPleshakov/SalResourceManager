@@ -107,6 +107,23 @@ def test_resources_are_isolated_and_active_account_can_be_switched(tmp_path):
     connection.close()
 
 
+def test_clan_account_counts_include_registered_clans_without_accounts(tmp_path):
+    connection = Database(tmp_path / "database.db")
+    groups = AccessGroupDB(connection)
+    groups.add_group(-100123, "Alpha")
+    groups.add_group(-100456, "Beta")
+    database = UserDataDB(connection)
+    database.add_account(42, "telegram_user", "Main", clan_id=-100123)
+    database.add_account(42, "telegram_user", "Alt", clan_id=-100123)
+    database.add_account(77, "another_user", "Other", clan_id=-100123)
+
+    assert database.get_clan_account_counts() == [
+        (-100123, "Alpha", 2, 3),
+        (-100456, "Beta", 0, 0),
+    ]
+    connection.close()
+
+
 def test_new_account_clan_picker_only_shows_memberships(tmp_path, monkeypatch):
     connection = Database(tmp_path / "database.db")
     groups = AccessGroupDB(connection)
