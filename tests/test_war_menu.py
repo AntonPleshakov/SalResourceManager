@@ -19,6 +19,7 @@ from tg.war import (
     public_war_points,
     war_menu,
 )
+from tg.war.public import _war_week_started_on
 
 
 def make_callback(user_id: int = 42, data: str = "war_calculator") -> CallbackQuery:
@@ -236,16 +237,29 @@ def test_maximum_war_points_returns_to_war_menu(monkeypatch):
     assert callback_data(bot.edited[0][3]) == ["war_menu"]
 
 
-def test_maximum_war_points_excludes_accounts_stale_for_more_than_three_days(
+def test_war_week_starts_at_three_on_monday():
+    assert _war_week_started_on(datetime(2026, 8, 10, 2, 59)) == date(
+        2026, 8, 3
+    )
+    assert _war_week_started_on(datetime(2026, 8, 10, 3)) == date(
+        2026, 8, 10
+    )
+
+
+def test_maximum_war_points_excludes_accounts_not_updated_since_monday(
     monkeypatch,
 ):
     current = UserData(user_id=42, username="current", hammers=300)
     boundary = UserData(user_id=43, username="boundary", hammers=200)
     stale = UserData(user_id=44, username="stale", hammers=500)
+    technology_only = UserData(
+        user_id=45, username="technology", hammers=700
+    )
     current.mark_updated("hammers", date(2026, 8, 14))
-    boundary.mark_updated("hammers", date(2026, 8, 11))
-    stale.mark_updated("hammers", date(2026, 8, 10))
-    users = [current, boundary, stale]
+    boundary.mark_updated("hammers", date(2026, 8, 10))
+    stale.mark_updated("hammers", date(2026, 8, 9))
+    technology_only.mark_updated("forge_level", date(2026, 8, 14))
+    users = [current, boundary, stale, technology_only]
     monkeypatch.setattr(
         "tg.war.get_user_data_db",
         lambda: SimpleNamespace(
@@ -271,7 +285,8 @@ def test_maximum_war_points_excludes_accounts_stale_for_more_than_three_days(
     assert f"Всего: <b>{format_points(expected.total)}</b>" in text
     assert "Учтено аккаунтов: <b>2</b>" in text
     assert (
-        "Не учтено (ресурсы не обновлялись более 3 дней): <b>1</b>"
+        "Не учтено (ни один ресурс не обновлён с 03:00 понедельника): "
+        "<b>2</b>"
         in text
     )
 

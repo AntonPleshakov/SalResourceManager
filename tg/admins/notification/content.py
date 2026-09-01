@@ -1,13 +1,15 @@
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, datetime
+from enum import Enum
 from typing import Iterable, Sequence
 
 from telebot import formatting
 from telebot.handler_backends import State, StatesGroup
 from telebot.types import InlineKeyboardMarkup
 
+from common.datetime_utils import week_started_on
 from logger.app_logger import logger
-from resources.user_data import RESOURCE_FIELDS, ResourceField, UserData
+from resources.user_data import UserData
 from tg.utils import Button, format_user_identity, group_user_accounts
 
 
@@ -22,7 +24,14 @@ MAX_TELEGRAM_MESSAGE_LENGTH = 4_096
 class NotificationStates(StatesGroup):
     standard_confirmation = State()
     custom_text = State()
+    custom_audience = State()
     custom_confirmation = State()
+
+
+class CustomNotificationAudience(str, Enum):
+    ALL = "all"
+    NOT_UPDATED_TODAY = "today"
+    NOT_UPDATED_SINCE_MONDAY = "monday"
 
 
 @dataclass(frozen=True)
@@ -46,20 +55,19 @@ class StandardNotificationPlan:
 
 
 def _update_keyboard(
-    account_fields: Sequence[tuple[UserData, Sequence[ResourceField]]] = (),
+    accounts: Sequence[UserData] = (),
     multiple_accounts: bool = False,
 ) -> InlineKeyboardMarkup:
     keyboard = InlineKeyboardMarkup(row_width=1)
     if multiple_accounts:
-        for index, (user, fields) in enumerate(account_fields, start=1):
+        for index, user in enumerate(accounts, start=1):
             tag = str(user.tag.value).strip() or f"Аккаунт {index}"
-            if fields:
-                keyboard.add(
-                    Button(
-                        f"📦 Ресурсы · {tag}",
-                        f"accounts/select/resources/{user.account_id.value}",
-                    ).inline()
-                )
+            keyboard.add(
+                Button(
+                    f"📦 Ресурсы · {tag}",
+                    f"accounts/select/resources/{user.account_id.value}",
+                ).inline()
+            )
         keyboard.add(Button("⬅️ Назад в меню", "home").inline())
         return keyboard
 
@@ -70,54 +78,43 @@ def _update_keyboard(
     return keyboard
 
 
-def _standard_notification_text(fields: Iterable[ResourceField]) -> str:
-    titles = "\n".join(f"• {field.title}" for field in fields)
+def _standard_notification_text() -> str:
     return (
         f"{STANDARD_NOTIFICATION_TEXT}\n\n"
-        f"<b>Не обновлены сегодня:</b>\n{titles}"
+        "Ресурсы не обновлялись с 03:00 понедельника."
     )
 
 
 def _standard_notification_text_for_accounts(
-    account_fields: Sequence[tuple[UserData, Sequence[ResourceField]]],
+    accounts: Sequence[UserData],
     multiple_accounts: bool,
 ) -> str:
     if not multiple_accounts:
-        return _standard_notification_text(account_fields[0][1])
+        return _standard_notification_text()
 
-    blocks = []
-    for index, (user, fields) in enumerate(account_fields, start=1):
+    account_titles = []
+    for index, user in enumerate(accounts, start=1):
         tag = str(user.tag.value).strip() or f"Аккаунт {index}"
-        titles = "\n".join(f"• {field.title}" for field in fields)
-        blocks.append(f"<b>{formatting.escape_html(tag)}</b>\n{titles}")
+        account_titles.append(f"• <b>{formatting.escape_html(tag)}</b>")
     return (
         f"{STANDARD_NOTIFICATION_TEXT}\n\n"
-        "<b>Не обновлены сегодня:</b>\n\n"
-        + "\n\n".join(blocks)
+        "<b>Ресурсы не обновлялись с 03:00 понедельника:</b>\n"
+        + "\n".join(account_titles)
     )
 
 
 def build_standard_notification_plan(
-    users: Iterable[UserData], notification_date: date
+    users: Iterable[UserData], cutoff: date
 ) -> StandardNotificationPlan:
     recipients = []
     skipped = 0
     for user_id, accounts in group_user_accounts(users).items():
-        account_fields = [
-            (
-                user,
-                [
-                    field
-                    for field in RESOURCE_FIELDS
-                    if user.get_updated_on(field.name) != notification_date
-                ],
-            )
+        outdated_accounts = [
+            user
             for user in accounts
+            if not user.has_resource_updates_since(cutoff)
         ]
-        account_fields = [
-            (user, fields) for user, fields in account_fields if fields
-        ]
-        if not account_fields:
+        if not outdated_accounts:
             skipped += 1
             continue
         multiple_accounts = len(accounts) > 1
@@ -128,12 +125,48 @@ def build_standard_notification_plan(
                     accounts[0].username.value, accounts[0].tag.value
                 ),
                 text=_standard_notification_text_for_accounts(
-                    account_fields, multiple_accounts
+                    outdated_accounts, multiple_accounts
                 ),
-                keyboard=_update_keyboard(account_fields, multiple_accounts),
+                keyboard=_update_keyboard(
+                    outdated_accounts, multiple_accounts
+                ),
             )
         )
     return StandardNotificationPlan(tuple(recipients), skipped)
+
+
+def custom_notification_audience_title(
+    audience: CustomNotificationAudience,
+) -> str:
+    return {
+        CustomNotificationAudience.ALL: "все",
+        CustomNotificationAudience.NOT_UPDATED_TODAY: (
+            "не обновлявшие ресурсы сегодня"
+        ),
+        CustomNotificationAudience.NOT_UPDATED_SINCE_MONDAY: (
+            "не обновлявшие ресурсы с 03:00 понедельника"
+        ),
+    }[audience]
+
+
+def filter_custom_notification_users(
+    users: Iterable[UserData],
+    audience: CustomNotificationAudience,
+    reference: datetime,
+) -> tuple[UserData, ...]:
+    users = tuple(users)
+    if audience == CustomNotificationAudience.ALL:
+        return users
+    cutoff = (
+        reference.date()
+        if audience == CustomNotificationAudience.NOT_UPDATED_TODAY
+        else week_started_on(reference)
+    )
+    return tuple(
+        user
+        for user in users
+        if not user.has_resource_updates_since(cutoff)
+    )
 
 
 def validate_custom_notification_text(text: str) -> str:
@@ -179,6 +212,7 @@ def build_custom_notification_messages(
     text: str,
     admin_name: str,
     users: Iterable[UserData],
+    recipient_title: str = "Для всех участников",
 ) -> list[str]:
     header = custom_notification_header(
         validate_custom_notification_text(text), admin_name
@@ -190,7 +224,7 @@ def build_custom_notification_messages(
     if not mentions:
         return [header]
 
-    prefix = "\n\n<b>Для всех участников:</b>\n"
+    prefix = f"\n\n<b>{formatting.escape_html(recipient_title)}:</b>\n"
     messages: list[str] = []
     current_mentions: list[str] = []
     for mention in mentions:

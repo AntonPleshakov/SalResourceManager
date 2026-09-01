@@ -10,6 +10,7 @@ def register_handlers(bot: TeleBot) -> None:
         notifications_menu,
         receive_custom_notification_text,
         request_custom_notification,
+        select_custom_notification_audience,
         send_custom_group_notification_confirmed,
         send_custom_private_notification_confirmed,
         send_standard_notification_confirmed,
@@ -49,6 +50,12 @@ def register_handlers(bot: TeleBot) -> None:
         state=NotificationStates.custom_text,
         is_admin=True,
         pass_bot=True,
+    )
+    bot.register_callback_query_handler(
+        select_custom_notification_audience,
+        state=NotificationStates.custom_audience,
+        button=r"admins/notifications/custom_audience/(all|today|monday)",
+        **callback_defaults,
     )
     bot.register_callback_query_handler(
         send_custom_group_notification_confirmed,

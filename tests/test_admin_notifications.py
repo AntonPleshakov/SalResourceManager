@@ -15,16 +15,20 @@ from tg.admins.notifications import (
     MAX_CUSTOM_TEXT_LENGTH,
     STANDARD_NOTIFICATION_TEXT,
     BroadcastResult,
+    CustomNotificationAudience,
     build_standard_notification_plan,
     build_custom_notification_messages,
     confirm_standard_notification,
+    receive_custom_notification_text,
     send_custom_notification,
     send_custom_group_notification_confirmed,
     send_custom_private_notification,
     send_custom_private_notification_confirmed,
     send_standard_notification,
     send_standard_notification_confirmed,
+    select_custom_notification_audience,
 )
+from tg.admins.notification import filter_custom_notification_users
 
 
 def make_callback(data: str = "admins/notifications/standard") -> CallbackQuery:
@@ -55,6 +59,7 @@ class NotificationFlowBot:
         self.edited = []
         self.answers = []
         self.deleted_states = []
+        self.states = []
 
     def retrieve_data(self, user_id):
         return nullcontext(self.data)
@@ -64,6 +69,12 @@ class NotificationFlowBot:
 
     def answer_callback_query(self, *args, **kwargs):
         self.answers.append((args, kwargs))
+
+    def set_state(self, user_id, state):
+        self.states.append((user_id, state))
+
+    def add_data(self, user_id, **kwargs):
+        self.data.update(kwargs)
 
     def delete_state(self, user_id):
         self.deleted_states.append(user_id)
@@ -91,7 +102,7 @@ def test_standard_notification_is_sent_to_every_user(monkeypatch):
     assert result == BroadcastResult(sent=1, failed=1)
     assert [call[0] for call in bot.calls] == [1, 2]
     assert all(call[1].startswith(STANDARD_NOTIFICATION_TEXT) for call in bot.calls)
-    assert "Не обновлены сегодня:" in bot.calls[0][1]
+    assert "Ресурсы не обновлялись с 03:00 понедельника" in bot.calls[0][1]
     assert [
         button.callback_data
         for row in bot.calls[0][2].keyboard
@@ -101,15 +112,7 @@ def test_standard_notification_is_sent_to_every_user(monkeypatch):
 
 def test_standard_notification_ignores_stale_technologies(monkeypatch):
     user = UserData(user_id=1, username="current")
-    for field_name in (
-        "mount_keys",
-        "skills",
-        "shells",
-        "hammers",
-        "pets",
-        "unmerged_mounts",
-    ):
-        user.mark_updated(field_name, date(2026, 8, 2))
+    user.mark_updated("hammers", date(2026, 8, 2))
     monkeypatch.setattr(
         "tg.admins.notifications.get_user_data_db",
         lambda: FakeUserDataDB([user]),
@@ -136,6 +139,22 @@ def test_standard_notification_ignores_stale_technologies(monkeypatch):
 
     assert result == BroadcastResult(sent=0, failed=0)
     assert bot.calls == []
+
+
+def test_standard_notification_uses_same_resource_filter_as_calculator():
+    current = UserData(user_id=1, username="current")
+    stale = UserData(user_id=2, username="stale")
+    technology_only = UserData(user_id=3, username="technology")
+    current.mark_updated("hammers", date(2026, 8, 10))
+    stale.mark_updated("hammers", date(2026, 8, 9))
+    technology_only.mark_updated("forge_level", date(2026, 8, 14))
+
+    plan = build_standard_notification_plan(
+        [current, stale, technology_only], date(2026, 8, 10)
+    )
+
+    assert [recipient.user_id for recipient in plan.recipients] == [2, 3]
+    assert plan.skipped == 1
 
 
 def test_standard_notification_combines_multiple_accounts(monkeypatch):
@@ -223,9 +242,9 @@ def test_standard_notification_confirmation_is_compact_and_uses_snapshot(
 
     text = bot.edited[0][0][0]
     markup = bot.edited[0][1]["reply_markup"]
-    assert "у которых не все данные обновлены сегодня" in text
+    assert "не обновляли ни один ресурс с 03:00 понедельника" in text
     assert "Получателей: <b>1</b>" in text
-    assert "Уже обновили данные: <b>1</b>" in text
+    assert "Уже обновили хотя бы один ресурс: <b>1</b>" in text
     assert STANDARD_NOTIFICATION_TEXT not in text
     assert [
         button.text for row in markup.keyboard for button in row
@@ -299,15 +318,15 @@ def test_custom_notifications_show_progress_before_sending(monkeypatch):
     private_calls = []
     monkeypatch.setattr(
         "tg.admins.notifications.send_custom_notification",
-        lambda bot, text, admin_name, group_id: (
-            group_calls.append((text, admin_name, group_id))
+        lambda bot, text, admin_name, group_id, audience: (
+            group_calls.append((text, admin_name, group_id, audience))
             or BroadcastResult(sent=1, failed=0)
         ),
     )
     monkeypatch.setattr(
         "tg.admins.notifications.send_custom_private_notification",
-        lambda bot, text, admin_name, group_id: (
-            private_calls.append((text, admin_name, group_id))
+        lambda bot, text, admin_name, group_id, audience: (
+            private_calls.append((text, admin_name, group_id, audience))
             or BroadcastResult(sent=1, failed=0)
         ),
     )
@@ -317,13 +336,21 @@ def test_custom_notifications_show_progress_before_sending(monkeypatch):
     )
 
     group_bot = NotificationFlowBot(
-        {"notification_text": "Текст", "admin_name": "Admin"}
+        {
+            "notification_text": "Текст",
+            "admin_name": "Admin",
+            "notification_audience": "monday",
+        }
     )
     send_custom_group_notification_confirmed(
         make_callback("admins/notifications/send_custom_group"), group_bot
     )
     private_bot = NotificationFlowBot(
-        {"notification_text": "Текст", "admin_name": "Admin"}
+        {
+            "notification_text": "Текст",
+            "admin_name": "Admin",
+            "notification_audience": "today",
+        }
     )
     send_custom_private_notification_confirmed(
         make_callback("admins/notifications/send_custom_private"), private_bot
@@ -331,8 +358,101 @@ def test_custom_notifications_show_progress_before_sending(monkeypatch):
 
     assert group_bot.edited[0][0][0] == "Отправляю уведомление в группу…"
     assert private_bot.edited[0][0][0] == "Отправляю личные уведомления…"
-    assert group_calls == [("Текст", "Admin", -100123)]
-    assert private_calls == [("Текст", "Admin", -100123)]
+    assert group_calls == [
+        (
+            "Текст",
+            "Admin",
+            -100123,
+            CustomNotificationAudience.NOT_UPDATED_SINCE_MONDAY,
+        )
+    ]
+    assert private_calls == [
+        (
+            "Текст",
+            "Admin",
+            -100123,
+            CustomNotificationAudience.NOT_UPDATED_TODAY,
+        )
+    ]
+
+
+def test_custom_notification_audience_can_be_selected():
+    bot = NotificationFlowBot(
+        {"notification_text": "Текст", "admin_name": "Admin"}
+    )
+
+    select_custom_notification_audience(
+        make_callback("admins/notifications/custom_audience/monday"), bot
+    )
+
+    assert bot.data["notification_audience"] == "monday"
+    assert "не обновлявшие ресурсы с 03:00 понедельника" in (
+        bot.edited[0][0][0]
+    )
+    assert [
+        button.callback_data
+        for row in bot.edited[0][1]["reply_markup"].keyboard
+        for button in row
+    ] == [
+        "admins/notifications/send_custom_group",
+        "admins/notifications/send_custom_private",
+        "admins/notifications",
+    ]
+
+
+def test_custom_notification_prompts_for_audience_after_text():
+    message = make_callback().message
+    message.text = "Текст"
+
+    class FakeBot(NotificationFlowBot):
+        def __init__(self):
+            super().__init__({})
+            self.sent = []
+
+        def send_message(self, *args, **kwargs):
+            self.sent.append((args, kwargs))
+
+    bot = FakeBot()
+
+    receive_custom_notification_text(message, bot)
+
+    assert [
+        button.callback_data
+        for row in bot.sent[0][1]["reply_markup"].keyboard
+        for button in row
+    ] == [
+        "admins/notifications/custom_audience/all",
+        "admins/notifications/custom_audience/today",
+        "admins/notifications/custom_audience/monday",
+        "admins/notifications",
+    ]
+
+
+def test_custom_notification_audience_filters_by_last_resource_update():
+    today = UserData(user_id=1, username="today")
+    monday = UserData(user_id=2, username="monday")
+    stale = UserData(user_id=3, username="stale")
+    today.mark_updated("hammers", date(2026, 8, 14))
+    monday.mark_updated("skills", date(2026, 8, 10))
+    stale.mark_updated("forge_level", date(2026, 8, 14))
+    users = [today, monday, stale]
+    reference = datetime(2026, 8, 14, 12, tzinfo=timezone.utc)
+
+    not_updated_today = filter_custom_notification_users(
+        users,
+        CustomNotificationAudience.NOT_UPDATED_TODAY,
+        reference,
+    )
+    not_updated_since_monday = filter_custom_notification_users(
+        users,
+        CustomNotificationAudience.NOT_UPDATED_SINCE_MONDAY,
+        reference,
+    )
+
+    assert [user.user_id.value for user in not_updated_today] == [2, 3]
+    assert [
+        user.user_id.value for user in not_updated_since_monday
+    ] == [3]
 
 
 def test_custom_notification_escapes_text_and_mentions_every_user():

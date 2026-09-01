@@ -1,9 +1,9 @@
-from datetime import date, timedelta
+from datetime import date, datetime
 
 from telebot import TeleBot
 from telebot.types import CallbackQuery, InlineKeyboardMarkup
 
-from common.datetime_utils import now
+from common.datetime_utils import now, week_started_on
 from logger.app_logger import logger
 from resources.user_data import UserData
 from resources.war import WarPointsCalculator
@@ -12,19 +12,19 @@ from tg.metrics import observe_score_calculation
 from tg.utils import Button, empty_filter, format_points, get_ids, get_username
 
 
-WAR_ACCOUNT_STALE_AFTER_DAYS = 3
+def _war_week_started_on(reference: datetime) -> date:
+    return week_started_on(reference)
 
 
-def _resources_updated_after(user: UserData, cutoff: date) -> bool:
-    updated_on = user.get_last_updated_on()
-    return updated_on is not None and updated_on >= cutoff
+def _resources_updated_since(user: UserData, cutoff: date) -> bool:
+    return user.has_resource_updates_since(cutoff)
 
 
 def _war_points_text(clan_id: int | None = None) -> str:
     users = war.get_user_data_db().get_users(clan_id)
-    cutoff = now().date() - timedelta(days=WAR_ACCOUNT_STALE_AFTER_DAYS)
+    cutoff = _war_week_started_on(now())
     accounted_users = [
-        user for user in users if _resources_updated_after(user, cutoff)
+        user for user in users if _resources_updated_since(user, cutoff)
     ]
     stale_users_count = len(users) - len(accounted_users)
     logger.info(
@@ -60,8 +60,7 @@ def _war_points_text(clan_id: int | None = None) -> str:
             f"Всего: <b>{format_points(report.total)}</b>",
             "",
             f"Учтено аккаунтов: <b>{len(accounted_users)}</b>",
-            "Не учтено (ресурсы не обновлялись более "
-            f"{WAR_ACCOUNT_STALE_AFTER_DAYS} дней): "
+            "Не учтено (ни один ресурс не обновлён с 03:00 понедельника): "
             f"<b>{stale_users_count}</b>",
             "",
             "Максимум каждого дня считается отдельно. В итогах расходуемые "

@@ -1,18 +1,21 @@
 from telebot import TeleBot, formatting
 from telebot.types import CallbackQuery, InlineKeyboardMarkup, Message
 
-from common.datetime_utils import now
+from common.datetime_utils import now, week_started_on
 from db.initializer import get_admins_db, get_user_data_db
 from logger.app_logger import logger
 from tg.admins.notification import (
     MAX_CUSTOM_TEXT_LENGTH,
     STANDARD_NOTIFICATION_TEXT,
     BroadcastResult,
+    CustomNotificationAudience,
     NotificationStates,
     StandardNotificationPlan,
     build_custom_notification_messages,
     build_standard_notification_plan,
+    custom_notification_audience_title,
     custom_notification_header,
+    filter_custom_notification_users,
     validate_custom_notification_text,
 )
 from tg.admins.notification import delivery
@@ -32,7 +35,7 @@ def send_standard_notification(
 ) -> BroadcastResult:
     if plan is None:
         plan = build_standard_notification_plan(
-            get_user_data_db().get_users(), now().date()
+            get_user_data_db().get_users(), week_started_on(now())
         )
 
     return delivery.send_standard(bot, plan)
@@ -43,10 +46,22 @@ def send_custom_notification(
     text: str,
     admin_name: str,
     group_id: int,
+    audience: CustomNotificationAudience = CustomNotificationAudience.ALL,
 ) -> BroadcastResult:
-    users = get_user_data_db().get_users(group_id)
+    users = filter_custom_notification_users(
+        get_user_data_db().get_users(group_id), audience, now()
+    )
     recipient_count = len(group_user_accounts(users))
-    messages = build_custom_notification_messages(text, admin_name, users)
+    messages = build_custom_notification_messages(
+        text,
+        admin_name,
+        users,
+        recipient_title=(
+            "Для всех участников"
+            if audience == CustomNotificationAudience.ALL
+            else f"Получатели — {custom_notification_audience_title(audience)}"
+        ),
+    )
     return delivery.send_group(bot, group_id, messages, recipient_count)
 
 
@@ -55,10 +70,13 @@ def send_custom_private_notification(
     text: str,
     admin_name: str,
     group_id: int | None = None,
+    audience: CustomNotificationAudience = CustomNotificationAudience.ALL,
 ) -> BroadcastResult:
     clean_text = validate_custom_notification_text(text)
     message = custom_notification_header(clean_text, admin_name)
-    users = get_user_data_db().get_users(group_id)
+    users = filter_custom_notification_users(
+        get_user_data_db().get_users(group_id), audience, now()
+    )
     grouped_users = group_user_accounts(users)
     return delivery.send_private(bot, message, grouped_users)
 
@@ -69,7 +87,7 @@ def confirm_standard_notification(
     user_id, chat_id, message_id = get_ids(callback_query)
     group = get_active_admin_group(user_id)
     plan = build_standard_notification_plan(
-        get_user_data_db().get_users(group.group_id), now().date()
+        get_user_data_db().get_users(group.group_id), week_started_on(now())
     )
     bot.set_state(user_id, NotificationStates.standard_confirmation)
     bot.add_data(
@@ -90,10 +108,10 @@ def confirm_standard_notification(
         keyboard.row(Button("⬅️ Назад", "admins/notifications").inline())
     bot.edit_message_text(
         "<b>Попросить обновить данные?</b>\n\n"
-        "Уведомление получат пользователи, у которых не все данные "
-        "обновлены сегодня.\n\n"
+        "Уведомление получат пользователи, которые не обновляли ни один "
+        "ресурс с 03:00 понедельника.\n\n"
         f"Получателей: <b>{len(plan.recipients)}</b>\n"
-        f"Уже обновили данные: <b>{plan.skipped}</b>",
+        f"Уже обновили хотя бы один ресурс: <b>{plan.skipped}</b>",
         chat_id,
         message_id,
         reply_markup=keyboard,
@@ -148,12 +166,48 @@ def request_custom_notification(
     keyboard = InlineKeyboardMarkup(row_width=1)
     keyboard.add(Button("✖️ Отмена", "admins/notifications").inline())
     bot.edit_message_text(
-        "Введите текст уведомления. После этого можно будет выбрать отправку "
-        "в группу с упоминаниями или личным сообщением от бота.",
+        "Введите текст уведомления. После этого выберите получателей и способ "
+        "отправки: в группу с упоминаниями или личным сообщением от бота.",
         chat_id,
         message_id,
         reply_markup=keyboard,
     )
+
+
+def _custom_audience_keyboard() -> InlineKeyboardMarkup:
+    keyboard = InlineKeyboardMarkup(row_width=1)
+    keyboard.add(
+        Button(
+            "👥 Всем",
+            "admins/notifications/custom_audience/all",
+        ).inline(),
+        Button(
+            "📅 Не обновлявшим сегодня",
+            "admins/notifications/custom_audience/today",
+        ).inline(),
+        Button(
+            "🗓 Не обновлявшим с понедельника",
+            "admins/notifications/custom_audience/monday",
+        ).inline(),
+        Button("✖️ Отмена", "admins/notifications").inline(),
+    )
+    return keyboard
+
+
+def _custom_delivery_keyboard() -> InlineKeyboardMarkup:
+    keyboard = InlineKeyboardMarkup()
+    keyboard.row(
+        Button(
+            "👥 В группу",
+            "admins/notifications/send_custom_group",
+        ).inline(),
+        Button(
+            "✉️ Лично",
+            "admins/notifications/send_custom_private",
+        ).inline(),
+    )
+    keyboard.row(Button("✖️ Отмена", "admins/notifications").inline())
+    return keyboard
 
 
 def receive_custom_notification_text(message: Message, bot: TeleBot) -> None:
@@ -187,33 +241,65 @@ def receive_custom_notification_text(message: Message, bot: TeleBot) -> None:
         len(text),
     )
     admin_name = get_username(message)
-    bot.set_state(user_id, NotificationStates.custom_confirmation)
+    bot.set_state(user_id, NotificationStates.custom_audience)
     bot.add_data(user_id, notification_text=text, admin_name=admin_name)
-    keyboard = InlineKeyboardMarkup()
-    keyboard.row(
-        Button(
-            "👥 В группу",
-            "admins/notifications/send_custom_group",
-        ).inline(),
-        Button(
-            "✉️ Лично",
-            "admins/notifications/send_custom_private",
-        ).inline(),
-    )
-    keyboard.row(Button("✖️ Отмена", "admins/notifications").inline())
     preview = (
         "<b>Предпросмотр:</b>\n\n"
         f"{formatting.escape_html(text)}\n\n"
-        "Выберите способ отправки."
+        "Кому отправить уведомление?"
     )
-    bot.send_message(chat_id, preview, reply_markup=keyboard)
+    bot.send_message(
+        chat_id,
+        preview,
+        reply_markup=_custom_audience_keyboard(),
+    )
 
 
-def _get_custom_notification_data(bot: TeleBot, user_id: int) -> tuple[str, str]:
+def select_custom_notification_audience(
+    callback_query: CallbackQuery, bot: TeleBot
+) -> None:
+    user_id, chat_id, message_id = get_ids(callback_query)
+    try:
+        audience = CustomNotificationAudience(
+            callback_query.data.rsplit("/", 1)[-1]
+        )
+    except ValueError:
+        bot.answer_callback_query(
+            callback_query.id,
+            "Не удалось выбрать получателей",
+            show_alert=True,
+        )
+        return
+
+    bot.set_state(user_id, NotificationStates.custom_confirmation)
+    bot.add_data(user_id, notification_audience=audience.value)
+    with bot.retrieve_data(user_id) as data:
+        text = data.get("notification_text", "")
+    bot.edit_message_text(
+        "<b>Предпросмотр:</b>\n\n"
+        f"{formatting.escape_html(text)}\n\n"
+        "Получатели: "
+        f"<b>{custom_notification_audience_title(audience)}</b>.\n\n"
+        "Выберите способ отправки.",
+        chat_id,
+        message_id,
+        reply_markup=_custom_delivery_keyboard(),
+    )
+
+
+def _get_custom_notification_data(
+    bot: TeleBot, user_id: int
+) -> tuple[str, str, CustomNotificationAudience]:
     with bot.retrieve_data(user_id) as data:
         return (
             data.get("notification_text", ""),
             data.get("admin_name", "Администратор"),
+            CustomNotificationAudience(
+                data.get(
+                    "notification_audience",
+                    CustomNotificationAudience.ALL.value,
+                )
+            ),
         )
 
 
@@ -221,7 +307,7 @@ def send_custom_group_notification_confirmed(
     callback_query: CallbackQuery, bot: TeleBot
 ) -> None:
     user_id = get_ids(callback_query)[0]
-    text, admin_name = _get_custom_notification_data(bot, user_id)
+    text, admin_name, audience = _get_custom_notification_data(bot, user_id)
     logger.info(
         "Custom group notification confirmed admin_id=%s username=%s length=%d",
         user_id,
@@ -238,7 +324,7 @@ def send_custom_group_notification_confirmed(
     try:
         group = get_active_admin_group(user_id)
         result = send_custom_notification(
-            bot, text, admin_name, group.group_id
+            bot, text, admin_name, group.group_id, audience
         )
     except RuntimeError:
         logger.warning(
@@ -268,7 +354,7 @@ def send_custom_private_notification_confirmed(
     callback_query: CallbackQuery, bot: TeleBot
 ) -> None:
     user_id = get_ids(callback_query)[0]
-    text, admin_name = _get_custom_notification_data(bot, user_id)
+    text, admin_name, audience = _get_custom_notification_data(bot, user_id)
     logger.info(
         "Custom private notification confirmed admin_id=%s username=%s length=%d",
         user_id,
@@ -283,7 +369,7 @@ def send_custom_private_notification_confirmed(
     )
     group = get_active_admin_group(user_id)
     result = send_custom_private_notification(
-        bot, text, admin_name, group.group_id
+        bot, text, admin_name, group.group_id, audience
     )
     bot.answer_callback_query(
         callback_query.id,
