@@ -4,7 +4,11 @@ from telebot.types import CallbackQuery, InlineKeyboardMarkup
 
 from db.initializer import get_admins_db
 from logger.app_logger import logger
-from tg.admins.common import get_active_admin_group
+from tg.admins.common import (
+    AdminAccessError,
+    get_active_admin_group,
+    require_admin_access,
+)
 from tg.navigation import home
 from tg.utils import Button, empty_filter, get_ids, get_user_link, get_username
 
@@ -56,12 +60,18 @@ def del_admin_confirmation(callback_query: CallbackQuery, bot: TeleBot):
     requester_id = callback_query.from_user.id
     with bot.retrieve_data(requester_id) as data:
         group_id = data.get("admin_group_id")
-    admin = (
-        None
-        if not isinstance(group_id, int)
-        or not get_admins_db().is_admin(requester_id, group_id)
-        else get_admins_db().get_admin(int(callback_query.data), group_id)
-    )
+    try:
+        if not isinstance(group_id, int):
+            raise AdminAccessError("Не выбран клан")
+        require_admin_access(requester_id, group_id, get_admins_db())
+    except AdminAccessError:
+        bot.delete_state(requester_id)
+        bot.answer_callback_query(
+            callback_query.id, "Нет прав администратора выбранного клана"
+        )
+        home(callback_query, bot)
+        return
+    admin = get_admins_db().get_admin(int(callback_query.data), group_id)
     if admin is None:
         logger.warning(
             "Admin removal target not found requester_id=%s username=%s target=%s",
@@ -93,12 +103,18 @@ def del_admin_approved(callback_query: CallbackQuery, bot: TeleBot):
     with bot.retrieve_data(requester_id) as data:
         group_id = data.get("admin_group_id")
         group_title = data.get("admin_group_title")
-    admin = (
-        None
-        if not isinstance(group_id, int)
-        or not get_admins_db().is_admin(requester_id, group_id)
-        else get_admins_db().get_admin(admin_id, group_id)
-    )
+    try:
+        if not isinstance(group_id, int):
+            raise AdminAccessError("Не выбран клан")
+        require_admin_access(requester_id, group_id, get_admins_db())
+    except AdminAccessError:
+        bot.delete_state(requester_id)
+        bot.answer_callback_query(
+            callback_query.id, "Нет прав администратора выбранного клана"
+        )
+        home(callback_query, bot)
+        return
+    admin = get_admins_db().get_admin(admin_id, group_id)
     if admin is None:
         logger.warning(
             "Approved admin removal target not found requester_id=%s username=%s target_id=%s",

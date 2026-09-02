@@ -100,6 +100,9 @@ class RecordingBot:
     def add_data(self, user_id, **kwargs):
         self.data.update(kwargs)
 
+    def retrieve_data(self, user_id):
+        return nullcontext(self.data)
+
 
 class RenameClanBot:
     def __init__(self):
@@ -272,8 +275,17 @@ def test_add_admins_can_be_cancelled_and_removes_reply_keyboard(monkeypatch):
     assert homes == [message]
 
 
-def test_selecting_admins_removes_reply_keyboard_before_confirmation():
+def test_selecting_admins_removes_reply_keyboard_before_confirmation(monkeypatch):
+    monkeypatch.setattr(
+        "tg.admins.add_admin.get_admins_db",
+        lambda: type(
+            "Admins",
+            (),
+            {"is_admin": lambda _, user_id, group_id: True},
+        )(),
+    )
     bot = RecordingBot()
+    bot.data["admin_group_id"] = -100123
     message = make_message()
     message.users_shared = UsersShared(
         request_id=0,
@@ -286,6 +298,31 @@ def test_selecting_admins_removes_reply_keyboard_before_confirmation():
     assert bot.sent[1][1] == (
         'Добавить администраторов?\n<a href="tg://user?id=101">candidate</a>'
     )
+
+
+def test_revoked_admin_cannot_continue_selecting_admins(monkeypatch):
+    monkeypatch.setattr(
+        "tg.admins.add_admin.get_admins_db",
+        lambda: type(
+            "Admins",
+            (),
+            {"is_admin": lambda _, user_id, group_id: False},
+        )(),
+    )
+    bot = RecordingBot()
+    bot.data["admin_group_id"] = -100123
+    message = make_message()
+    message.users_shared = UsersShared(
+        request_id=0,
+        users=[SharedUser(user_id=101, username="candidate")],
+    )
+
+    add_admins_confirmation(message, bot)
+
+    assert bot.deleted_states == [42]
+    assert len(bot.sent) == 1
+    assert bot.sent[0][1] == "Нет прав администратора выбранного клана."
+    assert isinstance(bot.sent[0][2]["reply_markup"], ReplyKeyboardRemove)
 
 
 def test_delete_admin_finishes_when_private_notification_fails(monkeypatch):

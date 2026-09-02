@@ -21,7 +21,11 @@ from tg.admins.notification import (
 from tg.admins.notification import delivery
 from tg.admins.notification.handlers import register_handlers
 from tg.admins.notification.views import notifications_menu
-from tg.admins.common import get_active_admin_group
+from tg.admins.common import (
+    AdminAccessError,
+    get_active_admin_group,
+    require_admin_access,
+)
 from tg.clans import refresh_clan_accounts
 from tg.utils import (
     Button,
@@ -132,11 +136,19 @@ def send_standard_notification_confirmed(
     with bot.retrieve_data(user_id) as data:
         plan = data.get("standard_notification_plan")
         group_id = data.get("admin_group_id")
-    if (
-        not isinstance(plan, StandardNotificationPlan)
-        or not isinstance(group_id, int)
-        or not get_admins_db().is_admin(user_id, group_id)
-    ):
+    try:
+        if not isinstance(group_id, int):
+            raise AdminAccessError("Не выбран клан")
+        require_admin_access(user_id, group_id, get_admins_db())
+    except AdminAccessError:
+        bot.delete_state(user_id)
+        bot.answer_callback_query(
+            callback_query.id,
+            "Нет прав администратора выбранного клана",
+            show_alert=True,
+        )
+        return
+    if not isinstance(plan, StandardNotificationPlan):
         bot.answer_callback_query(
             callback_query.id,
             "Не удалось найти список получателей",
@@ -169,7 +181,9 @@ def request_custom_notification(
     callback_query: CallbackQuery, bot: TeleBot
 ) -> None:
     user_id, chat_id, message_id = get_ids(callback_query)
+    group = get_active_admin_group(user_id)
     bot.set_state(user_id, NotificationStates.custom_text)
+    bot.add_data(user_id, admin_group_id=group.group_id)
     keyboard = InlineKeyboardMarkup(row_width=1)
     keyboard.add(Button("✖️ Отмена", "admins/notifications").inline())
     bot.edit_message_text(
@@ -218,6 +232,19 @@ def _custom_delivery_keyboard() -> InlineKeyboardMarkup:
 
 
 def receive_custom_notification_text(message: Message, bot: TeleBot) -> None:
+    user_id, chat_id = get_ids(message)[:2]
+    with bot.retrieve_data(user_id) as data:
+        group_id = data.get("admin_group_id")
+    try:
+        if not isinstance(group_id, int):
+            raise AdminAccessError("Не выбран клан")
+        require_admin_access(user_id, group_id, get_admins_db())
+    except AdminAccessError:
+        bot.delete_state(user_id)
+        bot.send_message(
+            chat_id, "Нет прав администратора выбранного клана."
+        )
+        return
     text = (message.text or "").strip()
     if not text:
         logger.info(
@@ -240,7 +267,6 @@ def receive_custom_notification_text(message: Message, bot: TeleBot) -> None:
         )
         return
 
-    user_id, chat_id = get_ids(message)[:2]
     logger.info(
         "Custom notification draft accepted admin_id=%s username=%s length=%d",
         user_id,
@@ -266,6 +292,20 @@ def select_custom_notification_audience(
     callback_query: CallbackQuery, bot: TeleBot
 ) -> None:
     user_id, chat_id, message_id = get_ids(callback_query)
+    with bot.retrieve_data(user_id) as data:
+        group_id = data.get("admin_group_id")
+    try:
+        if not isinstance(group_id, int):
+            raise AdminAccessError("Не выбран клан")
+        require_admin_access(user_id, group_id, get_admins_db())
+    except AdminAccessError:
+        bot.delete_state(user_id)
+        bot.answer_callback_query(
+            callback_query.id,
+            "Нет прав администратора выбранного клана",
+            show_alert=True,
+        )
+        return
     try:
         audience = CustomNotificationAudience(
             callback_query.data.rsplit("/", 1)[-1]
@@ -296,8 +336,12 @@ def select_custom_notification_audience(
 
 def _get_custom_notification_data(
     bot: TeleBot, user_id: int
-) -> tuple[str, str, CustomNotificationAudience]:
+) -> tuple[str, str, CustomNotificationAudience, int]:
     with bot.retrieve_data(user_id) as data:
+        group_id = data.get("admin_group_id")
+        if not isinstance(group_id, int):
+            raise AdminAccessError("Не выбран клан")
+        require_admin_access(user_id, group_id, get_admins_db())
         return (
             data.get("notification_text", ""),
             data.get("admin_name", "Администратор"),
@@ -307,6 +351,7 @@ def _get_custom_notification_data(
                     CustomNotificationAudience.ALL.value,
                 )
             ),
+            group_id,
         )
 
 
@@ -314,7 +359,18 @@ def send_custom_group_notification_confirmed(
     callback_query: CallbackQuery, bot: TeleBot
 ) -> None:
     user_id = get_ids(callback_query)[0]
-    text, admin_name, audience = _get_custom_notification_data(bot, user_id)
+    try:
+        text, admin_name, audience, group_id = _get_custom_notification_data(
+            bot, user_id
+        )
+    except AdminAccessError:
+        bot.delete_state(user_id)
+        bot.answer_callback_query(
+            callback_query.id,
+            "Нет прав администратора выбранного клана",
+            show_alert=True,
+        )
+        return
     logger.info(
         "Custom group notification confirmed admin_id=%s username=%s length=%d",
         user_id,
@@ -329,9 +385,8 @@ def send_custom_group_notification_confirmed(
     )
 
     try:
-        group = get_active_admin_group(user_id)
         result = send_custom_notification(
-            bot, text, admin_name, group.group_id, audience
+            bot, text, admin_name, group_id, audience
         )
     except RuntimeError:
         logger.warning(
@@ -361,7 +416,18 @@ def send_custom_private_notification_confirmed(
     callback_query: CallbackQuery, bot: TeleBot
 ) -> None:
     user_id = get_ids(callback_query)[0]
-    text, admin_name, audience = _get_custom_notification_data(bot, user_id)
+    try:
+        text, admin_name, audience, group_id = _get_custom_notification_data(
+            bot, user_id
+        )
+    except AdminAccessError:
+        bot.delete_state(user_id)
+        bot.answer_callback_query(
+            callback_query.id,
+            "Нет прав администратора выбранного клана",
+            show_alert=True,
+        )
+        return
     logger.info(
         "Custom private notification confirmed admin_id=%s username=%s length=%d",
         user_id,
@@ -374,9 +440,8 @@ def send_custom_private_notification_confirmed(
         chat_id,
         message_id,
     )
-    group = get_active_admin_group(user_id)
     result = send_custom_private_notification(
-        bot, text, admin_name, group.group_id, audience
+        bot, text, admin_name, group_id, audience
     )
     bot.answer_callback_query(
         callback_query.id,

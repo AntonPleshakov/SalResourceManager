@@ -12,11 +12,15 @@ from telebot.types import (
     InputRichMessage,
 )
 
-from db.initializer import get_user_data_db
+from db.initializer import get_admins_db, get_user_data_db
 from logger.app_logger import logger
 from reports.game_data import GameDataReport
 from resources.user_data import UserData
-from tg.admins.common import get_active_admin_group
+from tg.admins.common import (
+    AdminAccessError,
+    get_active_admin_group,
+    require_admin_access,
+)
 from tg.clans import refresh_clan_accounts
 from tg.metrics import APPLICATION_METRICS
 from tg.utils import Button, empty_filter, get_ids, get_username
@@ -125,10 +129,13 @@ def build_game_data_message(
     return InputRichMessage(html=html, skip_entity_detection=True)
 
 
-def _preview_keyboard() -> InlineKeyboardMarkup:
+def _preview_keyboard(group_id: int) -> InlineKeyboardMarkup:
     keyboard = InlineKeyboardMarkup(row_width=1)
     keyboard.add(
-        Button("📤 Экспортировать в Google", _GOOGLE_EXPORT_BUTTON).inline()
+        Button(
+            "📤 Экспортировать в Google",
+            f"{_GOOGLE_EXPORT_BUTTON}/{group_id}",
+        ).inline()
     )
     keyboard.add(Button("⬅️ Назад в админ-панель", "admins").inline())
     return keyboard
@@ -175,7 +182,7 @@ def show_game_data(callback_query: CallbackQuery, bot: TeleBot) -> None:
         chat_id=chat_id,
         message_id=message_id,
         rich_message=rich_message,
-        reply_markup=_preview_keyboard(),
+        reply_markup=_preview_keyboard(group.group_id),
     )
 
 
@@ -189,10 +196,18 @@ def export_game_data(callback_query: CallbackQuery, bot: TeleBot) -> None:
     started_at = monotonic()
     result = "failed"
     try:
-        group = get_active_admin_group(user_id)
+        group_id = int(callback_query.data.rsplit("/", maxsplit=1)[-1])
+        require_admin_access(user_id, group_id, get_admins_db())
         database = get_user_data_db()
-        refresh_clan_accounts(bot, group.group_id, database)
-        url = GameDataReport().export(database.get_clan_users(group.group_id))
+        refresh_clan_accounts(bot, group_id, database)
+        url = GameDataReport().export(database.get_clan_users(group_id))
+    except (AdminAccessError, ValueError):
+        bot.answer_callback_query(
+            callback_query.id,
+            "Нет прав администратора выбранного клана.",
+            show_alert=True,
+        )
+        return
     except Exception as error:
         logger.exception(
             "Unable to export game data report for user_id=%s: %s",
@@ -239,7 +254,7 @@ def register_handlers(bot: TeleBot) -> None:
     bot.register_callback_query_handler(
         export_game_data,
         func=empty_filter,
-        button=_GOOGLE_EXPORT_BUTTON,
+        button=rf"{_GOOGLE_EXPORT_BUTTON}/-?[0-9]+",
         is_private=True,
         is_admin=True,
         pass_bot=True,

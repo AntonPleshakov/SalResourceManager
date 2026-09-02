@@ -116,11 +116,13 @@ def test_administrator_permissions_and_active_clan_are_scoped(tmp_path):
     admins.del_admin(42, -100002)
     assert admins.is_admin(42)
     assert not admins.is_admin(42, -100002)
+    assert admins.get_active_group(42) is None
+    admins.select_group(42, -100001)
     assert admins.get_active_group(42) == AccessGroup(-100001, "Alpha")
     connection.close()
 
 
-def test_active_clan_falls_back_to_an_administered_clan(tmp_path):
+def test_active_clan_does_not_fall_back_to_an_administered_clan(tmp_path):
     connection = Database(tmp_path / "database.db")
     groups = AccessGroupDB(connection)
     groups.add_group(-100001, "Alpha")
@@ -134,7 +136,7 @@ def test_active_clan_falls_back_to_an_administered_clan(tmp_path):
         )
     )
 
-    assert admins.get_active_group(42) == AccessGroup(-100001, "Alpha")
+    assert admins.get_active_group(42) is None
     connection.close()
 
 

@@ -4,7 +4,11 @@ from telebot.types import CallbackQuery, InlineKeyboardMarkup, Message
 
 from db.initializer import get_access_group_db, get_admins_db
 from logger.app_logger import logger
-from tg.admins.common import get_active_admin_group
+from tg.admins.common import (
+    AdminAccessError,
+    get_active_admin_group,
+    require_admin_access,
+)
 from tg.utils import Button, empty_filter, get_ids, get_username
 
 
@@ -43,9 +47,11 @@ def rename_clan(message: Message, bot: TeleBot) -> None:
     with bot.retrieve_data(user_id) as data:
         group_id = data.get("rename_clan_group_id")
 
-    if not isinstance(group_id, int) or not get_admins_db().is_admin(
-        user_id, group_id
-    ):
+    try:
+        if not isinstance(group_id, int):
+            raise AdminAccessError("Не выбран клан")
+        require_admin_access(user_id, group_id, get_admins_db())
+    except AdminAccessError:
         bot.delete_state(user_id)
         bot.send_message(
             chat_id,

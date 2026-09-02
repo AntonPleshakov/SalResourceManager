@@ -13,7 +13,11 @@ from telebot.types import (
 from db.admins import Admin
 from db.initializer import get_admins_db
 from logger.app_logger import logger
-from tg.admins.common import get_active_admin_group
+from tg.admins.common import (
+    AdminAccessError,
+    get_active_admin_group,
+    require_admin_access,
+)
 from tg.clans import is_group_member
 from tg.navigation import home
 from tg.utils import Button, empty_filter, get_ids, get_user_link, get_username
@@ -72,11 +76,25 @@ def cancel_add_admins(message: Message, bot: TeleBot):
 
 
 def add_admins_confirmation(message: Message, bot: TeleBot):
+    user_id, chat_id, message_id = get_ids(message)
+    with bot.retrieve_data(user_id) as data:
+        group_id = data.get("admin_group_id")
+    try:
+        if not isinstance(group_id, int):
+            raise AdminAccessError("Не выбран клан")
+        require_admin_access(user_id, group_id, get_admins_db())
+    except AdminAccessError:
+        bot.delete_state(user_id)
+        bot.send_message(
+            chat_id,
+            "Нет прав администратора выбранного клана.",
+            reply_markup=ReplyKeyboardRemove(),
+        )
+        return
     new_admins = [
         Admin(user.username or str(user.user_id), user.user_id)
         for user in message.users_shared.users
     ]
-    user_id, chat_id, message_id = get_ids(message)
     logger.info(
         "Admin selection received requester_id=%s username=%s selected=%d",
         user_id,
@@ -112,9 +130,12 @@ def add_admins_approved(callback_query: CallbackQuery, bot: TeleBot):
     with bot.retrieve_data(user_id) as data:
         new_admins = data.pop("new_admins")
         group_id = data.get("admin_group_id")
-    if not isinstance(group_id, int) or not get_admins_db().is_admin(
-        user_id, group_id
-    ):
+    try:
+        if not isinstance(group_id, int):
+            raise AdminAccessError("Не выбран клан")
+        require_admin_access(user_id, group_id, get_admins_db())
+    except AdminAccessError:
+        bot.delete_state(user_id)
         bot.answer_callback_query(
             callback_query.id,
             "Нет прав администратора выбранного клана",

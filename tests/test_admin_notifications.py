@@ -1,6 +1,7 @@
 from contextlib import nullcontext
 from datetime import date, datetime, timezone
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from telebot.types import CallbackQuery, Chat, Message, User
@@ -29,6 +30,14 @@ from tg.admins.notifications import (
     select_custom_notification_audience,
 )
 from tg.admins.notification import filter_custom_notification_users
+
+
+@pytest.fixture(autouse=True)
+def allow_admin_access(monkeypatch):
+    monkeypatch.setattr(
+        "tg.admins.notifications.get_admins_db",
+        lambda: SimpleNamespace(is_admin=lambda user_id, group_id: True),
+    )
 
 
 def make_callback(data: str = "admins/notifications/standard") -> CallbackQuery:
@@ -353,6 +362,7 @@ def test_custom_notifications_show_progress_before_sending(monkeypatch):
             "notification_text": "Текст",
             "admin_name": "Admin",
             "notification_audience": "monday",
+            "admin_group_id": -100123,
         }
     )
     send_custom_group_notification_confirmed(
@@ -363,6 +373,7 @@ def test_custom_notifications_show_progress_before_sending(monkeypatch):
             "notification_text": "Текст",
             "admin_name": "Admin",
             "notification_audience": "today",
+            "admin_group_id": -100123,
         }
     )
     send_custom_private_notification_confirmed(
@@ -389,9 +400,44 @@ def test_custom_notifications_show_progress_before_sending(monkeypatch):
     ]
 
 
+def test_revoked_admin_cannot_send_pinned_custom_notification(monkeypatch):
+    sent = []
+    monkeypatch.setattr(
+        "tg.admins.notifications.get_admins_db",
+        lambda: SimpleNamespace(is_admin=lambda user_id, group_id: False),
+    )
+    monkeypatch.setattr(
+        "tg.admins.notifications.send_custom_notification",
+        lambda *args: sent.append(args),
+    )
+    bot = NotificationFlowBot(
+        {
+            "notification_text": "Текст",
+            "admin_name": "Admin",
+            "notification_audience": "all",
+            "admin_group_id": -100123,
+        }
+    )
+
+    send_custom_group_notification_confirmed(
+        make_callback("admins/notifications/send_custom_group"), bot
+    )
+
+    assert sent == []
+    assert bot.deleted_states == [42]
+    assert bot.answers[-1][0][1] == (
+        "Нет прав администратора выбранного клана"
+    )
+    assert bot.answers[-1][1]["show_alert"] is True
+
+
 def test_custom_notification_audience_can_be_selected():
     bot = NotificationFlowBot(
-        {"notification_text": "Текст", "admin_name": "Admin"}
+        {
+            "notification_text": "Текст",
+            "admin_name": "Admin",
+            "admin_group_id": -100123,
+        }
     )
 
     select_custom_notification_audience(
@@ -419,7 +465,7 @@ def test_custom_notification_prompts_for_audience_after_text():
 
     class FakeBot(NotificationFlowBot):
         def __init__(self):
-            super().__init__({})
+            super().__init__({"admin_group_id": -100123})
             self.sent = []
 
         def send_message(self, *args, **kwargs):

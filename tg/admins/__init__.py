@@ -12,6 +12,7 @@ from tg.admins import (
     rename_clan,
     resource_status,
 )
+from tg.admins.common import get_active_admin_group
 from tg.utils import Button, empty_filter, get_ids, get_user_link, get_username
 
 
@@ -25,15 +26,27 @@ def admins_main_menu(callback_query: CallbackQuery, bot: TeleBot):
     bot.delete_state(user_id)
     keyboard = InlineKeyboardMarkup()
     admins = get_admins_db()
-    group = admins.get_active_group(user_id)
+    try:
+        group = get_active_admin_group(user_id, admins)
+    except ValueError:
+        group = None
     if group is None:
+        groups = admins.get_clans(user_id)
+        if groups:
+            keyboard.row(
+                Button("🏰 Выбрать клан", "admins/clans").inline()
+            )
         keyboard.row(
             Button("➕ Добавить клан", "admins/register_group").inline()
         )
         keyboard.row(Button("⬅️ Назад в меню", "home").inline())
         bot.edit_message_text(
             "<b>Админ-панель</b>\n\n"
-            "Сначала зарегистрируйте группу клана.",
+            + (
+                "Выберите клан для административных действий."
+                if groups
+                else "Сначала зарегистрируйте группу клана."
+            ),
             chat_id,
             message_id,
             reply_markup=keyboard,
@@ -68,8 +81,8 @@ def admins_main_menu(callback_query: CallbackQuery, bot: TeleBot):
 def admins_list(callback_query: CallbackQuery, bot: TeleBot):
     user_id = callback_query.from_user.id
     admins_db = get_admins_db()
-    group = admins_db.get_active_group(user_id)
-    admins = [] if group is None else admins_db.get_admins(group.group_id)
+    group = get_active_admin_group(user_id, admins_db)
+    admins = admins_db.get_admins(group.group_id)
     logger.debug(
         "Showing admin list to user_id=%s username=%s count=%d",
         callback_query.from_user.id,

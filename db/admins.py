@@ -102,10 +102,9 @@ class AdminsDB(DatabaseRepository):
         row = self._database.fetch_one(
             "SELECT c.group_id, c.title FROM admins a "
             "JOIN admin_clans ac ON ac.user_id = a.user_id "
-            "JOIN clans c ON c.group_id = ac.group_id "
-            "WHERE a.user_id = ? "
-            "ORDER BY CASE WHEN ac.group_id = a.active_group_id "
-            "THEN 0 ELSE 1 END, ac.group_id LIMIT 1",
+            "AND ac.group_id = a.active_group_id "
+            "JOIN clans c ON c.group_id = a.active_group_id "
+            "WHERE a.user_id = ?",
             (int(user_id),),
         )
         return None if row is None else AccessGroup(int(row[0]), str(row[1]))
@@ -145,9 +144,9 @@ class AdminsDB(DatabaseRepository):
                 connection.execute("DELETE FROM admins WHERE user_id = ?", (user_id,))
             else:
                 connection.execute(
-                    "UPDATE admins SET active_group_id = ? "
+                    "UPDATE admins SET active_group_id = NULL "
                     "WHERE user_id = ? AND active_group_id = ?",
-                    (int(remaining[0]), int(user_id), int(group_id)),
+                    (int(user_id), int(group_id)),
                 )
 
         self._database.run_in_transaction(delete)

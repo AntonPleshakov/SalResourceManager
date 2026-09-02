@@ -162,6 +162,7 @@ def test_admin_menu_contains_game_data_report(monkeypatch):
                 "get_active_group": lambda _, user_id: AccessGroup(
                     -100123, "Test clan"
                 ),
+                "is_admin": lambda _, user_id, group_id: True,
                 "get_clans": lambda _, user_id: [
                     AccessGroup(-100123, "Test clan")
                 ],
@@ -209,6 +210,30 @@ def test_admin_can_switch_active_clan(tmp_path, monkeypatch):
 
     assert admins.get_active_group(42) == AccessGroup(-100002, "Beta")
     assert "Клан: <b>Beta</b>" in bot.edits[-1][0][0]
+    connection.close()
+
+
+def test_admin_menu_requires_selection_after_active_access_is_revoked(
+    tmp_path, monkeypatch
+):
+    connection = Database(tmp_path / "database.db")
+    groups = AccessGroupDB(connection)
+    groups.add_group(-100001, "Alpha")
+    groups.add_group(-100002, "Beta")
+    admins = AdminsDB(connection)
+    admins.add_admin(Admin("admin", 42), -100001)
+    admins.add_admin(Admin("admin", 42), -100002)
+    admins.select_group(42, -100002)
+    admins.del_admin(42, -100002)
+    monkeypatch.setattr("tg.admins.get_admins_db", lambda: admins)
+    bot = FakeBot()
+
+    admins_main_menu(make_callback("admins"), bot)
+
+    buttons = callback_data(bot.edits[-1][1]["reply_markup"])
+    assert "admins/clans" in buttons
+    assert "admins/game_data" not in buttons
+    assert "Выберите клан для административных действий" in bot.edits[-1][0][0]
     connection.close()
 
 
@@ -277,7 +302,7 @@ def test_game_data_callback_shows_table_before_export(monkeypatch):
     assert "<table bordered striped compact>" in rich_message.html
     assert "player" in rich_message.html
     assert callback_data(bot.edits[0][1]["reply_markup"]) == [
-        "admins/game_data/google",
+        "admins/game_data/google/-100123",
         "admins",
     ]
 
@@ -304,8 +329,12 @@ def test_google_export_callback_exports_and_shows_url(monkeypatch):
         )(),
     )
     monkeypatch.setattr(
-        "tg.admins.game_data.get_active_admin_group",
-        lambda user_id: AccessGroup(-100123, "Test clan"),
+        "tg.admins.game_data.get_admins_db",
+        lambda: type(
+            "Admins",
+            (),
+            {"is_admin": lambda _, user_id, group_id: True},
+        )(),
     )
     registry = CollectorRegistry()
     monkeypatch.setattr(
@@ -315,7 +344,7 @@ def test_google_export_callback_exports_and_shows_url(monkeypatch):
     )
     bot = FakeBot()
 
-    export_game_data(make_callback("admins/game_data/google"), bot)
+    export_game_data(make_callback("admins/game_data/google/-100123"), bot)
 
     assert exported == users
     markup = bot.markup_edits[0][1]["reply_markup"]
@@ -344,14 +373,49 @@ def test_google_export_callback_reports_failure(monkeypatch):
         )(),
     )
     monkeypatch.setattr(
-        "tg.admins.game_data.get_active_admin_group",
-        lambda user_id: AccessGroup(-100123, "Test clan"),
+        "tg.admins.game_data.get_admins_db",
+        lambda: type(
+            "Admins",
+            (),
+            {"is_admin": lambda _, user_id, group_id: True},
+        )(),
     )
     bot = FakeBot()
 
-    export_game_data(make_callback("admins/game_data/google"), bot)
+    export_game_data(make_callback("admins/game_data/google/-100123"), bot)
 
     assert bot.markup_edits == []
     assert bot.answers[0][0][0] == "callback-1"
     assert "Не удалось экспортировать" in bot.answers[0][0][1]
     assert bot.answers[0][1]["show_alert"]
+
+
+def test_google_export_rechecks_access_to_pinned_clan(monkeypatch):
+    exported = []
+
+    class FakeReport:
+        def export(self, users):
+            exported.extend(users)
+            return "https://docs.google.test/report"
+
+    monkeypatch.setattr("tg.admins.game_data.GameDataReport", FakeReport)
+    monkeypatch.setattr(
+        "tg.admins.game_data.get_admins_db",
+        lambda: type(
+            "Admins",
+            (),
+            {"is_admin": lambda _, user_id, group_id: False},
+        )(),
+    )
+    bot = FakeBot()
+
+    export_game_data(
+        make_callback("admins/game_data/google/-100123"), bot
+    )
+
+    assert exported == []
+    assert bot.markup_edits == []
+    assert bot.answers[-1][0][1] == (
+        "Нет прав администратора выбранного клана."
+    )
+    assert bot.answers[-1][1]["show_alert"] is True
