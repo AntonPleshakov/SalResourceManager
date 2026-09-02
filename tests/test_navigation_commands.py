@@ -102,7 +102,7 @@ def prepare_home(monkeypatch):
         lambda: type(
             "Admins",
             (),
-            {"is_admin": lambda self, user_id: False},
+            {"has_admin_access": lambda self, user_id: False},
         )(),
     )
     monkeypatch.setattr(
@@ -260,7 +260,7 @@ def test_monday_reminders_can_be_toggled_from_home_menu(monkeypatch):
     monkeypatch.setattr("tg.navigation.get_user_data_db", lambda: database)
     monkeypatch.setattr(
         "tg.navigation.get_admins_db",
-        lambda: SimpleNamespace(is_admin=lambda _user_id: False),
+        lambda: SimpleNamespace(has_admin_access=lambda _user_id: False),
     )
     bot = FakeBot()
 

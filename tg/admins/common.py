@@ -13,7 +13,7 @@ def require_admin_access(
     admins: AdminsDB | None = None,
 ) -> None:
     database = admins or get_admins_db()
-    if not database.is_admin(user_id, group_id):
+    if not database.is_clan_admin(user_id, group_id):
         raise AdminAccessError("Нет прав администратора выбранного клана")
 
 

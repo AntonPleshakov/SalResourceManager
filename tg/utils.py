@@ -3,7 +3,6 @@ from typing import Dict, Iterable, List, Tuple, Union
 
 from telebot.types import CallbackQuery, InlineKeyboardButton, KeyboardButton, Message
 
-from db.initializer import get_admins_db
 from resources.user_data import UserData
 
 
@@ -12,14 +11,9 @@ def get_user_link(user_id: int, name: str) -> str:
 
 
 def get_permissions_denied_message(user_id: int) -> str:
-    admins = [
-        get_user_link(admin.user_id.value, admin.username.value)
-        for admin in get_admins_db().get_admins()
-    ]
     return (
         "У вас нет прав администратора.\n"
-        f"Ваш ID: {user_id}\n"
-        f"Администраторы: {', '.join(admins)}"
+        f"Ваш ID: {user_id}"
     )
 
 

@@ -36,7 +36,9 @@ from tg.admins.notification import filter_custom_notification_users
 def allow_admin_access(monkeypatch):
     monkeypatch.setattr(
         "tg.admins.notifications.get_admins_db",
-        lambda: SimpleNamespace(is_admin=lambda user_id, group_id: True),
+        lambda: SimpleNamespace(
+            is_clan_admin=lambda user_id, group_id: True
+        ),
     )
 
 
@@ -312,7 +314,7 @@ def test_standard_notification_shows_progress_before_sending(monkeypatch):
         lambda: type(
             "Admins",
             (),
-            {"is_admin": lambda _, user_id, group_id: True},
+            {"is_clan_admin": lambda _, user_id, group_id: True},
         )(),
     )
     monkeypatch.setattr(
@@ -404,7 +406,9 @@ def test_revoked_admin_cannot_send_pinned_custom_notification(monkeypatch):
     sent = []
     monkeypatch.setattr(
         "tg.admins.notifications.get_admins_db",
-        lambda: SimpleNamespace(is_admin=lambda user_id, group_id: False),
+        lambda: SimpleNamespace(
+            is_clan_admin=lambda user_id, group_id: False
+        ),
     )
     monkeypatch.setattr(
         "tg.admins.notifications.send_custom_notification",

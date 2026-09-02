@@ -23,7 +23,7 @@ def del_admin_options(callback_query: CallbackQuery, bot: TeleBot):
     group = get_active_admin_group(requester_id)
     current_admins = [
         admin
-        for admin in get_admins_db().get_admins(group.group_id)
+        for admin in get_admins_db().get_clan_admins(group.group_id)
         if admin.user_id.value != requester_id
     ]
     logger.info(
@@ -71,7 +71,9 @@ def del_admin_confirmation(callback_query: CallbackQuery, bot: TeleBot):
         )
         home(callback_query, bot)
         return
-    admin = get_admins_db().get_admin(int(callback_query.data), group_id)
+    admin = get_admins_db().get_clan_admin(
+        int(callback_query.data), group_id
+    )
     if admin is None:
         logger.warning(
             "Admin removal target not found requester_id=%s username=%s target=%s",
@@ -114,7 +116,7 @@ def del_admin_approved(callback_query: CallbackQuery, bot: TeleBot):
         )
         home(callback_query, bot)
         return
-    admin = get_admins_db().get_admin(admin_id, group_id)
+    admin = get_admins_db().get_clan_admin(admin_id, group_id)
     if admin is None:
         logger.warning(
             "Approved admin removal target not found requester_id=%s username=%s target_id=%s",
@@ -132,7 +134,7 @@ def del_admin_approved(callback_query: CallbackQuery, bot: TeleBot):
         callback_query.from_user.id,
         get_username(callback_query),
     )
-    get_admins_db().del_admin(admin_id, group_id)
+    get_admins_db().del_clan_admin(admin_id, group_id)
     user_id = get_ids(callback_query)[0]
     bot.delete_state(user_id)
     bot.answer_callback_query(

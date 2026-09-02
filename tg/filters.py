@@ -12,7 +12,7 @@ class IsAdminFilter(SimpleCustomFilter):
     key = "is_admin"
 
     def check(self, message):
-        return get_admins_db().is_admin(message.from_user.id)
+        return get_admins_db().has_admin_access(message.from_user.id)
 
 
 class IsCallbackQueryPrivateChatFilter(SimpleCustomFilter):

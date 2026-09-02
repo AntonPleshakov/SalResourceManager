@@ -162,7 +162,7 @@ def test_admin_menu_contains_game_data_report(monkeypatch):
                 "get_active_group": lambda _, user_id: AccessGroup(
                     -100123, "Test clan"
                 ),
-                "is_admin": lambda _, user_id, group_id: True,
+                "is_clan_admin": lambda _, user_id, group_id: True,
                 "get_clans": lambda _, user_id: [
                     AccessGroup(-100123, "Test clan")
                 ],
@@ -224,7 +224,7 @@ def test_admin_menu_requires_selection_after_active_access_is_revoked(
     admins.add_admin(Admin("admin", 42), -100001)
     admins.add_admin(Admin("admin", 42), -100002)
     admins.select_group(42, -100002)
-    admins.del_admin(42, -100002)
+    admins.del_clan_admin(42, -100002)
     monkeypatch.setattr("tg.admins.get_admins_db", lambda: admins)
     bot = FakeBot()
 
@@ -333,7 +333,7 @@ def test_google_export_callback_exports_and_shows_url(monkeypatch):
         lambda: type(
             "Admins",
             (),
-            {"is_admin": lambda _, user_id, group_id: True},
+            {"is_clan_admin": lambda _, user_id, group_id: True},
         )(),
     )
     registry = CollectorRegistry()
@@ -377,7 +377,7 @@ def test_google_export_callback_reports_failure(monkeypatch):
         lambda: type(
             "Admins",
             (),
-            {"is_admin": lambda _, user_id, group_id: True},
+            {"is_clan_admin": lambda _, user_id, group_id: True},
         )(),
     )
     bot = FakeBot()
@@ -404,7 +404,7 @@ def test_google_export_rechecks_access_to_pinned_clan(monkeypatch):
         lambda: type(
             "Admins",
             (),
-            {"is_admin": lambda _, user_id, group_id: False},
+            {"is_clan_admin": lambda _, user_id, group_id: False},
         )(),
     )
     bot = FakeBot()

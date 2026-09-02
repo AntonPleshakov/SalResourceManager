@@ -122,7 +122,7 @@ def initialize_databases():
     logger.info(
         "Application databases initialized: admins=%d users=%d "
         "release_views=%d clans=%d",
-        len(databases.admins.get_admins()),
+        databases.admins.get_admin_count(),
         len(databases.user_data.get_users()),
         databases.release_views.get_users_count(),
         len(databases.access_group.get_groups()),

@@ -9,10 +9,13 @@ from telebot.types import (
     ReplyKeyboardRemove,
 )
 
+from db.access_group import (
+    ExistingClanAdminRequiredError,
+    GroupAlreadyRegisteredError,
+)
 from db.initializer import get_access_group_db, get_admins_db
-from db.admins import Admin
 from logger.app_logger import logger
-from tg.clans import is_group_admin
+from tg.clans import is_group_admin, is_group_member
 from tg.utils import empty_filter, get_ids, get_username
 
 
@@ -31,6 +34,9 @@ GROUP_SELECTION_MESSAGE = (
 USER_NOT_GROUP_ADMIN_MESSAGE = (
     "Регистрация отклонена: вы должны быть администратором этой группы."
 )
+USER_NOT_GROUP_MEMBER_MESSAGE = (
+    "Регистрация отклонена: вы должны состоять в этой группе."
+)
 BOT_NOT_ADMIN_MESSAGE = (
     "Регистрация отклонена: бот должен быть администратором этой группы."
 )
@@ -43,6 +49,7 @@ REGISTRATION_FAILED_MESSAGE = (
     "Не удалось проверить или зарегистрировать группу. Попробуйте ещё раз позже."
 )
 REGISTRATION_SUCCESS_MESSAGE = "Группа «{title}» зарегистрирована."
+GROUP_ALREADY_REGISTERED_MESSAGE = "Эта группа уже зарегистрирована."
 
 
 def _group_selection_keyboard() -> ReplyKeyboardMarkup:
@@ -74,7 +81,7 @@ def request_group_registration(update: CallbackQuery, bot: TeleBot) -> None:
         user_id,
         get_username(update),
     )
-    if not get_admins_db().is_admin(user_id):
+    if not get_admins_db().has_admin_access(user_id):
         logger.warning(
             "Access group selection rejected for non-admin user_id=%s username=%s",
             user_id,
@@ -116,8 +123,8 @@ def _register_group(
             )
             return
 
+        user_member = bot.get_chat_member(group_id, user_id)
         if check_user_admin:
-            user_member = bot.get_chat_member(group_id, user_id)
             if not is_group_admin(user_member):
                 logger.warning(
                     "Access group registration rejected: user_id=%s is not an "
@@ -131,6 +138,19 @@ def _register_group(
                     reply_markup=reply_markup,
                 )
                 return
+        elif not is_group_member(user_member):
+            logger.warning(
+                "Access group registration rejected: user_id=%s is not a "
+                "member of chat_id=%s",
+                user_id,
+                group_id,
+            )
+            bot.reply_to(
+                message,
+                USER_NOT_GROUP_MEMBER_MESSAGE,
+                reply_markup=reply_markup,
+            )
+            return
 
         bot_member = bot.get_chat_member(group_id, bot.get_me().id)
         if not is_group_admin(bot_member):
@@ -146,10 +166,36 @@ def _register_group(
             return
 
         title = str(group.title or group_id)
-        get_access_group_db().add_group(group_id, title)
-        admins = get_admins_db()
-        admins.add_admin(Admin(get_username(message), user_id), group_id)
-        admins.select_group(user_id, group_id)
+        get_access_group_db().register_group(
+            group_id,
+            title,
+            user_id,
+            get_username(message),
+            require_existing_clan_admin=not check_user_admin,
+        )
+    except GroupAlreadyRegisteredError:
+        logger.warning(
+            "Access group registration rejected: chat_id=%s is already registered",
+            group_id,
+        )
+        bot.reply_to(
+            message,
+            GROUP_ALREADY_REGISTERED_MESSAGE,
+            reply_markup=reply_markup,
+        )
+        return
+    except ExistingClanAdminRequiredError:
+        logger.warning(
+            "Access group registration rejected: user_id=%s no longer has "
+            "an existing clan ACL",
+            user_id,
+        )
+        bot.reply_to(
+            message,
+            NOT_ADMIN_MESSAGE,
+            reply_markup=reply_markup,
+        )
+        return
     except Exception as error:
         logger.exception("Unable to register access group: %s", error)
         bot.reply_to(
@@ -187,7 +233,7 @@ def register_selected_group(message: Message, bot: TeleBot) -> None:
         shared_chat.request_id,
     )
 
-    if not get_admins_db().is_admin(user_id):
+    if not get_admins_db().has_admin_access(user_id):
         logger.warning(
             "Access group registration rejected for non-admin user_id=%s username=%s",
             user_id,
@@ -208,12 +254,22 @@ def register_selected_group(message: Message, bot: TeleBot) -> None:
         )
         return
 
-    _register_group(message, bot, shared_chat.chat_id, check_user_admin=False)
+    _register_group(
+        message,
+        bot,
+        shared_chat.chat_id,
+        check_user_admin=False,
+    )
 
 
 def register_current_group(message: Message, bot: TeleBot) -> None:
     """Register the Telegram group in which the command was sent."""
-    _register_group(message, bot, message.chat.id, check_user_admin=True)
+    _register_group(
+        message,
+        bot,
+        message.chat.id,
+        check_user_admin=True,
+    )
 
 
 def register_handlers(bot: TeleBot) -> None:

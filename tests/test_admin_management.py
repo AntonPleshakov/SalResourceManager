@@ -140,7 +140,7 @@ def test_delete_admin_options_exclude_requester(monkeypatch):
     fake_db = type(
         "FakeAdminsDB",
         (),
-        {"get_admins": lambda _, group_id: admins},
+        {"get_clan_admins": lambda _, group_id: admins},
     )()
     monkeypatch.setattr("tg.admins.del_admin.get_admins_db", lambda: fake_db)
     monkeypatch.setattr(
@@ -166,17 +166,13 @@ def test_add_admins_finishes_when_private_notifications_fail(monkeypatch):
     added = []
     homes = []
     monkeypatch.setattr(
-        "tg.admins.add_admin.get_admins_db",
-        lambda: type("FakeAdminsDB", (), {"add_admin": lambda _, admin: added.append(admin)})(),
-    )
-    monkeypatch.setattr(
         "tg.admins.add_admin.home", lambda callback_query, bot: homes.append(callback_query)
     )
     fake_db = type(
         "FakeAdminsDB",
         (),
         {
-            "is_admin": lambda _, user_id, group_id: True,
+            "is_clan_admin": lambda _, user_id, group_id: True,
             "add_admin": lambda _, admin, group_id: added.append(admin),
         },
     )()
@@ -204,7 +200,7 @@ def test_add_admins_result_names_rejected_users(monkeypatch):
         "FakeAdminsDB",
         (),
         {
-            "is_admin": lambda _, user_id, group_id: True,
+            "is_clan_admin": lambda _, user_id, group_id: True,
             "add_admin": lambda _, admin, group_id: added.append(admin),
         },
     )()
@@ -241,7 +237,7 @@ def test_add_admins_omits_rejection_details_when_all_users_are_rejected(
         "FakeAdminsDB",
         (),
         {
-            "is_admin": lambda _, user_id, group_id: True,
+            "is_clan_admin": lambda _, user_id, group_id: True,
             "add_admin": lambda _, admin, group_id: None,
         },
     )()
@@ -281,7 +277,7 @@ def test_selecting_admins_removes_reply_keyboard_before_confirmation(monkeypatch
         lambda: type(
             "Admins",
             (),
-            {"is_admin": lambda _, user_id, group_id: True},
+            {"is_clan_admin": lambda _, user_id, group_id: True},
         )(),
     )
     bot = RecordingBot()
@@ -306,7 +302,7 @@ def test_revoked_admin_cannot_continue_selecting_admins(monkeypatch):
         lambda: type(
             "Admins",
             (),
-            {"is_admin": lambda _, user_id, group_id: False},
+            {"is_clan_admin": lambda _, user_id, group_id: False},
         )(),
     )
     bot = RecordingBot()
@@ -333,9 +329,9 @@ def test_delete_admin_finishes_when_private_notification_fails(monkeypatch):
         "FakeAdminsDB",
         (),
         {
-            "is_admin": lambda _, user_id, group_id: True,
-            "get_admin": lambda _, user_id, group_id: admin,
-            "del_admin": lambda _, user_id, group_id: deleted.append(user_id),
+            "is_clan_admin": lambda _, user_id, group_id: True,
+            "get_clan_admin": lambda _, user_id, group_id: admin,
+            "del_clan_admin": lambda _, user_id, group_id: deleted.append(user_id),
         },
     )()
     monkeypatch.setattr("tg.admins.del_admin.get_admins_db", lambda: fake_db)

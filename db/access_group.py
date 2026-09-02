@@ -14,6 +14,30 @@ class AccessGroup:
     title: str
 
 
+class GroupAlreadyRegisteredError(ValueError):
+    pass
+
+
+class ExistingClanAdminRequiredError(ValueError):
+    pass
+
+
+def _normalized_group_title(group_id: int, title: str) -> str:
+    return " ".join((title or "").split()) or f"Клан {group_id}"
+
+
+def _insert_group(connection, group_id: int, title: str) -> AccessGroup:
+    normalized_title = _normalized_group_title(group_id, title)
+    cursor = connection.execute(
+        "INSERT OR IGNORE INTO clans "
+        "(group_id, title, title_needs_sync) VALUES (?, ?, 0)",
+        (int(group_id), normalized_title),
+    )
+    if cursor.rowcount == 0:
+        raise GroupAlreadyRegisteredError("Группа уже зарегистрирована")
+    return AccessGroup(int(group_id), normalized_title)
+
+
 class AccessGroupDB(DatabaseRepository):
     def get_groups(self) -> List[AccessGroup]:
         rows = self._database.fetch_all(
@@ -36,22 +60,54 @@ class AccessGroupDB(DatabaseRepository):
         return [AccessGroup(int(group_id), str(title)) for group_id, title in rows]
 
     def add_group(self, group_id: int, title: str) -> AccessGroup:
-        normalized_title = " ".join((title or "").split()) or f"Клан {group_id}"
+        normalized_title = _normalized_group_title(group_id, title)
         logger.info(
             "DB: registering clan group_id=%s title=%s",
             group_id,
             normalized_title,
         )
-        self._database.run_in_transaction(
-            lambda connection: connection.execute(
-                "INSERT INTO clans (group_id, title, title_needs_sync) "
-                "VALUES (?, ?, 0) "
-                "ON CONFLICT(group_id) DO UPDATE SET "
-                "title = excluded.title, title_needs_sync = 0",
-                (int(group_id), normalized_title),
+        return self._database.run_in_transaction(
+            lambda connection: _insert_group(
+                connection, group_id, normalized_title
             )
         )
-        return AccessGroup(int(group_id), normalized_title)
+
+    def register_group(
+        self,
+        group_id: int,
+        title: str,
+        user_id: int,
+        username: str,
+        *,
+        require_existing_clan_admin: bool,
+    ) -> AccessGroup:
+        def register(connection) -> AccessGroup:
+            if require_existing_clan_admin:
+                existing_access = connection.execute(
+                    "SELECT 1 FROM admin_clans WHERE user_id = ? LIMIT 1",
+                    (int(user_id),),
+                ).fetchone()
+                if existing_access is None:
+                    raise ExistingClanAdminRequiredError(
+                        "Нет прав администратора существующего клана"
+                    )
+            group = _insert_group(connection, group_id, title)
+            connection.execute(
+                "INSERT INTO admins (user_id, username) VALUES (?, ?) "
+                "ON CONFLICT(user_id) DO UPDATE SET username = excluded.username",
+                (int(user_id), str(username or "")),
+            )
+            connection.execute(
+                "INSERT INTO admin_clans (user_id, group_id) VALUES (?, ?)",
+                (int(user_id), int(group_id)),
+            )
+            connection.execute(
+                "UPDATE admins SET active_group_id = ? WHERE user_id = ?",
+                (int(group_id), int(user_id)),
+            )
+            return group
+
+        return self._database.run_in_transaction(register)
 
     def rename_group(self, group_id: int, title: str) -> AccessGroup:
         normalized_title = " ".join((title or "").split())

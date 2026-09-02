@@ -23,12 +23,14 @@ from tg.access import (
 )
 from tg.group_registration import (
     BOT_NOT_ADMIN_MESSAGE,
+    GROUP_ALREADY_REGISTERED_MESSAGE,
     GROUP_REGISTRATION_REQUEST_ID,
     GROUP_SELECTION_MESSAGE,
     GroupRegistrationStates,
     NOT_ADMIN_MESSAGE,
     REGISTRATION_SUCCESS_MESSAGE,
     USER_NOT_GROUP_ADMIN_MESSAGE,
+    USER_NOT_GROUP_MEMBER_MESSAGE,
     register_current_group,
     register_selected_group,
     request_group_registration,
@@ -69,6 +71,18 @@ class FakeAccessGroupDB:
         )
 
     def add_group(self, group_id, title):
+        self.group_id = group_id
+        return AccessGroup(group_id, title)
+
+    def register_group(
+        self,
+        group_id,
+        title,
+        user_id,
+        username,
+        *,
+        require_existing_clan_admin,
+    ):
         self.group_id = group_id
         return AccessGroup(group_id, title)
 
@@ -439,7 +453,7 @@ def test_bot_admin_gets_picker_without_telegram_admin_requirement(monkeypatch):
         registration,
         "get_admins_db",
         lambda: SimpleNamespace(
-            is_admin=lambda user_id: True,
+            has_admin_access=lambda user_id: True,
             add_admin=lambda admin, group_id: None,
             select_group=lambda user_id, group_id: None,
         ),
@@ -459,34 +473,58 @@ def test_bot_admin_gets_picker_without_telegram_admin_requirement(monkeypatch):
 
 
 def test_bot_admin_can_register_selected_group_without_telegram_admin_rights(
-    monkeypatch,
+    tmp_path, monkeypatch,
 ):
     import tg.group_registration as registration
 
-    database = FakeAccessGroupDB()
-    monkeypatch.setattr(
-        registration,
-        "get_admins_db",
-        lambda: SimpleNamespace(
-            is_admin=lambda user_id: True,
-            add_admin=lambda admin, group_id: None,
-            select_group=lambda user_id, group_id: None,
-        ),
-    )
-    monkeypatch.setattr(registration, "get_access_group_db", lambda: database)
+    connection = Database(tmp_path / "database.db")
+    groups = AccessGroupDB(connection)
+    groups.add_group(-100001, "Existing clan")
+    admins = AdminsDB(connection)
+    admins.add_admin(Admin("tester", 42), -100001)
+    monkeypatch.setattr(registration, "get_admins_db", lambda: admins)
+    monkeypatch.setattr(registration, "get_access_group_db", lambda: groups)
     bot = FakeRegistrationBot(user_status="member")
     message = make_shared_group_message()
 
     register_selected_group(message, bot)
 
-    assert database.get_groups() == [
-        AccessGroup(message.chat_shared.chat_id, "Test group")
-    ]
+    assert groups.get_group(message.chat_shared.chat_id) == AccessGroup(
+        message.chat_shared.chat_id, "Test group"
+    )
+    assert admins.is_clan_admin(42, message.chat_shared.chat_id)
     assert bot.replies[0][0:2] == (
         message,
         REGISTRATION_SUCCESS_MESSAGE.format(title="Test group"),
     )
     assert bot.deleted_states == [42]
+    connection.close()
+
+
+def test_bot_admin_cannot_register_group_without_membership(
+    tmp_path, monkeypatch
+):
+    import tg.group_registration as registration
+
+    connection = Database(tmp_path / "database.db")
+    groups = AccessGroupDB(connection)
+    groups.add_group(-100001, "Existing clan")
+    admins = AdminsDB(connection)
+    admins.add_admin(Admin("tester", 42), -100001)
+    monkeypatch.setattr(registration, "get_admins_db", lambda: admins)
+    monkeypatch.setattr(registration, "get_access_group_db", lambda: groups)
+    bot = FakeRegistrationBot(user_status="left")
+    message = make_shared_group_message()
+
+    register_selected_group(message, bot)
+
+    assert groups.get_group(message.chat_shared.chat_id) is None
+    assert not admins.is_clan_admin(42, message.chat_shared.chat_id)
+    assert bot.replies[0][0:2] == (
+        message,
+        USER_NOT_GROUP_MEMBER_MESSAGE,
+    )
+    connection.close()
 
 
 def test_selected_group_handler_requires_registration_state():
@@ -524,7 +562,8 @@ def test_registration_adds_clans_and_grants_requester_scoped_admin_rights(
     connection = Database(tmp_path / "database.db")
     groups = AccessGroupDB(connection)
     admins = AdminsDB(connection)
-    admins.add_admin(Admin("tester", 42))
+    groups.add_group(-100000, "Existing clan")
+    admins.add_admin(Admin("tester", 42), -100000)
     monkeypatch.setattr(registration, "get_admins_db", lambda: admins)
     monkeypatch.setattr(registration, "get_access_group_db", lambda: groups)
     bot = FakeRegistrationBot()
@@ -533,14 +572,39 @@ def test_registration_adds_clans_and_grants_requester_scoped_admin_rights(
     register_selected_group(make_shared_group_message(group_id=-100002), bot)
 
     assert [group.group_id for group in groups.get_groups()] == [
+        -100000,
         -100002,
         -100001,
     ]
     assert {group.group_id for group in admins.get_clans(42)} == {
         -100002,
         -100001,
+        -100000,
     }
     assert admins.get_active_group(42).group_id == -100002
+    connection.close()
+
+
+def test_panel_registration_rechecks_existing_acl_inside_transaction(
+    tmp_path, monkeypatch
+):
+    import tg.group_registration as registration
+
+    connection = Database(tmp_path / "database.db")
+    groups = AccessGroupDB(connection)
+    monkeypatch.setattr(registration, "get_access_group_db", lambda: groups)
+    monkeypatch.setattr(
+        registration,
+        "get_admins_db",
+        lambda: SimpleNamespace(has_admin_access=lambda user_id: True),
+    )
+    bot = FakeRegistrationBot(user_status="member")
+    message = make_shared_group_message()
+
+    register_selected_group(message, bot)
+
+    assert groups.get_group(message.chat_shared.chat_id) is None
+    assert bot.replies[-1][0:2] == (message, NOT_ADMIN_MESSAGE)
     connection.close()
 
 
@@ -550,7 +614,7 @@ def test_non_admin_cannot_register_group(monkeypatch):
     monkeypatch.setattr(
         registration,
         "get_admins_db",
-        lambda: SimpleNamespace(is_admin=lambda user_id: False),
+        lambda: SimpleNamespace(has_admin_access=lambda user_id: False),
     )
     bot = FakeRegistrationBot()
     message = make_shared_group_message()
@@ -576,7 +640,7 @@ def test_telegram_group_admin_can_register_without_existing_bot_rights(
     register_current_group(message, bot)
 
     assert groups.get_group(message.chat.id).title == "Test group"
-    assert admins.is_admin(42, message.chat.id)
+    assert admins.is_clan_admin(42, message.chat.id)
     assert admins.get_active_group(42).group_id == message.chat.id
     assert bot.replies[0][0:2] == (
         message,
@@ -599,6 +663,35 @@ def test_group_member_cannot_register_current_group(monkeypatch):
     assert bot.replies[0][0:2] == (message, USER_NOT_GROUP_ADMIN_MESSAGE)
 
 
+def test_registered_group_cannot_be_registered_again(tmp_path, monkeypatch):
+    import tg.group_registration as registration
+
+    connection = Database(tmp_path / "database.db")
+    groups = AccessGroupDB(connection)
+    admins = AdminsDB(connection)
+    monkeypatch.setattr(registration, "get_access_group_db", lambda: groups)
+    monkeypatch.setattr(registration, "get_admins_db", lambda: admins)
+    bot = FakeRegistrationBot(user_status="administrator")
+    first_message = make_message(
+        user_id=42, chat_type="supergroup", text="/register_group"
+    )
+    second_message = make_message(
+        user_id=77, chat_type="supergroup", text="/register_group"
+    )
+
+    register_current_group(first_message, bot)
+    register_current_group(second_message, bot)
+
+    assert groups.get_groups() == [AccessGroup(-100123, "Test group")]
+    assert admins.is_clan_admin(42, -100123)
+    assert not admins.has_admin_access(77)
+    assert bot.replies[-1][0:2] == (
+        second_message,
+        GROUP_ALREADY_REGISTERED_MESSAGE,
+    )
+    connection.close()
+
+
 def test_bot_must_be_group_admin_before_registration(monkeypatch):
     import tg.group_registration as registration
 
@@ -606,7 +699,7 @@ def test_bot_must_be_group_admin_before_registration(monkeypatch):
     monkeypatch.setattr(
         registration,
         "get_admins_db",
-        lambda: SimpleNamespace(is_admin=lambda user_id: True),
+        lambda: SimpleNamespace(has_admin_access=lambda user_id: True),
     )
     monkeypatch.setattr(registration, "get_access_group_db", lambda: database)
     bot = FakeRegistrationBot(bot_status="member")

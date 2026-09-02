@@ -19,7 +19,7 @@ class Admin(Parameters):
 
 
 class AdminsDB(DatabaseRepository):
-    def add_admin(self, admin: Admin, group_id: Optional[int] = None) -> None:
+    def add_admin(self, admin: Admin, group_id: int) -> None:
         logger.info(
             "DB: adding admin user_id=%s username=%s group_id=%s",
             admin.user_id.value,
@@ -33,8 +33,6 @@ class AdminsDB(DatabaseRepository):
                 "ON CONFLICT(user_id) DO UPDATE SET username = excluded.username",
                 (int(admin.user_id.value), str(admin.username.value or "")),
             )
-            if group_id is None:
-                return
             group_exists = connection.execute(
                 "SELECT 1 FROM clans WHERE group_id = ?", (int(group_id),)
             ).fetchone()
@@ -53,39 +51,41 @@ class AdminsDB(DatabaseRepository):
 
         self._database.run_in_transaction(add)
 
-    def get_admins(self, group_id: Optional[int] = None) -> List[Admin]:
-        if group_id is None:
-            rows = self._database.fetch_all(
-                "SELECT user_id, username FROM admins ORDER BY user_id"
-            )
-        else:
-            rows = self._database.fetch_all(
-                "SELECT a.user_id, a.username FROM admins a "
-                "JOIN admin_clans ac ON ac.user_id = a.user_id "
-                "WHERE ac.group_id = ? ORDER BY a.user_id",
-                (int(group_id),),
-            )
+    def get_clan_admins(self, group_id: int) -> List[Admin]:
+        rows = self._database.fetch_all(
+            "SELECT a.user_id, a.username FROM admins a "
+            "JOIN admin_clans ac ON ac.user_id = a.user_id "
+            "WHERE ac.group_id = ? ORDER BY a.user_id",
+            (int(group_id),),
+        )
         return [Admin(username, user_id) for user_id, username in rows]
 
-    def get_admin(
-        self, user_id: int, group_id: Optional[int] = None
-    ) -> Optional[Admin]:
-        if group_id is None:
-            row = self._database.fetch_one(
-                "SELECT user_id, username FROM admins WHERE user_id = ?",
-                (int(user_id),),
-            )
-        else:
-            row = self._database.fetch_one(
-                "SELECT a.user_id, a.username FROM admins a "
-                "JOIN admin_clans ac ON ac.user_id = a.user_id "
-                "WHERE a.user_id = ? AND ac.group_id = ?",
-                (int(user_id), int(group_id)),
-            )
+    def get_clan_admin(self, user_id: int, group_id: int) -> Optional[Admin]:
+        row = self._database.fetch_one(
+            "SELECT a.user_id, a.username FROM admins a "
+            "JOIN admin_clans ac ON ac.user_id = a.user_id "
+            "WHERE a.user_id = ? AND ac.group_id = ?",
+            (int(user_id), int(group_id)),
+        )
         return None if row is None else Admin(row[1], row[0])
 
-    def is_admin(self, user_id: int, group_id: Optional[int] = None) -> bool:
-        return self.get_admin(user_id, group_id) is not None
+    def is_clan_admin(self, user_id: int, group_id: int) -> bool:
+        return self.get_clan_admin(user_id, group_id) is not None
+
+    def has_admin_access(self, user_id: int) -> bool:
+        return (
+            self._database.fetch_one(
+                "SELECT 1 FROM admin_clans WHERE user_id = ? LIMIT 1",
+                (int(user_id),),
+            )
+            is not None
+        )
+
+    def get_admin_count(self) -> int:
+        row = self._database.fetch_one(
+            "SELECT COUNT(DISTINCT user_id) FROM admin_clans"
+        )
+        return 0 if row is None else int(row[0])
 
     def get_clans(self, user_id: int) -> List[AccessGroup]:
         rows = self._database.fetch_all(
@@ -124,13 +124,10 @@ class AdminsDB(DatabaseRepository):
 
         self._database.run_in_transaction(select)
 
-    def del_admin(self, user_id: int, group_id: Optional[int] = None) -> None:
+    def del_clan_admin(self, user_id: int, group_id: int) -> None:
         logger.info("DB: deleting admin user_id=%s group_id=%s", user_id, group_id)
 
         def delete(connection) -> None:
-            if group_id is None:
-                connection.execute("DELETE FROM admins WHERE user_id = ?", (user_id,))
-                return
             connection.execute(
                 "DELETE FROM admin_clans WHERE user_id = ? AND group_id = ?",
                 (int(user_id), int(group_id)),

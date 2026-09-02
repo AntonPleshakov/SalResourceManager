@@ -54,7 +54,7 @@ def show_home_menu(
         user_id,
         get_username(message),
     )
-    if get_admins_db().is_admin(user_id):
+    if get_admins_db().has_admin_access(user_id):
         keyboard.row(Button("🛠 Админ-панель", "admins").inline())
     text_lines = []
     if active_account is not None:

@@ -1,6 +1,10 @@
 from types import SimpleNamespace
 
-from db.access_group import AccessGroup, AccessGroupDB
+from db.access_group import (
+    AccessGroup,
+    AccessGroupDB,
+    GroupAlreadyRegisteredError,
+)
 from db.admins import Admin, AdminsDB
 from db.database import Database
 from db.user_data import UserDataDB
@@ -26,6 +30,22 @@ def test_accounts_are_owned_and_filtered_by_clan(tmp_path):
     assert [user.tag.value for user in users.get_clan_users(-100002)] == [
         "Beta hero"
     ]
+    connection.close()
+
+
+def test_registered_clan_cannot_be_registered_or_renamed_through_add(tmp_path):
+    connection = Database(tmp_path / "database.db")
+    groups = AccessGroupDB(connection)
+    groups.add_group(-100001, "Alpha")
+
+    try:
+        groups.add_group(-100001, "Changed title")
+    except GroupAlreadyRegisteredError:
+        pass
+    else:
+        raise AssertionError("Repeated clan registration must be rejected")
+
+    assert groups.get_group(-100001) == AccessGroup(-100001, "Alpha")
     connection.close()
 
 
@@ -95,11 +115,12 @@ def test_administrator_permissions_and_active_clan_are_scoped(tmp_path):
     admins.add_admin(Admin("owner", 42), -100002)
     admins.add_admin(Admin("alpha_admin", 77), -100001)
 
-    assert admins.is_admin(42)
-    assert admins.is_admin(42, -100001)
-    assert admins.is_admin(42, -100002)
-    assert admins.is_admin(77, -100001)
-    assert not admins.is_admin(77, -100002)
+    assert admins.get_admin_count() == 2
+    assert admins.has_admin_access(42)
+    assert admins.is_clan_admin(42, -100001)
+    assert admins.is_clan_admin(42, -100002)
+    assert admins.is_clan_admin(77, -100001)
+    assert not admins.is_clan_admin(77, -100002)
 
     admins.select_group(42, -100002)
     assert admins.get_active_group(42) == AccessGroup(-100002, "Beta")
@@ -107,18 +128,23 @@ def test_administrator_permissions_and_active_clan_are_scoped(tmp_path):
         AccessGroup(-100002, "Beta"),
         AccessGroup(-100001, "Alpha"),
     ]
-    assert [admin.user_id.value for admin in admins.get_admins(-100001)] == [
+    assert [admin.user_id.value for admin in admins.get_clan_admins(-100001)] == [
         42,
         77,
     ]
-    assert [admin.user_id.value for admin in admins.get_admins(-100002)] == [42]
+    assert [
+        admin.user_id.value for admin in admins.get_clan_admins(-100002)
+    ] == [42]
 
-    admins.del_admin(42, -100002)
-    assert admins.is_admin(42)
-    assert not admins.is_admin(42, -100002)
+    admins.del_clan_admin(42, -100002)
+    assert admins.has_admin_access(42)
+    assert not admins.is_clan_admin(42, -100002)
     assert admins.get_active_group(42) is None
     admins.select_group(42, -100001)
     assert admins.get_active_group(42) == AccessGroup(-100001, "Alpha")
+    admins.del_clan_admin(42, -100001)
+    assert not admins.has_admin_access(42)
+    assert admins.get_admin_count() == 1
     connection.close()
 
 

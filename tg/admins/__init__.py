@@ -82,7 +82,7 @@ def admins_list(callback_query: CallbackQuery, bot: TeleBot):
     user_id = callback_query.from_user.id
     admins_db = get_admins_db()
     group = get_active_admin_group(user_id, admins_db)
-    admins = admins_db.get_admins(group.group_id)
+    admins = admins_db.get_clan_admins(group.group_id)
     logger.debug(
         "Showing admin list to user_id=%s username=%s count=%d",
         callback_query.from_user.id,
