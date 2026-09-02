@@ -5,7 +5,7 @@ from telebot.types import CallbackQuery, InlineKeyboardMarkup, Message
 from logger.app_logger import logger
 import tg.user_data as user_data
 from tg.clans import get_user_clans
-from tg.user_data.common import prompt_for_account_clan
+from tg.user_data.common import get_current_accounts, prompt_for_account_clan
 from tg.user_data.account.handlers import register_handlers
 from tg.user_data.account.deletion import (
     confirm_delete,
@@ -50,7 +50,11 @@ def _request_nickname(
     destination: str | None = None,
 ) -> None:
     user_id, chat_id, message_id = get_ids(callback_query)
-    account = user_data.get_user_data_db().get_active_account(user_id)
+    database = user_data.get_user_data_db()
+    accounts = get_current_accounts(callback_query, bot, database)
+    if accounts is None:
+        return
+    account = next((account for account in accounts if account.is_active), None)
     if action == "rename" and account is None:
         accounts_menu(callback_query, bot)
         return
@@ -143,7 +147,10 @@ def request_rename(callback_query: CallbackQuery, bot: TeleBot) -> None:
 
 def request_move(callback_query: CallbackQuery, bot: TeleBot) -> None:
     user_id = callback_query.from_user.id
-    account = user_data.get_user_data_db().get_active_account(user_id)
+    accounts = get_current_accounts(callback_query, bot)
+    if accounts is None:
+        return
+    account = next((account for account in accounts if account.is_active), None)
     if account is None:
         accounts_menu(callback_query, bot)
         return
@@ -161,6 +168,15 @@ def move_account(callback_query: CallbackQuery, bot: TeleBot) -> None:
             callback_query.id, "Не удалось выбрать клан", show_alert=True
         )
         return
+    database = user_data.get_user_data_db()
+    accounts = get_current_accounts(callback_query, bot, database)
+    if accounts is None:
+        return
+    if account_id not in {account.account_id for account in accounts}:
+        bot.answer_callback_query(
+            callback_query.id, "Игровой аккаунт не найден", show_alert=True
+        )
+        return
     available_clan_ids = {
         group.group_id
         for group in get_user_clans(
@@ -175,9 +191,7 @@ def move_account(callback_query: CallbackQuery, bot: TeleBot) -> None:
         )
         return
     try:
-        account = user_data.get_user_data_db().move_account(
-            user_id, account_id, clan_id
-        )
+        account = database.move_account(user_id, account_id, clan_id)
     except ValueError as error:
         bot.answer_callback_query(callback_query.id, str(error), show_alert=True)
         return
@@ -193,10 +207,27 @@ def leave_clan(callback_query: CallbackQuery, bot: TeleBot) -> None:
     user_id = callback_query.from_user.id
     try:
         account_id = int(callback_query.data.split("/")[2])
-        account = user_data.get_user_data_db().detach_account_from_clan(
-            user_id, account_id
-        )
     except (IndexError, ValueError) as error:
+        bot.answer_callback_query(callback_query.id, str(error), show_alert=True)
+        return
+    database = user_data.get_user_data_db()
+    accounts = get_current_accounts(callback_query, bot, database)
+    if accounts is None:
+        return
+    current = next(
+        (account for account in accounts if account.account_id == account_id),
+        None,
+    )
+    if current is None or current.clan_id is None:
+        bot.answer_callback_query(
+            callback_query.id,
+            "Клан игрового аккаунта уже не выбран",
+            show_alert=True,
+        )
+        return
+    try:
+        account = database.detach_account_from_clan(user_id, account_id)
+    except ValueError as error:
         bot.answer_callback_query(callback_query.id, str(error), show_alert=True)
         return
     accounts_menu(
@@ -228,7 +259,10 @@ def create_initial_account(callback_query: CallbackQuery, bot: TeleBot) -> None:
         )
         return
     database = user_data.get_user_data_db()
-    existing = database.get_active_account(user_id)
+    accounts = get_current_accounts(callback_query, bot, database)
+    if accounts is None:
+        return
+    existing = next((account for account in accounts if account.is_active), None)
     if existing is not None:
         accounts_menu(callback_query, bot)
         return
@@ -257,6 +291,10 @@ def save_nickname(message: Message, bot: TeleBot) -> None:
         account_id = data.get("account_id")
         destination = data.get("account_destination")
         clan_id = data.get("account_clan_id")
+    database = user_data.get_user_data_db()
+    accounts = get_current_accounts(message, bot, database)
+    if accounts is None:
+        return
     try:
         if action == "add":
             if not isinstance(clan_id, int):
@@ -271,7 +309,7 @@ def save_nickname(message: Message, bot: TeleBot) -> None:
             }
             if clan_id not in available_clan_ids:
                 raise ValueError("Вы не состоите в выбранном клане")
-            account = user_data.get_user_data_db().add_account(
+            account = database.add_account(
                 user_id,
                 get_username(message),
                 message.text,
@@ -281,9 +319,9 @@ def save_nickname(message: Message, bot: TeleBot) -> None:
                 f"✅ Аккаунт «{formatting.escape_html(account.tag)}» добавлен и выбран."
             )
         elif action == "rename" and isinstance(account_id, int):
-            account = user_data.get_user_data_db().rename_account(
-                user_id, account_id, message.text
-            )
+            if account_id not in {account.account_id for account in accounts}:
+                raise ValueError("Игровой аккаунт не найден")
+            account = database.rename_account(user_id, account_id, message.text)
             notice = (
                 f"✅ Имя аккаунта изменено на "
                 f"«{formatting.escape_html(account.tag)}»."
@@ -314,7 +352,19 @@ def select_account(callback_query: CallbackQuery, bot: TeleBot) -> None:
         destination, encoded_account_id = callback_query.data.split("/")[2:]
         account_id = int(encoded_account_id)
         database = user_data.get_user_data_db()
-        active = database.get_active_account(user_id)
+        accounts = get_current_accounts(callback_query, bot, database)
+        if accounts is None:
+            return
+        selected = next(
+            (account for account in accounts if account.account_id == account_id),
+            None,
+        )
+        if selected is None:
+            raise ValueError("Игровой аккаунт не найден")
+        if destination in DESTINATIONS and selected.clan_id is None:
+            prompt_for_account_clan(callback_query, bot, account_id)
+            return
+        active = next((account for account in accounts if account.is_active), None)
         if active is not None and active.account_id == account_id:
             bot.answer_callback_query(callback_query.id, "Аккаунт уже выбран")
             return

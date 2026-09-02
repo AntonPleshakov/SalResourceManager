@@ -6,7 +6,7 @@ from telebot.types import CallbackQuery, InlineKeyboardMarkup, Message
 import tg.user_data as user_data
 from tg.clans import get_user_clans
 from tg.user_data.account.routing import DESTINATIONS, requested_destination
-from tg.user_data.common import ensure_active_user
+from tg.user_data.common import ensure_active_user, get_current_accounts
 from tg.utils import Button, get_ids, get_username
 
 
@@ -16,8 +16,10 @@ def accounts_menu(
     user_id, chat_id, message_id = get_ids(message)
     bot.delete_state(user_id)
     database = user_data.get_user_data_db()
+    accounts = get_current_accounts(message, bot, database)
+    if accounts is None:
+        return
     database.update_username(user_id, get_username(message))
-    accounts = database.get_accounts(user_id)
     if not accounts:
         active_user = ensure_active_user(message, bot)
         if active_user.user is None:
@@ -69,7 +71,9 @@ def accounts_menu(
 
     keyboard = InlineKeyboardMarkup(row_width=1)
     for account in accounts:
-        if account.is_active:
+        if account.is_active or (
+            destination != "accounts" and account.clan_id is None
+        ):
             continue
         clan_title = account.clan_title or "клан не выбран"
         keyboard.add(

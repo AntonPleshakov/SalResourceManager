@@ -378,6 +378,131 @@ def test_account_selector_returns_to_resource_screen_after_switch(
     connection.close()
 
 
+def test_data_account_selector_hides_accounts_without_a_clan(
+    tmp_path, monkeypatch
+):
+    connection = Database(tmp_path / "database.db")
+    register_test_clan(connection)
+    database = UserDataDB(connection)
+    database.add_account(42, "telegram_user", "Main")
+    detached = database.add_account(
+        42, "telegram_user", "Detached", make_active=False
+    )
+    database.detach_account_from_clan(42, detached.account_id)
+    monkeypatch.setattr(
+        "tg.user_data.get_access_group_db", lambda: AccessGroupDB(connection)
+    )
+    monkeypatch.setattr("tg.user_data.get_user_data_db", lambda: database)
+    bot = FakeBot()
+
+    accounts_menu(make_callback("accounts/resources"), bot)
+
+    assert (
+        f"accounts/select/resources/{detached.account_id}"
+        not in callback_data(bot.edited[-1][3])
+    )
+
+    accounts_menu(make_callback("accounts"), bot)
+
+    assert (
+        f"accounts/select/accounts/{detached.account_id}"
+        in callback_data(bot.edited[-1][3])
+    )
+    connection.close()
+
+
+def test_stale_data_account_selection_detaches_and_prompts_for_clan(
+    tmp_path, monkeypatch
+):
+    connection = Database(tmp_path / "database.db")
+    groups = AccessGroupDB(connection)
+    groups.add_group(-100123, "Alpha")
+    groups.add_group(-100456, "Beta")
+    database = UserDataDB(connection)
+    active = database.add_account(
+        42, "telegram_user", "Main", clan_id=-100123
+    )
+    stale = database.add_account(
+        42,
+        "telegram_user",
+        "Old clan account",
+        clan_id=-100456,
+        make_active=False,
+    )
+    monkeypatch.setattr("tg.user_data.get_access_group_db", lambda: groups)
+    monkeypatch.setattr("tg.user_data.get_user_data_db", lambda: database)
+    bot = FakeBot()
+
+    select_account(
+        make_callback(f"accounts/select/resources/{stale.account_id}"), bot
+    )
+
+    assert database.get_active_account(42).account_id == active.account_id
+    assert next(
+        account
+        for account in database.get_accounts(42)
+        if account.account_id == stale.account_id
+    ).clan_id is None
+    assert "Выберите клан игрового аккаунта" in bot.edited[-1][0]
+    assert "<h2>Ресурсы</h2>" not in bot.edited[-1][0]
+    connection.close()
+
+
+def test_account_menu_fails_closed_when_membership_check_fails(
+    tmp_path, monkeypatch
+):
+    connection = Database(tmp_path / "database.db")
+    register_test_clan(connection)
+    database = UserDataDB(connection)
+    account = database.add_account(42, "telegram_user", "Secret account")
+    monkeypatch.setattr("tg.user_data.get_user_data_db", lambda: database)
+
+    class FailingBot(FakeBot):
+        def get_chat_member(self, group_id, user_id):
+            raise RuntimeError("Telegram unavailable")
+
+    bot = FailingBot()
+
+    accounts_menu(make_callback("accounts"), bot)
+
+    assert bot.edited[-1][0] == (
+        "Не удалось проверить участие в клане. Попробуйте ещё раз позже."
+    )
+    assert "Secret account" not in bot.edited[-1][0]
+    assert database.get_active_account(42).clan_id == account.clan_id
+    connection.close()
+
+
+def test_account_selection_fails_closed_when_membership_check_fails(
+    tmp_path, monkeypatch
+):
+    connection = Database(tmp_path / "database.db")
+    register_test_clan(connection)
+    database = UserDataDB(connection)
+    candidate = database.add_account(42, "telegram_user", "Candidate")
+    active = database.add_account(42, "telegram_user", "Current")
+    monkeypatch.setattr("tg.user_data.get_user_data_db", lambda: database)
+
+    class FailingBot(FakeBot):
+        def get_chat_member(self, group_id, user_id):
+            raise RuntimeError("Telegram unavailable")
+
+    bot = FailingBot()
+
+    select_account(
+        make_callback(
+            f"accounts/select/resources/{candidate.account_id}"
+        ),
+        bot,
+    )
+
+    assert database.get_active_account(42).account_id == active.account_id
+    assert bot.edited[-1][0] == (
+        "Не удалось проверить участие в клане. Попробуйте ещё раз позже."
+    )
+    connection.close()
+
+
 def test_message_destination_sends_resource_menu(tmp_path, monkeypatch):
     connection = Database(tmp_path / "database.db")
     register_test_clan(connection)

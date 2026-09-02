@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from decimal import Decimal
 from html import escape
-from typing import Optional, Sequence, Union
+from typing import List, Optional, Sequence, Union
 
 from telebot import TeleBot
 from telebot.types import (
@@ -17,6 +17,7 @@ from resources.user_data import (
     RESOURCE_FIELDS,
     THOUSAND_INPUT_FIELDS,
     TRACKED_FIELDS,
+    GameAccount,
     ResourceField,
     UserData,
 )
@@ -58,6 +59,27 @@ def _deliver_account_clan_prompt(
         bot.send_message(chat_id, text, reply_markup=keyboard)
 
 
+def get_current_accounts(
+    message: Union[Message, CallbackQuery],
+    bot: TeleBot,
+    database=None,
+) -> Optional[List[GameAccount]]:
+    """Return accounts only after their current clan access was verified."""
+    user_id = get_ids(message)[0]
+    database = database or user_data.get_user_data_db()
+    try:
+        refresh_user_accounts(bot, user_id, database)
+    except ClanMembershipCheckError:
+        _deliver_account_clan_prompt(
+            message,
+            bot,
+            "Не удалось проверить участие в клане. Попробуйте ещё раз позже.",
+            InlineKeyboardMarkup(),
+        )
+        return None
+    return database.get_accounts(user_id)
+
+
 def prompt_for_account_clan(
     message: Union[Message, CallbackQuery],
     bot: TeleBot,
@@ -65,10 +87,13 @@ def prompt_for_account_clan(
 ) -> None:
     user_id = get_ids(message)[0]
     database = user_data.get_user_data_db()
+    accounts = get_current_accounts(message, bot, database)
+    if accounts is None:
+        return
     account = next(
         (
             account
-            for account in database.get_accounts(user_id)
+            for account in accounts
             if account.account_id == account_id
         ),
         None,
@@ -113,21 +138,14 @@ def ensure_active_user(
     user_id = get_ids(message)[0]
     username = get_username(message)
     database = user_data.get_user_data_db()
-    try:
-        refresh_user_accounts(bot, user_id, database)
-    except ClanMembershipCheckError:
-        _deliver_account_clan_prompt(
-            message,
-            bot,
-            "Не удалось проверить участие в клане. Попробуйте ещё раз позже.",
-            InlineKeyboardMarkup(),
-        )
+    accounts = get_current_accounts(message, bot, database)
+    if accounts is None:
         return ActiveUserResult(
             None,
             is_new_user=False,
             group_tag_found=None,
         )
-    account = database.get_active_account(user_id)
+    account = next((account for account in accounts if account.is_active), None)
     if account is not None and account.clan_id is not None:
         database.update_username(user_id, username)
         user = database.get_assigned_user(user_id)
