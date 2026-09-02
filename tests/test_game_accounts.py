@@ -16,8 +16,11 @@ from tg.user_data.accounts import (
     accounts_menu,
     confirm_delete,
     create_initial_account,
+    leave_clan,
     request_add,
     request_delete,
+    request_move,
+    move_account,
     select_account,
 )
 from tg.user_data.account.routing import open_destination
@@ -78,6 +81,10 @@ def callback_data(markup):
     return [
         button.callback_data for row in markup.keyboard for button in row
     ]
+
+
+def callback_texts(markup):
+    return [button.text for row in markup.keyboard for button in row]
 
 
 def register_test_clan(connection):
@@ -152,6 +159,143 @@ def test_new_account_clan_picker_only_shows_memberships(tmp_path, monkeypatch):
     connection.close()
 
 
+def test_active_account_can_move_only_to_a_current_membership(tmp_path, monkeypatch):
+    connection = Database(tmp_path / "database.db")
+    groups = AccessGroupDB(connection)
+    groups.add_group(-100123, "Alpha")
+    groups.add_group(-100456, "Beta")
+    database = UserDataDB(connection)
+    account = database.add_account(
+        42, "telegram_user", "Main", clan_id=-100456
+    )
+    monkeypatch.setattr("tg.user_data.get_access_group_db", lambda: groups)
+    monkeypatch.setattr("tg.user_data.get_user_data_db", lambda: database)
+    bot = FakeBot()
+
+    request_move(make_callback("accounts/move"), bot)
+    assert callback_data(bot.edited[-1][3]) == [
+        f"accounts/move/{account.account_id}/clan/-100123",
+        "accounts",
+    ]
+
+    move_account(
+        make_callback(
+            f"accounts/move/{account.account_id}/clan/-100123"
+        ),
+        bot,
+    )
+    assert database.get_active_account(42).clan_id == -100123
+
+    move_account(
+        make_callback(
+            f"accounts/move/{account.account_id}/clan/-100456"
+        ),
+        bot,
+    )
+    assert database.get_active_account(42).clan_id == -100123
+    assert bot.callback_answers[-1][1]["show_alert"] is True
+    connection.close()
+
+
+def test_clan_actions_separate_moving_and_leaving(
+    tmp_path, monkeypatch
+):
+    connection = Database(tmp_path / "database.db")
+    groups = AccessGroupDB(connection)
+    groups.add_group(-100123, "Alpha")
+    groups.add_group(-100456, "Beta")
+    database = UserDataDB(connection)
+    account = database.add_account(
+        42, "telegram_user", "Main", clan_id=-100123
+    )
+    monkeypatch.setattr("tg.user_data.get_access_group_db", lambda: groups)
+    monkeypatch.setattr("tg.user_data.get_user_data_db", lambda: database)
+
+    class BothClansBot(FakeBot):
+        def get_chat_member(self, group_id, user_id):
+            return type("Member", (), {"status": "member"})()
+
+    bot = BothClansBot()
+
+    accounts_menu(make_callback("accounts"), bot)
+
+    assert "🏰 Сменить клан" in callback_texts(bot.edited[-1][3])
+    assert "🚪 Выйти из клана" in callback_texts(bot.edited[-1][3])
+
+    request_move(make_callback("accounts/move"), bot)
+
+    assert callback_data(bot.edited[-1][3]) == [
+        f"accounts/move/{account.account_id}/clan/-100456",
+        "accounts",
+    ]
+    connection.close()
+
+
+def test_leaving_clan_detaches_account_and_preserves_data(tmp_path, monkeypatch):
+    connection = Database(tmp_path / "database.db")
+    register_test_clan(connection)
+    database = UserDataDB(connection)
+    account = database.add_account(42, "telegram_user", "Main")
+    database.set_value(
+        42,
+        "telegram_user",
+        "hammers",
+        1234,
+        account_id=account.account_id,
+    )
+    monkeypatch.setattr(
+        "tg.user_data.get_access_group_db", lambda: AccessGroupDB(connection)
+    )
+    monkeypatch.setattr("tg.user_data.get_user_data_db", lambda: database)
+    bot = FakeBot()
+
+    leave_clan(
+        make_callback(f"accounts/move/{account.account_id}/leave"), bot
+    )
+
+    assert database.get_active_account(42).clan_id is None
+    assert database.get_user(42, account.account_id).hammers.value == 1234
+    assert "Данные аккаунта сохранены" in bot.edited[-1][0]
+    connection.close()
+
+
+def test_accounts_menu_uses_explicit_clan_actions(tmp_path, monkeypatch):
+    connection = Database(tmp_path / "database.db")
+    groups = AccessGroupDB(connection)
+    groups.add_group(-100123, "Alpha")
+    groups.add_group(-100456, "Beta")
+    database = UserDataDB(connection)
+    detached = database.add_account(
+        42, "telegram_user", "Detached", clan_id=-100456
+    )
+    database.add_account(42, "telegram_user", "Assigned", clan_id=-100123)
+    database.detach_account_from_clan(42, detached.account_id)
+    monkeypatch.setattr("tg.user_data.get_access_group_db", lambda: groups)
+    monkeypatch.setattr("tg.user_data.get_user_data_db", lambda: database)
+    bot = FakeBot()
+
+    accounts_menu(make_callback("accounts"), bot)
+
+    assert "🔄 Detached · клан не выбран" in callback_texts(bot.edited[-1][3])
+    assert "🏰 Сменить клан" not in callback_texts(bot.edited[-1][3])
+    assert "🚪 Выйти из клана" in callback_texts(bot.edited[-1][3])
+
+    database.select_account(42, detached.account_id)
+    accounts_menu(make_callback("accounts"), bot)
+
+    assert "🏰 Выбрать клан" in callback_texts(bot.edited[-1][3])
+
+    class NoClansBot(FakeBot):
+        def get_chat_member(self, group_id, user_id):
+            return type("Member", (), {"status": "left"})()
+
+    no_clans_bot = NoClansBot()
+    accounts_menu(make_callback("accounts"), no_clans_bot)
+    no_clan_actions = callback_texts(no_clans_bot.edited[-1][3])
+    assert "🏰 Выбрать клан" not in no_clan_actions
+    connection.close()
+
+
 def test_initial_account_is_created_in_selected_clan(tmp_path, monkeypatch):
     connection = Database(tmp_path / "database.db")
     groups = AccessGroupDB(connection)
@@ -182,7 +326,7 @@ def test_reminder_preference_defaults_to_enabled_and_filters_users(tmp_path):
     assert database.reminders_enabled(42) is True
     reminder_user_ids = {
         user.user_id.value
-        for user in database.get_users_with_reminders_enabled()
+        for user in database.get_assigned_users_with_reminders_enabled()
     }
     assert reminder_user_ids == {42, 77}
 
@@ -191,7 +335,7 @@ def test_reminder_preference_defaults_to_enabled_and_filters_users(tmp_path):
     assert database.reminders_enabled(42) is False
     reminder_user_ids = {
         user.user_id.value
-        for user in database.get_users_with_reminders_enabled()
+        for user in database.get_assigned_users_with_reminders_enabled()
     }
     assert reminder_user_ids == {77}
     assert {user.user_id.value for user in database.get_users()} == {42, 77}
@@ -206,6 +350,8 @@ def test_account_selector_returns_to_resource_screen_after_switch(
     database = UserDataDB(connection)
     first = database.add_account(42, "telegram_user", "Main")
     second = database.add_account(42, "telegram_user", "Alt")
+    groups = AccessGroupDB(connection)
+    monkeypatch.setattr("tg.user_data.get_access_group_db", lambda: groups)
     monkeypatch.setattr("tg.user_data.get_user_data_db", lambda: database)
     bot = FakeBot()
 
@@ -237,6 +383,8 @@ def test_message_destination_sends_resource_menu(tmp_path, monkeypatch):
     register_test_clan(connection)
     database = UserDataDB(connection)
     database.add_account(42, "telegram_user", "Main")
+    groups = AccessGroupDB(connection)
+    monkeypatch.setattr("tg.user_data.get_access_group_db", lambda: groups)
     monkeypatch.setattr("tg.user_data.get_user_data_db", lambda: database)
     bot = FakeBot()
 
@@ -279,6 +427,8 @@ def test_single_account_menu_does_not_offer_deletion(tmp_path, monkeypatch):
     register_test_clan(connection)
     database = UserDataDB(connection)
     database.add_account(42, "telegram_user", "Main")
+    groups = AccessGroupDB(connection)
+    monkeypatch.setattr("tg.user_data.get_access_group_db", lambda: groups)
     monkeypatch.setattr("tg.user_data.get_user_data_db", lambda: database)
     bot = FakeBot()
 

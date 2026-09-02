@@ -119,6 +119,82 @@ class AccountCommands:
         self._database.run_in_transaction(select)
         return self.get_active_account(user_id)  # type: ignore[return-value]
 
+    def detach_accounts_from_clan(self, user_id: int, clan_id: int) -> int:
+        changed = self._database.run_in_transaction(
+            lambda connection: connection.execute(
+                "UPDATE game_accounts SET clan_id = NULL "
+                "WHERE user_id = ? AND clan_id = ?",
+                (int(user_id), int(clan_id)),
+            ).rowcount
+        )
+        if changed:
+            logger.info(
+                "DB: detached game accounts user_id=%s clan_id=%s count=%s",
+                user_id,
+                clan_id,
+                changed,
+            )
+        return int(changed)
+
+    def detach_account_from_clan(
+        self, user_id: int, account_id: int
+    ) -> GameAccount:
+        def detach(connection) -> None:
+            row = connection.execute(
+                "SELECT clan_id FROM game_accounts "
+                "WHERE user_id = ? AND account_id = ?",
+                (int(user_id), int(account_id)),
+            ).fetchone()
+            if row is None:
+                raise ValueError("Игровой аккаунт не найден")
+            if row[0] is None:
+                raise ValueError("Клан игрового аккаунта уже не выбран")
+            connection.execute(
+                "UPDATE game_accounts SET clan_id = NULL "
+                "WHERE user_id = ? AND account_id = ?",
+                (int(user_id), int(account_id)),
+            )
+
+        self._database.run_in_transaction(detach)
+        logger.info(
+            "DB: detached game account user_id=%s account_id=%s",
+            user_id,
+            account_id,
+        )
+        return next(
+            account
+            for account in self.get_accounts(user_id)
+            if account.account_id == account_id
+        )
+
+    def move_account(self, user_id: int, account_id: int, clan_id: int) -> GameAccount:
+        def move(connection) -> None:
+            clan_exists = connection.execute(
+                "SELECT 1 FROM clans WHERE group_id = ?", (int(clan_id),)
+            ).fetchone()
+            if clan_exists is None:
+                raise ValueError("Клан не найден")
+            changed = connection.execute(
+                "UPDATE game_accounts SET clan_id = ? "
+                "WHERE user_id = ? AND account_id = ?",
+                (int(clan_id), int(user_id), int(account_id)),
+            ).rowcount
+            if not changed:
+                raise ValueError("Игровой аккаунт не найден")
+
+        self._database.run_in_transaction(move)
+        logger.info(
+            "DB: moved game account user_id=%s account_id=%s clan_id=%s",
+            user_id,
+            account_id,
+            clan_id,
+        )
+        return next(
+            account
+            for account in self.get_accounts(user_id)
+            if account.account_id == account_id
+        )
+
     def rename_account(
         self, user_id: int, account_id: int, tag: str
     ) -> GameAccount:

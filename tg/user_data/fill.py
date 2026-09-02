@@ -74,7 +74,7 @@ def _load_fill_context(update: Update, bot: TeleBot) -> FillContext | None:
         )
         return None
 
-    current_user = user_data.get_user_data_db().get_user(
+    current_user = user_data.get_user_data_db().get_assigned_user(
         user_id,
         state.account_id,
     )

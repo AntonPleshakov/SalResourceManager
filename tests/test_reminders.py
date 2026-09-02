@@ -87,7 +87,10 @@ def test_reminder_has_embedded_navigation_buttons():
 
 def test_send_reminder_sends_to_every_user_and_continues_after_error(monkeypatch):
     class FakeUserDataDB:
-        def get_users_with_reminders_enabled(self):
+        def get_attached_clan_ids(self):
+            return []
+
+        def get_assigned_users_with_reminders_enabled(self):
             return [UserData(user_id=1), UserData(user_id=2)]
 
     class FakeBot:
@@ -130,7 +133,10 @@ def test_blocking_bot_disables_future_monday_reminders(monkeypatch):
         def __init__(self):
             self.disabled = []
 
-        def get_users_with_reminders_enabled(self):
+        def get_attached_clan_ids(self):
+            return []
+
+        def get_assigned_users_with_reminders_enabled(self):
             return [UserData(user_id=1, username="blocked")]
 
         def set_reminders_enabled(self, user_id, enabled):
@@ -159,7 +165,10 @@ def test_reminder_combines_multiple_accounts_into_one_message(monkeypatch):
     ]
 
     class FakeUserDataDB:
-        def get_users_with_reminders_enabled(self):
+        def get_attached_clan_ids(self):
+            return []
+
+        def get_assigned_users_with_reminders_enabled(self):
             return users
 
     class FakeBot:
@@ -207,7 +216,10 @@ def test_weekly_reminder_skips_current_user_and_lists_missing_resources(
     partial_user.mark_updated("hammers", reminder.time.date())
 
     class FakeUserDataDB:
-        def get_users_with_reminders_enabled(self):
+        def get_attached_clan_ids(self):
+            return []
+
+        def get_assigned_users_with_reminders_enabled(self):
             return [current_user, partial_user]
 
     class FakeBot:

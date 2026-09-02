@@ -190,7 +190,7 @@ def personal_war_points(callback_query: CallbackQuery, bot: TeleBot) -> None:
         user_id,
         get_username(callback_query),
     )
-    user = war.get_user_data_db().get_user(user_id)
+    user = war.get_user_data_db().get_assigned_user(user_id)
     if user is None:
         _edit_rich_message(
             bot,
@@ -268,7 +268,7 @@ def personal_war_details_menu(
     callback_query: CallbackQuery, bot: TeleBot
 ) -> None:
     user_id, chat_id, message_id = get_ids(callback_query)
-    user = war.get_user_data_db().get_user(user_id)
+    user = war.get_user_data_db().get_assigned_user(user_id)
     if user is None:
         personal_war_points(callback_query, bot)
         return
@@ -313,7 +313,7 @@ def personal_war_activity_details(
     callback_query: CallbackQuery, bot: TeleBot
 ) -> None:
     user_id, chat_id, message_id = get_ids(callback_query)
-    user = war.get_user_data_db().get_user(user_id)
+    user = war.get_user_data_db().get_assigned_user(user_id)
     if user is None:
         personal_war_points(callback_query, bot)
         return

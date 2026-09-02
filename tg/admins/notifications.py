@@ -22,6 +22,7 @@ from tg.admins.notification import delivery
 from tg.admins.notification.handlers import register_handlers
 from tg.admins.notification.views import notifications_menu
 from tg.admins.common import get_active_admin_group
+from tg.clans import refresh_clan_accounts
 from tg.utils import (
     Button,
     get_ids,
@@ -31,13 +32,8 @@ from tg.utils import (
 
 
 def send_standard_notification(
-    bot: TeleBot, plan: StandardNotificationPlan | None = None
+    bot: TeleBot, plan: StandardNotificationPlan
 ) -> BroadcastResult:
-    if plan is None:
-        plan = build_standard_notification_plan(
-            get_user_data_db().get_users(), week_started_on(now())
-        )
-
     return delivery.send_standard(bot, plan)
 
 
@@ -48,8 +44,10 @@ def send_custom_notification(
     group_id: int,
     audience: CustomNotificationAudience = CustomNotificationAudience.ALL,
 ) -> BroadcastResult:
+    database = get_user_data_db()
+    refresh_clan_accounts(bot, group_id, database)
     users = filter_custom_notification_users(
-        get_user_data_db().get_users(group_id), audience, now()
+        database.get_clan_users(group_id), audience, now()
     )
     recipient_count = len(group_user_accounts(users))
     messages = build_custom_notification_messages(
@@ -69,13 +67,15 @@ def send_custom_private_notification(
     bot: TeleBot,
     text: str,
     admin_name: str,
-    group_id: int | None = None,
+    group_id: int,
     audience: CustomNotificationAudience = CustomNotificationAudience.ALL,
 ) -> BroadcastResult:
     clean_text = validate_custom_notification_text(text)
     message = custom_notification_header(clean_text, admin_name)
+    database = get_user_data_db()
+    refresh_clan_accounts(bot, group_id, database)
     users = filter_custom_notification_users(
-        get_user_data_db().get_users(group_id), audience, now()
+        database.get_clan_users(group_id), audience, now()
     )
     grouped_users = group_user_accounts(users)
     return delivery.send_private(bot, message, grouped_users)
@@ -86,8 +86,10 @@ def confirm_standard_notification(
 ) -> None:
     user_id, chat_id, message_id = get_ids(callback_query)
     group = get_active_admin_group(user_id)
+    database = get_user_data_db()
+    refresh_clan_accounts(bot, group.group_id, database)
     plan = build_standard_notification_plan(
-        get_user_data_db().get_users(group.group_id), week_started_on(now())
+        database.get_clan_users(group.group_id), week_started_on(now())
     )
     bot.set_state(user_id, NotificationStates.standard_confirmation)
     bot.add_data(
@@ -149,7 +151,12 @@ def send_standard_notification_confirmed(
         chat_id,
         message_id,
     )
-    result = send_standard_notification(bot, plan)
+    database = get_user_data_db()
+    refresh_clan_accounts(bot, group_id, database)
+    current_plan = build_standard_notification_plan(
+        database.get_clan_users(group_id), week_started_on(now())
+    )
+    result = send_standard_notification(bot, current_plan)
     bot.answer_callback_query(
         callback_query.id,
         f"Доставлено: {result.sent}, ошибок: {result.failed}",

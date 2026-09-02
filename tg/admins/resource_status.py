@@ -9,6 +9,7 @@ from db.initializer import get_user_data_db
 from logger.app_logger import logger
 from resources.user_data import UserData
 from tg.admins.common import get_active_admin_group
+from tg.clans import refresh_clan_accounts
 from tg.utils import (
     Button,
     empty_filter,
@@ -79,7 +80,9 @@ def _split_report(report: str) -> List[str]:
 def last_updates(callback_query: CallbackQuery, bot: TeleBot) -> None:
     user_id, chat_id, message_id = get_ids(callback_query)
     group = get_active_admin_group(user_id)
-    users = get_user_data_db().get_users(group.group_id)
+    database = get_user_data_db()
+    refresh_clan_accounts(bot, group.group_id, database)
+    users = database.get_clan_users(group.group_id)
     report = build_last_updates_report(users)
     chunks = _split_report(report)
     keyboard = InlineKeyboardMarkup(row_width=1)

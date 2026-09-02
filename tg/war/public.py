@@ -8,6 +8,8 @@ from logger.app_logger import logger
 from resources.user_data import UserData
 from resources.war import WarPointsCalculator
 import tg.war as war
+from tg.clans import refresh_clan_accounts
+from tg.user_data.common import prompt_for_account_clan
 from tg.metrics import observe_score_calculation
 from tg.utils import Button, empty_filter, format_points, get_ids, get_username
 
@@ -20,8 +22,10 @@ def _resources_updated_since(user: UserData, cutoff: date) -> bool:
     return user.has_resource_updates_since(cutoff)
 
 
-def _war_points_text(clan_id: int | None = None) -> str:
-    users = war.get_user_data_db().get_users(clan_id)
+def _war_points_text(bot: TeleBot, clan_id: int) -> str:
+    database = war.get_user_data_db()
+    refresh_clan_accounts(bot, clan_id, database)
+    users = database.get_clan_users(clan_id)
     cutoff = _war_week_started_on(now())
     accounted_users = [
         user for user in users if _resources_updated_since(user, cutoff)
@@ -87,8 +91,11 @@ def public_war_points(callback_query: CallbackQuery, bot: TeleBot) -> None:
             show_alert=True,
         )
         return
+    if account.clan_id is None:
+        prompt_for_account_clan(callback_query, bot, account.account_id)
+        return
     bot.edit_message_text(
-        _war_points_text(account.clan_id),
+        _war_points_text(bot, account.clan_id),
         chat_id,
         message_id,
         reply_markup=keyboard,

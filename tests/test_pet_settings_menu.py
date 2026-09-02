@@ -6,7 +6,7 @@ from config.config import reset_config
 
 reset_config(str(Path(__file__).parents[1] / "config" / "config_template.ini"))
 
-from resources.user_data import UserData
+from resources.user_data import GameAccount, UserData
 from tg.user_data import (
     change_hatch_batch_count,
     hatch_batches_menu,
@@ -47,18 +47,33 @@ class FakeBot:
     def answer_callback_query(self, *args, **kwargs):
         self.answers.append((args, kwargs))
 
+    def get_chat_member(self, group_id, user_id):
+        return type("Member", (), {"status": "member"})()
+
 
 class FakeUserDataDB:
     def __init__(self, user=None):
         self.user = user or UserData(user_id=42, username="tester")
+        self.account = GameAccount(
+            account_id=1,
+            user_id=42,
+            username="tester",
+            tag="Main",
+            is_active=True,
+            clan_id=-100123,
+            clan_title="Test clan",
+        )
+
+    def get_accounts(self, _user_id):
+        return [self.account]
 
     def get_active_account(self, _user_id):
-        return self.user
+        return self.account
 
     def update_username(self, _user_id, username):
         self.user.username.value = username
 
-    def get_user(self, _user_id):
+    def get_assigned_user(self, _user_id):
         return self.user
 
     def set_value(self, _user_id, _username, field_name, value, **_kwargs):

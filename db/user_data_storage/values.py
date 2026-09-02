@@ -31,7 +31,7 @@ class UserDataValues:
         clan_id: Optional[int] = None,
     ) -> UserData:
         self.update_username(user_id, username)
-        user = self.get_user(user_id)
+        user = self.get_assigned_user(user_id)
         if user is None:
             account = self.add_account(
                 user_id,
@@ -39,7 +39,7 @@ class UserDataValues:
                 tag or username,
                 clan_id=clan_id,
             )
-            user = self.get_user(user_id, account.account_id)
+            user = self.get_assigned_user(user_id, account.account_id)
         return user  # type: ignore[return-value]
 
     def set_values(
@@ -55,7 +55,7 @@ class UserDataValues:
         _validate_values(values)
         self.update_username(user_id, username)
         field_updated_on = updated_on or now().date()
-        user = self.get_user(user_id, account_id)
+        user = self.get_assigned_user(user_id, account_id)
         if user is None:
             if account_id is not None:
                 raise ValueError("Игровой аккаунт не найден")

@@ -255,7 +255,14 @@ def test_game_data_callback_shows_table_before_export(monkeypatch):
     users = [UserData(user_id=42, username="player")]
     monkeypatch.setattr(
         "tg.admins.game_data.get_user_data_db",
-        lambda: type("Users", (), {"get_users": lambda _, clan_id: users})(),
+        lambda: type(
+            "Users",
+            (),
+            {
+                "get_clan_users": lambda _, clan_id: users,
+                "get_clan_user_ids": lambda _, clan_id: [],
+            },
+        )(),
     )
     monkeypatch.setattr(
         "tg.admins.game_data.get_active_admin_group",
@@ -287,7 +294,14 @@ def test_google_export_callback_exports_and_shows_url(monkeypatch):
     monkeypatch.setattr("tg.admins.game_data.GameDataReport", FakeReport)
     monkeypatch.setattr(
         "tg.admins.game_data.get_user_data_db",
-        lambda: type("Users", (), {"get_users": lambda _, clan_id: users})(),
+        lambda: type(
+            "Users",
+            (),
+            {
+                "get_clan_users": lambda _, clan_id: users,
+                "get_clan_user_ids": lambda _, clan_id: [],
+            },
+        )(),
     )
     monkeypatch.setattr(
         "tg.admins.game_data.get_active_admin_group",
@@ -325,7 +339,9 @@ def test_google_export_callback_reports_failure(monkeypatch):
     monkeypatch.setattr("tg.admins.game_data.GameDataReport", BrokenReport)
     monkeypatch.setattr(
         "tg.admins.game_data.get_user_data_db",
-        lambda: type("Users", (), {"get_users": lambda _, clan_id: []})(),
+        lambda: type(
+            "Users", (), {"get_clan_users": lambda _, clan_id: []}
+        )(),
     )
     monkeypatch.setattr(
         "tg.admins.game_data.get_active_admin_group",

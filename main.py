@@ -127,15 +127,15 @@ def initialize_databases():
         databases.release_views.get_users_count(),
         len(databases.access_group.get_groups()),
     )
-    return databases.access_group
+    return databases
 
 
 if __name__ == "__main__":
     logger.info("Starting Sal Resources Manager")
     try:
         webhook_settings = load_webhook_settings()
-        access_group_db = initialize_databases()
-        sync_migrated_clan_titles(bot, access_group_db)
+        databases = initialize_databases()
+        sync_migrated_clan_titles(bot, databases.access_group)
     except Exception:
         logger.exception(
             "Startup initialization failed; Sal Resources Manager is exiting"
@@ -144,7 +144,11 @@ if __name__ == "__main__":
 
     logger.debug("Registering Telegram filters, middleware and handlers")
     add_custom_filters(bot)
-    bot.setup_middleware(GroupAccessMiddleware(bot, access_group_db))
+    bot.setup_middleware(
+        GroupAccessMiddleware(
+            bot, databases.access_group, user_data_db=databases.user_data
+        )
+    )
     bot.setup_middleware(TelegramMetricsMiddleware())
     tg.manager.register_handlers(bot)
     tg.manager.configure_commands(bot)

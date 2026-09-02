@@ -17,6 +17,7 @@ from logger.app_logger import logger
 from reports.game_data import GameDataReport
 from resources.user_data import UserData
 from tg.admins.common import get_active_admin_group
+from tg.clans import refresh_clan_accounts
 from tg.metrics import APPLICATION_METRICS
 from tg.utils import Button, empty_filter, get_ids, get_username
 
@@ -150,7 +151,9 @@ def show_game_data(callback_query: CallbackQuery, bot: TeleBot) -> None:
     )
     try:
         group = get_active_admin_group(user_id)
-        users = get_user_data_db().get_users(group.group_id)
+        database = get_user_data_db()
+        refresh_clan_accounts(bot, group.group_id, database)
+        users = database.get_clan_users(group.group_id)
         rich_message = build_game_data_message(group.title, users)
     except Exception as error:
         logger.exception(
@@ -187,9 +190,9 @@ def export_game_data(callback_query: CallbackQuery, bot: TeleBot) -> None:
     result = "failed"
     try:
         group = get_active_admin_group(user_id)
-        url = GameDataReport().export(
-            get_user_data_db().get_users(group.group_id)
-        )
+        database = get_user_data_db()
+        refresh_clan_accounts(bot, group.group_id, database)
+        url = GameDataReport().export(database.get_clan_users(group.group_id))
     except Exception as error:
         logger.exception(
             "Unable to export game data report for user_id=%s: %s",

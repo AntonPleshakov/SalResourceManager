@@ -49,8 +49,11 @@ class FakeUserDataDB:
     def __init__(self, users):
         self._users = users
 
-    def get_users(self, clan_id=None):
+    def get_clan_users(self, clan_id):
         return self._users
+
+    def get_clan_user_ids(self, clan_id):
+        return []
 
 
 class NotificationFlowBot:
@@ -97,7 +100,8 @@ def test_standard_notification_is_sent_to_every_user(monkeypatch):
 
     bot = FakeBot()
 
-    result = send_standard_notification(bot)
+    plan = build_standard_notification_plan(users, date(2026, 8, 3))
+    result = send_standard_notification(bot, plan)
 
     assert result == BroadcastResult(sent=1, failed=1)
     assert [call[0] for call in bot.calls] == [1, 2]
@@ -135,7 +139,8 @@ def test_standard_notification_ignores_stale_technologies(monkeypatch):
 
     bot = FakeBot()
 
-    result = send_standard_notification(bot)
+    plan = build_standard_notification_plan([user], date(2026, 8, 2))
+    result = send_standard_notification(bot, plan)
 
     assert result == BroadcastResult(sent=0, failed=0)
     assert bot.calls == []
@@ -176,7 +181,8 @@ def test_standard_notification_combines_multiple_accounts(monkeypatch):
 
     bot = FakeBot()
 
-    result = send_standard_notification(bot)
+    plan = build_standard_notification_plan(users, date(2026, 8, 3))
+    result = send_standard_notification(bot, plan)
 
     assert result == BroadcastResult(sent=1, failed=0)
     assert len(bot.calls) == 1
@@ -300,6 +306,12 @@ def test_standard_notification_shows_progress_before_sending(monkeypatch):
             {"is_admin": lambda _, user_id, group_id: True},
         )(),
     )
+    monkeypatch.setattr(
+        "tg.admins.notifications.get_user_data_db",
+        lambda: FakeUserDataDB(
+            [UserData(user_id=1, username="outdated")]
+        ),
+    )
     bot = NotificationFlowBot(
         {"standard_notification_plan": plan, "admin_group_id": -100123}
     )
@@ -309,7 +321,8 @@ def test_standard_notification_shows_progress_before_sending(monkeypatch):
     )
 
     assert bot.edited[0][0][0] == "Отправляю уведомления…"
-    assert sent_plans == [plan]
+    assert len(sent_plans) == 1
+    assert [recipient.user_id for recipient in sent_plans[0].recipients] == [1]
     assert bot.edited[-1][0][0] == "Уведомления пользователям"
 
 
@@ -555,7 +568,7 @@ def test_custom_private_notification_is_sent_to_every_user(monkeypatch):
     bot = FakeBot()
 
     result = send_custom_private_notification(
-        bot, "Личный <текст>", "Admin & owner"
+        bot, "Личный <текст>", "Admin & owner", -100123
     )
 
     assert result == BroadcastResult(sent=1, failed=1)
@@ -587,7 +600,7 @@ def test_custom_private_notification_is_sent_once_for_multiple_accounts(
 
     bot = FakeBot()
 
-    result = send_custom_private_notification(bot, "Текст", "Admin")
+    result = send_custom_private_notification(bot, "Текст", "Admin", -100123)
 
     assert result == BroadcastResult(sent=1, failed=0)
     assert [call[0] for call in bot.calls] == [1]

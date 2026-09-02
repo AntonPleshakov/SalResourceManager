@@ -62,18 +62,21 @@ class FakeUserDataDB:
     def __init__(self, user=None):
         self.user = user
 
-    def get_user(self, user_id):
+    def get_assigned_user(self, user_id):
         if self.user is not None and self.user.user_id.value == user_id:
             return self.user
         return None
 
-    def get_users(self, clan_id=None):
+    def get_clan_users(self, clan_id):
         return [self.user] if self.user is not None else []
 
     def get_active_account(self, user_id):
         if self.user is None or self.user.user_id.value != user_id:
             return None
         return SimpleNamespace(clan_id=-100123)
+
+    def get_clan_user_ids(self, clan_id):
+        return []
 
 
 def callback_data(markup):
@@ -278,7 +281,8 @@ def test_maximum_war_points_excludes_accounts_not_updated_since_monday(
     monkeypatch.setattr(
         "tg.war.get_user_data_db",
         lambda: SimpleNamespace(
-            get_users=lambda clan_id=None: users,
+            get_clan_users=lambda clan_id: users,
+            get_clan_user_ids=lambda clan_id: [],
             get_active_account=lambda user_id: SimpleNamespace(
                 clan_id=-100123
             ),

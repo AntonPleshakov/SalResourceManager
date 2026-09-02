@@ -18,6 +18,7 @@ from resources.user_data import (
 )
 from tg.metrics import APPLICATION_METRICS, ApplicationMetrics
 from tg.rich import button_row, callback_button, input_rich_message
+from tg.clans import refresh_clan_accounts
 from tg.scheduling import ReminderScheduler
 from tg.scheduling.delivery import (
     deliver_reminder,
@@ -207,7 +208,9 @@ def send_reminder(
     sent = 0
     skipped = 0
     database = get_user_data_db()
-    users = database.get_users_with_reminders_enabled()
+    for clan_id in database.get_attached_clan_ids():
+        refresh_clan_accounts(bot, clan_id, database)
+    users = database.get_assigned_users_with_reminders_enabled()
     required_names = _required_field_names()
     logger.info(
         "Sending resource reminder kind=%s recipients=%d resources=%d",

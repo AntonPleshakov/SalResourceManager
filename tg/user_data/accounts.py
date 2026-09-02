@@ -5,6 +5,7 @@ from telebot.types import CallbackQuery, InlineKeyboardMarkup, Message
 from logger.app_logger import logger
 import tg.user_data as user_data
 from tg.clans import get_user_clans
+from tg.user_data.common import prompt_for_account_clan
 from tg.user_data.account.handlers import register_handlers
 from tg.user_data.account.deletion import (
     confirm_delete,
@@ -140,6 +141,73 @@ def request_rename(callback_query: CallbackQuery, bot: TeleBot) -> None:
     _request_nickname(callback_query, bot, "rename")
 
 
+def request_move(callback_query: CallbackQuery, bot: TeleBot) -> None:
+    user_id = callback_query.from_user.id
+    account = user_data.get_user_data_db().get_active_account(user_id)
+    if account is None:
+        accounts_menu(callback_query, bot)
+        return
+    prompt_for_account_clan(callback_query, bot, account.account_id)
+
+
+def move_account(callback_query: CallbackQuery, bot: TeleBot) -> None:
+    user_id = callback_query.from_user.id
+    try:
+        parts = callback_query.data.split("/")
+        account_id = int(parts[2])
+        clan_id = int(parts[4])
+    except (IndexError, ValueError):
+        bot.answer_callback_query(
+            callback_query.id, "Не удалось выбрать клан", show_alert=True
+        )
+        return
+    available_clan_ids = {
+        group.group_id
+        for group in get_user_clans(
+            bot, user_id, user_data.get_access_group_db().get_groups()
+        )
+    }
+    if clan_id not in available_clan_ids:
+        bot.answer_callback_query(
+            callback_query.id,
+            "Вы не состоите в выбранном клане",
+            show_alert=True,
+        )
+        return
+    try:
+        account = user_data.get_user_data_db().move_account(
+            user_id, account_id, clan_id
+        )
+    except ValueError as error:
+        bot.answer_callback_query(callback_query.id, str(error), show_alert=True)
+        return
+    accounts_menu(
+        callback_query,
+        bot,
+        "✅ Клан аккаунта "
+        f"«{formatting.escape_html(account.tag)}» изменён.",
+    )
+
+
+def leave_clan(callback_query: CallbackQuery, bot: TeleBot) -> None:
+    user_id = callback_query.from_user.id
+    try:
+        account_id = int(callback_query.data.split("/")[2])
+        account = user_data.get_user_data_db().detach_account_from_clan(
+            user_id, account_id
+        )
+    except (IndexError, ValueError) as error:
+        bot.answer_callback_query(callback_query.id, str(error), show_alert=True)
+        return
+    accounts_menu(
+        callback_query,
+        bot,
+        "✅ Аккаунт "
+        f"«{formatting.escape_html(account.tag)}» больше не привязан к клану. "
+        "Данные аккаунта сохранены.",
+    )
+
+
 def create_initial_account(callback_query: CallbackQuery, bot: TeleBot) -> None:
     user_id = callback_query.from_user.id
     try:
@@ -172,7 +240,7 @@ def create_initial_account(callback_query: CallbackQuery, bot: TeleBot) -> None:
         group_tag or username,
         clan_id=clan_id,
     )
-    created_user = database.get_user(user_id, account.account_id)
+    created_user = database.get_assigned_user(user_id, account.account_id)
     if created_user is None:
         raise RuntimeError("Created game account has no user data")
     from tg.onboarding import show_created_account_welcome

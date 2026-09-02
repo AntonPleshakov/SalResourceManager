@@ -10,8 +10,9 @@ from telebot.types import (
 )
 
 from db.access_group import AccessGroupDB
+from db.user_data import UserDataDB
 from logger.app_logger import logger
-from tg.clans import is_group_member
+from tg.clans import ClanMembershipCheckError, is_group_member, refresh_user_accounts
 from tg.metrics import APPLICATION_METRICS, ApplicationMetrics
 from tg.middleware import NoOpPostProcessMiddleware
 from tg.utils import get_ids, get_username
@@ -34,7 +35,7 @@ ACCESS_GROUP_NOT_REGISTERED_MESSAGE = (
     "В боте ещё не зарегистрировано ни одного клана. Обратитесь к автору: "
     "@AntonPleshakov."
 )
-ACCESS_DENIED_ALERT_MESSAGE = "Доступ сейчас закрыт. Я отправил подробности в чат."
+ACCESS_DENIED_ALERT_MESSAGE = "Доступ сейчас закрыт."
 
 
 def is_group_registration_command(
@@ -60,11 +61,13 @@ class GroupAccessMiddleware(NoOpPostProcessMiddleware):
         bot: TeleBot,
         access_group_db: AccessGroupDB,
         metrics: ApplicationMetrics = APPLICATION_METRICS,
+        user_data_db: UserDataDB | None = None,
     ):
         super().__init__()
         self.update_types = ["message", "callback_query"]
         self._bot = bot
         self._access_group_db = access_group_db
+        self._user_data_db = user_data_db
         self._metrics = metrics
 
     def _group_link_keyboard(self, groups) -> InlineKeyboardMarkup | None:
@@ -146,6 +149,22 @@ class GroupAccessMiddleware(NoOpPostProcessMiddleware):
 
         user_id = get_ids(update)[0]
         errors = []
+        if self._user_data_db is not None:
+            try:
+                refresh_user_accounts(self._bot, user_id, self._user_data_db)
+            except ClanMembershipCheckError:
+                self._deny_access(update, ACCESS_CHECK_FAILED_MESSAGE)
+                self._metrics.access_checks.labels(result="error").inc()
+                return CancelUpdate()
+            attached_clan_ids = {
+                account.clan_id
+                for account in self._user_data_db.get_accounts(user_id)
+                if account.clan_id is not None
+            }
+            if attached_clan_ids:
+                self._metrics.access_checks.labels(result="allowed").inc()
+                return None
+
         for group in groups:
             try:
                 member = self._bot.get_chat_member(group.group_id, user_id)

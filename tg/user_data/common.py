@@ -21,7 +21,11 @@ from resources.user_data import (
     UserData,
 )
 import tg.user_data as user_data
-from tg.clans import get_user_clans
+from tg.clans import (
+    ClanMembershipCheckError,
+    get_user_clans,
+    refresh_user_accounts,
+)
 from tg.rich import button_row, callback_button, input_rich_message
 from tg.utils import Button, format_points, get_ids, get_username
 
@@ -41,16 +45,92 @@ class MenuContent:
     rich_message: InputRichMessage | None = None
 
 
+def _deliver_account_clan_prompt(
+    message: Union[Message, CallbackQuery],
+    bot: TeleBot,
+    text: str,
+    keyboard: InlineKeyboardMarkup,
+) -> None:
+    chat_id, message_id = get_ids(message)[1:]
+    if isinstance(message, CallbackQuery):
+        bot.edit_message_text(text, chat_id, message_id, reply_markup=keyboard)
+    else:
+        bot.send_message(chat_id, text, reply_markup=keyboard)
+
+
+def prompt_for_account_clan(
+    message: Union[Message, CallbackQuery],
+    bot: TeleBot,
+    account_id: int | None,
+) -> None:
+    user_id = get_ids(message)[0]
+    database = user_data.get_user_data_db()
+    account = next(
+        (
+            account
+            for account in database.get_accounts(user_id)
+            if account.account_id == account_id
+        ),
+        None,
+    )
+    current_clan_id = None if account is None else account.clan_id
+    groups = get_user_clans(
+        bot, user_id, user_data.get_access_group_db().get_groups()
+    )
+    target_groups = [
+        group for group in groups if group.group_id != current_clan_id
+    ]
+    keyboard = InlineKeyboardMarkup(row_width=1)
+    callback_prefix = (
+        "accounts/create"
+        if account_id is None
+        else f"accounts/move/{account_id}/clan"
+    )
+    for group in target_groups:
+        keyboard.add(
+            Button(
+                f"🏰 {group.title}", f"{callback_prefix}/{group.group_id}"
+            ).inline()
+        )
+    if account_id is not None:
+        keyboard.add(Button("⬅️ Назад к аккаунтам", "accounts").inline())
+    text = (
+        "<b>Выберите клан игрового аккаунта</b>\n\n"
+        "Аккаунт будет учитываться только в данных выбранного клана."
+        if target_groups
+        else (
+            "Нет других доступных кланов для этого аккаунта."
+            if current_clan_id is not None
+            else "Не удалось найти зарегистрированный клан, в котором вы состоите."
+        )
+    )
+    _deliver_account_clan_prompt(message, bot, text, keyboard)
+
+
 def ensure_active_user(
     message: Union[Message, CallbackQuery], bot: TeleBot
 ) -> ActiveUserResult:
     user_id = get_ids(message)[0]
     username = get_username(message)
     database = user_data.get_user_data_db()
+    try:
+        refresh_user_accounts(bot, user_id, database)
+    except ClanMembershipCheckError:
+        _deliver_account_clan_prompt(
+            message,
+            bot,
+            "Не удалось проверить участие в клане. Попробуйте ещё раз позже.",
+            InlineKeyboardMarkup(),
+        )
+        return ActiveUserResult(
+            None,
+            is_new_user=False,
+            group_tag_found=None,
+        )
     account = database.get_active_account(user_id)
-    if account is not None:
+    if account is not None and account.clan_id is not None:
         database.update_username(user_id, username)
-        user = database.get_user(user_id)
+        user = database.get_assigned_user(user_id)
         if user is None:
             raise RuntimeError("Active game account has no user data")
         return ActiveUserResult(
@@ -60,27 +140,11 @@ def ensure_active_user(
         )
 
     database.update_username(user_id, username)
-    groups = get_user_clans(
-        bot, user_id, user_data.get_access_group_db().get_groups()
+    prompt_for_account_clan(
+        message,
+        bot,
+        None if account is None else account.account_id,
     )
-    keyboard = InlineKeyboardMarkup(row_width=1)
-    for group in groups:
-        keyboard.add(
-            Button(
-                f"🏰 {group.title}", f"accounts/create/{group.group_id}"
-            ).inline()
-        )
-    text = (
-        "<b>Выберите клан игрового аккаунта</b>\n\n"
-        "Аккаунт будет учитываться только в данных выбранного клана."
-        if groups
-        else "Не удалось найти зарегистрированный клан, в котором вы состоите."
-    )
-    chat_id, message_id = get_ids(message)[1:]
-    if isinstance(message, CallbackQuery):
-        bot.edit_message_text(text, chat_id, message_id, reply_markup=keyboard)
-    else:
-        bot.send_message(chat_id, text, reply_markup=keyboard)
     return ActiveUserResult(
         None,
         is_new_user=False,

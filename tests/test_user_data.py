@@ -226,7 +226,10 @@ def test_existing_account_is_returned_as_an_existing_user(tmp_path, monkeypatch)
     database.add_account(42, "old_username", "Лидер")
     monkeypatch.setattr("tg.user_data.get_user_data_db", lambda: database)
 
-    result = ensure_active_user(make_callback("home"), object())
+    bot = SimpleNamespace(
+        get_chat_member=lambda clan_id, user_id: SimpleNamespace(status="member")
+    )
+    result = ensure_active_user(make_callback("home"), bot)
 
     assert result.is_new_user is False
     assert result.group_tag_found is None
@@ -963,7 +966,7 @@ def test_fill_all_rejects_invalid_value_before_advancing_to_next_field(
     )
 
     class FakeUserDataDB:
-        def get_user(self, _user_id, _account_id):
+        def get_assigned_user(self, _user_id, _account_id):
             return current_user
 
     class FakeBot:
@@ -1078,7 +1081,7 @@ def test_reminder_fill_saves_only_requested_fields(monkeypatch):
                 extra_mount_chance=5,
             )
 
-        def get_user(self, _user_id, _account_id):
+        def get_assigned_user(self, _user_id, _account_id):
             return self.user
 
         def set_value(
@@ -1177,7 +1180,7 @@ def test_fill_all_can_skip_values_without_changing_them(monkeypatch):
     )
 
     class FakeUserDataDB:
-        def get_user(self, _user_id, _account_id):
+        def get_assigned_user(self, _user_id, _account_id):
             return current_user
 
     class FakeBot:

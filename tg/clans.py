@@ -9,6 +9,10 @@ from db.access_group import AccessGroup, AccessGroupDB
 from logger.app_logger import logger
 
 
+class ClanMembershipCheckError(Exception):
+    pass
+
+
 def is_group_member(chat_member: ChatMember) -> bool:
     if chat_member.status == "restricted":
         return bool(chat_member.is_member)
@@ -46,6 +50,51 @@ def get_user_clans(
         if allowed:
             memberships.append(group)
     return memberships
+
+
+def refresh_user_accounts(bot: TeleBot, user_id: int, database) -> None:
+    """Detach the user's accounts from clans they have left."""
+    clan_ids = {
+        account.clan_id
+        for account in database.get_accounts(user_id)
+        if account.clan_id is not None
+    }
+    for clan_id in clan_ids:
+        try:
+            member = bot.get_chat_member(clan_id, user_id)
+        except Exception as error:
+            logger.warning(
+                "Unable to refresh account clan membership group_id=%s "
+                "user_id=%s: %s",
+                clan_id,
+                user_id,
+                type(error).__name__,
+            )
+            raise ClanMembershipCheckError(
+                "Не удалось проверить участие в клане"
+            ) from error
+        if not is_group_member(member):
+            database.detach_accounts_from_clan(user_id, clan_id)
+
+
+def refresh_clan_accounts(bot: TeleBot, clan_id: int, database) -> None:
+    """Detach accounts whose owners are no longer members of the clan."""
+    for user_id in database.get_clan_user_ids(clan_id):
+        try:
+            member = bot.get_chat_member(clan_id, user_id)
+        except Exception as error:
+            logger.warning(
+                "Unable to refresh clan account membership group_id=%s "
+                "user_id=%s: %s",
+                clan_id,
+                user_id,
+                type(error).__name__,
+            )
+            raise ClanMembershipCheckError(
+                "Не удалось проверить состав клана"
+            ) from error
+        if not is_group_member(member):
+            database.detach_accounts_from_clan(user_id, clan_id)
 
 
 def sync_migrated_clan_titles(bot: TeleBot, groups: AccessGroupDB) -> None:

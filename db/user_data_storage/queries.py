@@ -29,26 +29,45 @@ class UserDataQueries:
             )
         return None if row is None else UserData.from_row(list(row))
 
-    def get_users(self, clan_id: Optional[int] = None) -> List[UserData]:
-        where = "" if clan_id is None else "WHERE ga.clan_id = ? "
-        parameters = () if clan_id is None else (int(clan_id),)
+    def get_assigned_user(
+        self, user_id: int, account_id: Optional[int] = None
+    ) -> Optional[UserData]:
+        if account_id is None:
+            row = self._database.fetch_one(
+                SELECT_USER
+                + "WHERE tu.user_id = ? AND "
+                "ga.account_id = tu.active_game_account_id "
+                "AND ga.clan_id IS NOT NULL",
+                (user_id,),
+            )
+        else:
+            row = self._database.fetch_one(
+                SELECT_USER
+                + "WHERE tu.user_id = ? AND ga.account_id = ? "
+                "AND ga.clan_id IS NOT NULL",
+                (user_id, account_id),
+            )
+        return None if row is None else UserData.from_row(list(row))
+
+    def get_users(self) -> List[UserData]:
         rows = self._database.fetch_all(
-            SELECT_USER + where + "ORDER BY tu.user_id, ga.account_id",
-            parameters,
+            SELECT_USER + "ORDER BY tu.user_id, ga.account_id"
         )
         return _users_from_rows(rows)
 
-    def get_users_with_reminders_enabled(
-        self, clan_id: Optional[int] = None
-    ) -> List[UserData]:
-        clan_filter = "" if clan_id is None else "AND ga.clan_id = ? "
-        parameters = () if clan_id is None else (int(clan_id),)
+    def get_clan_users(self, clan_id: int) -> List[UserData]:
         rows = self._database.fetch_all(
             SELECT_USER
-            + "WHERE tu.reminders_enabled = 1 "
-            + clan_filter
-            + "ORDER BY tu.user_id, ga.account_id",
-            parameters,
+            + "WHERE ga.clan_id = ? ORDER BY tu.user_id, ga.account_id",
+            (int(clan_id),),
+        )
+        return _users_from_rows(rows)
+
+    def get_assigned_users_with_reminders_enabled(self) -> List[UserData]:
+        rows = self._database.fetch_all(
+            SELECT_USER
+            + "WHERE tu.reminders_enabled = 1 AND ga.clan_id IS NOT NULL "
+            "ORDER BY tu.user_id, ga.account_id",
         )
         return _users_from_rows(rows)
 
@@ -77,7 +96,7 @@ class UserDataQueries:
             "ga.account_id = tu.active_game_account_id, ga.clan_id, c.title "
             "FROM game_accounts ga "
             "JOIN telegram_users tu ON tu.user_id = ga.user_id "
-            "JOIN clans c ON c.group_id = ga.clan_id "
+            "LEFT JOIN clans c ON c.group_id = ga.clan_id "
             "WHERE ga.user_id = ? ORDER BY ga.account_id",
             (user_id,),
         )
@@ -88,8 +107,8 @@ class UserDataQueries:
                 username=str(row[2]),
                 tag=str(row[3]),
                 is_active=bool(row[4]),
-                clan_id=int(row[5]),
-                clan_title=str(row[6]),
+                clan_id=None if row[5] is None else int(row[5]),
+                clan_title="" if row[6] is None else str(row[6]),
             )
             for row in rows
         ]
@@ -99,3 +118,18 @@ class UserDataQueries:
             (account for account in self.get_accounts(user_id) if account.is_active),
             None,
         )
+
+    def get_clan_user_ids(self, clan_id: int) -> List[int]:
+        rows = self._database.fetch_all(
+            "SELECT DISTINCT user_id FROM game_accounts "
+            "WHERE clan_id = ? ORDER BY user_id",
+            (int(clan_id),),
+        )
+        return [int(row[0]) for row in rows]
+
+    def get_attached_clan_ids(self) -> List[int]:
+        rows = self._database.fetch_all(
+            "SELECT DISTINCT clan_id FROM game_accounts "
+            "WHERE clan_id IS NOT NULL ORDER BY clan_id"
+        )
+        return [int(row[0]) for row in rows]

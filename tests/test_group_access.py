@@ -9,6 +9,7 @@ from config.config import reset_config
 from db.access_group import AccessGroup, AccessGroupDB
 from db.admins import Admin, AdminsDB
 from db.database import Database
+from db.user_data import UserDataDB
 
 reset_config(str(Path(__file__).parents[1] / "config" / "config_template.ini"))
 
@@ -155,6 +156,67 @@ def test_middleware_allows_member_of_any_registered_clan():
 
     assert result is None
     assert bot.membership_checks == [(-100001, 42), (-100002, 42)]
+
+
+def test_middleware_detaches_departed_clan_account_without_deleting_data(
+    tmp_path,
+):
+    connection = Database(tmp_path / "database.db")
+    groups = AccessGroupDB(connection)
+    groups.add_group(-100001, "Alpha")
+    groups.add_group(-100002, "Beta")
+    users = UserDataDB(connection)
+    users.add_account(42, "player", "Alpha hero", clan_id=-100001)
+    beta = users.add_account(42, "player", "Beta hero", clan_id=-100002)
+    users.set_value(
+        42,
+        "player",
+        "hammers",
+        777,
+        account_id=beta.account_id,
+    )
+
+    class MembershipBot(FakeBot):
+        def get_chat_member(self, group_id, user_id):
+            self.membership_checks.append((group_id, user_id))
+            status = "member" if group_id == -100001 else "left"
+            return SimpleNamespace(status=status)
+
+    result = GroupAccessMiddleware(
+        MembershipBot(), groups, user_data_db=users
+    ).pre_process(make_message(), {})
+
+    assert result is None
+    accounts = users.get_accounts(42)
+    alpha = next(account for account in accounts if account.tag == "Alpha hero")
+    beta_account = next(
+        account for account in accounts if account.tag == "Beta hero"
+    )
+    assert alpha.clan_id == -100001
+    assert beta_account.clan_id is None
+    assert users.get_clan_users(-100002) == []
+    assert connection.fetch_one(
+        "SELECT hammers FROM user_data WHERE account_id = ?", (beta.account_id,)
+    ) == (777,)
+    connection.close()
+
+
+def test_middleware_does_not_detach_account_when_membership_check_fails(tmp_path):
+    connection = Database(tmp_path / "database.db")
+    groups = AccessGroupDB(connection)
+    groups.add_group(-100001, "Alpha")
+    users = UserDataDB(connection)
+    account = users.add_account(42, "player", "Hero", clan_id=-100001)
+    bot = FakeBot(error=ConnectionError("unavailable"))
+
+    result = GroupAccessMiddleware(
+        bot, groups, user_data_db=users
+    ).pre_process(make_message(), {})
+
+    assert isinstance(result, CancelUpdate)
+    assert users.get_active_account(42).clan_id == -100001
+    assert users.get_user(42, account.account_id) is not None
+    connection.close()
 
 
 def test_access_decisions_are_recorded() -> None:

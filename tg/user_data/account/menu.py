@@ -4,6 +4,7 @@ from telebot import TeleBot, formatting
 from telebot.types import CallbackQuery, InlineKeyboardMarkup, Message
 
 import tg.user_data as user_data
+from tg.clans import get_user_clans
 from tg.user_data.account.routing import DESTINATIONS, requested_destination
 from tg.user_data.common import ensure_active_user
 from tg.utils import Button, get_ids, get_username
@@ -23,6 +24,14 @@ def accounts_menu(
             return
         accounts = database.get_accounts(user_id)
     active = next((account for account in accounts if account.is_active), None)
+    available_clan_ids = {
+        group.group_id
+        for group in get_user_clans(
+            bot,
+            user_id,
+            user_data.get_access_group_db().get_groups(),
+        )
+    }
     destination = requested_destination(message)
     lines = ["<b>Игровые аккаунты</b>"]
     if accounts:
@@ -31,7 +40,11 @@ def accounts_menu(
             if active is not None
             else "не выбран"
         )
-        clan_title = formatting.escape_html(active.clan_title) if active else ""
+        clan_title = (
+            formatting.escape_html(active.clan_title)
+            if active is not None and active.clan_id is not None
+            else "не выбран"
+        )
         lines.extend(
             [
                 "",
@@ -58,9 +71,10 @@ def accounts_menu(
     for account in accounts:
         if account.is_active:
             continue
+        clan_title = account.clan_title or "клан не выбран"
         keyboard.add(
             Button(
-                f"🔄 {account.tag} · {account.clan_title}",
+                f"🔄 {account.tag} · {clan_title}",
                 f"accounts/select/{destination}/{account.account_id}",
             ).inline()
         )
@@ -71,6 +85,22 @@ def accounts_menu(
         account_actions.append(
             Button("✏️ Переименовать", "accounts/rename").inline()
         )
+        target_clan_ids = available_clan_ids - {active.clan_id}
+        if active.clan_id is None and target_clan_ids:
+            account_actions.append(
+                Button("🏰 Выбрать клан", "accounts/move").inline()
+            )
+        elif active.clan_id is not None and target_clan_ids:
+            account_actions.append(
+                Button("🏰 Сменить клан", "accounts/move").inline()
+            )
+        if active.clan_id is not None:
+            account_actions.append(
+                Button(
+                    "🚪 Выйти из клана",
+                    f"accounts/move/{active.account_id}/leave",
+                ).inline()
+            )
     keyboard.row(*account_actions)
     if len(accounts) > 1:
         keyboard.add(Button("🗑 Удалить аккаунт", "accounts/delete").inline())
