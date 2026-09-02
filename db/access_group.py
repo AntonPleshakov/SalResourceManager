@@ -52,6 +52,43 @@ class AccessGroupDB(DatabaseRepository):
         )
         return None if row is None else AccessGroup(int(row[0]), str(row[1]))
 
+    def get_spreadsheet_id(self, group_id: int) -> Optional[str]:
+        row = self._database.fetch_one(
+            "SELECT spreadsheet_id FROM clans WHERE group_id = ?",
+            (int(group_id),),
+        )
+        if row is None:
+            raise ValueError("Клан не найден")
+        return None if row[0] is None else str(row[0])
+
+    def set_spreadsheet_id(self, group_id: int, spreadsheet_id: str) -> None:
+        normalized_id = str(spreadsheet_id or "").strip()
+        if not normalized_id:
+            raise ValueError("Не указан идентификатор Google Таблицы")
+
+        def save(connection) -> None:
+            row = connection.execute(
+                "SELECT spreadsheet_id FROM clans WHERE group_id = ?",
+                (int(group_id),),
+            ).fetchone()
+            if row is None:
+                raise ValueError("Клан не найден")
+            if row[0] is not None and str(row[0]) != normalized_id:
+                raise ValueError("Для клана уже настроена другая Google Таблица")
+            connection.execute(
+                "UPDATE clans SET spreadsheet_id = ? WHERE group_id = ?",
+                (normalized_id, int(group_id)),
+            )
+
+        try:
+            self._database.run_in_transaction(save)
+        except Exception as error:
+            if "UNIQUE constraint failed" in str(error):
+                raise ValueError(
+                    "Эта Google Таблица уже привязана к другому клану"
+                ) from error
+            raise
+
     def get_groups_requiring_title_sync(self) -> List[AccessGroup]:
         rows = self._database.fetch_all(
             "SELECT group_id, title FROM clans "

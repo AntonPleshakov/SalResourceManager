@@ -27,6 +27,7 @@ from tg.admins.add_admin import (
 from tg.admins.common import (
     AdminAccessCheckError,
     AdminAccessError,
+    remove_clan_admin_access,
     require_admin_access,
 )
 from tg.admins.del_admin import del_admin_approved, del_admin_options
@@ -343,6 +344,7 @@ def test_delete_admin_finishes_when_private_notification_fails(monkeypatch):
         {
             "is_clan_admin": lambda _, user_id, group_id: True,
             "get_clan_admin": lambda _, user_id, group_id: admin,
+            "get_clan_admin_google_email": lambda _, user_id, group_id: None,
             "del_clan_admin": lambda _, user_id, group_id: deleted.append(user_id),
         },
     )()
@@ -434,6 +436,46 @@ def test_admin_membership_check_failure_keeps_acl_but_denies_access(tmp_path):
 
     with pytest.raises(AdminAccessCheckError, match="Не удалось проверить"):
         require_admin_access(FailingBot(), 42, -100123, admins)
+
+    assert admins.is_clan_admin(42, -100123)
+    connection.close()
+
+
+def test_removing_admin_revokes_google_access_before_deleting_acl(tmp_path):
+    connection = Database(tmp_path / "database.db")
+    groups = AccessGroupDB(connection)
+    groups.add_group(-100123, "Alpha")
+    admins = AdminsDB(connection)
+    admins.add_admin(Admin("former", 42), -100123)
+    admins.set_clan_admin_google_email(42, -100123, "former@example.com")
+    revoked = []
+
+    class FakeReport:
+        def revoke_access(self, group_id, google_email):
+            assert admins.is_clan_admin(42, group_id)
+            revoked.append((group_id, google_email))
+
+    remove_clan_admin_access(42, -100123, admins, FakeReport())
+
+    assert revoked == [(-100123, "former@example.com")]
+    assert not admins.has_admin_access(42)
+    connection.close()
+
+
+def test_failed_google_revocation_keeps_admin_acl_for_retry(tmp_path):
+    connection = Database(tmp_path / "database.db")
+    groups = AccessGroupDB(connection)
+    groups.add_group(-100123, "Alpha")
+    admins = AdminsDB(connection)
+    admins.add_admin(Admin("former", 42), -100123)
+    admins.set_clan_admin_google_email(42, -100123, "former@example.com")
+
+    class BrokenReport:
+        def revoke_access(self, group_id, google_email):
+            raise RuntimeError("Google unavailable")
+
+    with pytest.raises(RuntimeError, match="Google unavailable"):
+        remove_clan_admin_access(42, -100123, admins, BrokenReport())
 
     assert admins.is_clan_admin(42, -100123)
     connection.close()

@@ -1,7 +1,7 @@
 """Administrative game-data report export."""
 
 from html import escape
-from time import monotonic
+from time import monotonic, time
 from typing import Iterable, Sequence
 
 from telebot import TeleBot
@@ -12,7 +12,7 @@ from telebot.types import (
     InputRichMessage,
 )
 
-from db.initializer import get_admins_db, get_user_data_db
+from db.initializer import get_access_group_db, get_admins_db, get_user_data_db
 from logger.app_logger import logger
 from reports.game_data import GameDataReport
 from resources.user_data import UserData
@@ -27,6 +27,8 @@ from tg.utils import Button, empty_filter, get_ids, get_username
 
 
 _GOOGLE_EXPORT_BUTTON = "admins/game_data/google"
+_GOOGLE_CONNECT_BUTTON = "admins/game_data/google/connect"
+_GOOGLE_CHECK_BUTTON = "admins/game_data/google/check"
 _IDENTITY_COLUMNS = 4
 _MAX_TABLE_COLUMNS = 20
 _MAX_RICH_MESSAGE_BYTES = 30_000
@@ -137,6 +139,12 @@ def _preview_keyboard(group_id: int) -> InlineKeyboardMarkup:
             f"{_GOOGLE_EXPORT_BUTTON}/{group_id}",
         ).inline()
     )
+    keyboard.add(
+        Button(
+            "🔐 Сменить Google-аккаунт",
+            f"{_GOOGLE_CONNECT_BUTTON}/{group_id}",
+        ).inline()
+    )
     keyboard.add(Button("⬅️ Назад в админ-панель", "admins").inline())
     return keyboard
 
@@ -147,6 +155,64 @@ def _exported_keyboard(url: str) -> InlineKeyboardMarkup:
     keyboard.add(Button("🔄 Обновить данные", "admins/game_data").inline())
     keyboard.add(Button("⬅️ Назад в админ-панель", "admins").inline())
     return keyboard
+
+
+def _request_google_access(
+    callback_query: CallbackQuery,
+    bot: TeleBot,
+    group_id: int,
+    admins,
+) -> None:
+    user_id, chat_id, message_id = get_ids(callback_query)
+    group = get_access_group_db().get_group(group_id)
+    if group is None:
+        raise ValueError("Клан не найден")
+    spreadsheet_url = GameDataReport().prepare(group_id, group.title)
+    admins.start_google_access_request(user_id, group_id, int(time()) - 5)
+    keyboard = InlineKeyboardMarkup(row_width=1)
+    keyboard.add(
+        InlineKeyboardButton(
+            "📊 Открыть таблицу и запросить доступ",
+            url=spreadsheet_url,
+        )
+    )
+    keyboard.add(
+        Button(
+            "✅ Проверить запрос доступа",
+            f"{_GOOGLE_CHECK_BUTTON}/{group_id}",
+        ).inline()
+    )
+    keyboard.add(Button("⬅️ Назад", "admins/game_data").inline())
+    bot.edit_message_text(
+        "<b>Доступ к Google Таблице</b>\n\n"
+        "1. Откройте таблицу под нужным Google-аккаунтом.\n"
+        "2. Нажмите «Запросить доступ» в Google.\n"
+        "3. Вернитесь сюда и нажмите «Проверить запрос доступа».\n\n"
+        "Бот разрешит только просмотр.",
+        chat_id,
+        message_id,
+        reply_markup=keyboard,
+    )
+
+
+def _export_group_data(
+    bot: TeleBot,
+    user_id: int,
+    group_id: int,
+    google_email: str,
+) -> str:
+    require_admin_access(bot, user_id, group_id, get_admins_db())
+    group = get_access_group_db().get_group(group_id)
+    if group is None:
+        raise ValueError("Клан не найден")
+    database = get_user_data_db()
+    refresh_clan_accounts(bot, group_id, database)
+    return GameDataReport().export(
+        group_id,
+        group.title,
+        google_email,
+        database.get_clan_users(group_id),
+    )
 
 
 def show_game_data(callback_query: CallbackQuery, bot: TeleBot) -> None:
@@ -186,6 +252,89 @@ def show_game_data(callback_query: CallbackQuery, bot: TeleBot) -> None:
     )
 
 
+def connect_google_account(
+    callback_query: CallbackQuery,
+    bot: TeleBot,
+) -> None:
+    user_id = callback_query.from_user.id
+    try:
+        group_id = int(callback_query.data.rsplit("/", maxsplit=1)[-1])
+        admins = get_admins_db()
+        require_admin_access(bot, user_id, group_id, admins)
+        _request_google_access(
+            callback_query, bot, group_id, admins
+        )
+    except (AdminAccessError, ValueError):
+        bot.answer_callback_query(
+            callback_query.id,
+            "Нет прав администратора выбранного клана.",
+            show_alert=True,
+        )
+
+
+def check_google_access_request(
+    callback_query: CallbackQuery,
+    bot: TeleBot,
+) -> None:
+    user_id, chat_id, message_id = get_ids(callback_query)
+    try:
+        group_id = int(callback_query.data.rsplit("/", maxsplit=1)[-1])
+        admins = get_admins_db()
+        require_admin_access(bot, user_id, group_id, admins)
+        requested_at = admins.get_google_access_requested_at(user_id, group_id)
+        if requested_at is None:
+            raise ValueError("Сначала откройте таблицу и запросите доступ.")
+        report = GameDataReport()
+        proposals = report.get_access_proposals(group_id, requested_at)
+        if not proposals:
+            raise ValueError(
+                "Google ещё не передал запрос. Запросите доступ к таблице "
+                "и попробуйте снова."
+            )
+        if len(proposals) > 1:
+            raise ValueError(
+                "Найдено несколько новых запросов. Попробуйте снова позже."
+            )
+        proposal = proposals[0]
+        previous_email = admins.get_clan_admin_google_email(user_id, group_id)
+        if previous_email is not None and previous_email != proposal.email:
+            report.revoke_access(group_id, previous_email)
+        admins.set_clan_admin_google_email(
+            user_id, group_id, proposal.email
+        )
+        report.approve_access(group_id, proposal.proposal_id)
+        url = _export_group_data(bot, user_id, group_id, proposal.email)
+    except (AdminAccessError, ValueError) as error:
+        bot.answer_callback_query(
+            callback_query.id,
+            str(error),
+            show_alert=True,
+        )
+        return
+    except Exception as error:
+        logger.exception(
+            "Unable to process Google access request user_id=%s: %s",
+            user_id,
+            type(error).__name__,
+        )
+        bot.answer_callback_query(
+            callback_query.id,
+            "Не удалось проверить запрос доступа. Попробуйте ещё раз позже.",
+            show_alert=True,
+        )
+        return
+
+    bot.edit_message_reply_markup(
+        chat_id,
+        message_id,
+        reply_markup=_exported_keyboard(url),
+    )
+    bot.answer_callback_query(
+        callback_query.id,
+        "Доступ на просмотр выдан. Данные экспортированы.",
+    )
+
+
 def export_game_data(callback_query: CallbackQuery, bot: TeleBot) -> None:
     user_id, chat_id, message_id = get_ids(callback_query)
     logger.info(
@@ -197,10 +346,16 @@ def export_game_data(callback_query: CallbackQuery, bot: TeleBot) -> None:
     result = "failed"
     try:
         group_id = int(callback_query.data.rsplit("/", maxsplit=1)[-1])
-        require_admin_access(bot, user_id, group_id, get_admins_db())
-        database = get_user_data_db()
-        refresh_clan_accounts(bot, group_id, database)
-        url = GameDataReport().export(database.get_clan_users(group_id))
+        admins = get_admins_db()
+        require_admin_access(bot, user_id, group_id, admins)
+        google_email = admins.get_clan_admin_google_email(user_id, group_id)
+        if google_email is None:
+            result = "access_request_required"
+            _request_google_access(
+                callback_query, bot, group_id, admins
+            )
+            return
+        url = _export_group_data(bot, user_id, group_id, google_email)
     except (AdminAccessError, ValueError):
         bot.answer_callback_query(
             callback_query.id,
@@ -247,6 +402,22 @@ def register_handlers(bot: TeleBot) -> None:
         show_game_data,
         func=empty_filter,
         button="admins/game_data",
+        is_private=True,
+        is_admin=True,
+        pass_bot=True,
+    )
+    bot.register_callback_query_handler(
+        connect_google_account,
+        func=empty_filter,
+        button=rf"{_GOOGLE_CONNECT_BUTTON}/-?[0-9]+",
+        is_private=True,
+        is_admin=True,
+        pass_bot=True,
+    )
+    bot.register_callback_query_handler(
+        check_google_access_request,
+        func=empty_filter,
+        button=rf"{_GOOGLE_CHECK_BUTTON}/-?[0-9]+",
         is_private=True,
         is_admin=True,
         pass_bot=True,

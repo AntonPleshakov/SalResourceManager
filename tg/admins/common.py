@@ -4,6 +4,7 @@ from db.access_group import AccessGroup
 from db.admins import AdminsDB
 from db.initializer import get_admins_db
 from logger.app_logger import logger
+from reports.game_data import GameDataReport
 from tg.clans import is_group_member
 
 
@@ -13,6 +14,18 @@ class AdminAccessError(ValueError):
 
 class AdminAccessCheckError(AdminAccessError):
     pass
+
+
+def remove_clan_admin_access(
+    user_id: int,
+    group_id: int,
+    admins: AdminsDB | None = None,
+    report: GameDataReport | None = None,
+) -> None:
+    database = admins or get_admins_db()
+    google_email = database.get_clan_admin_google_email(user_id, group_id)
+    (report or GameDataReport()).revoke_access(group_id, google_email)
+    database.del_clan_admin(user_id, group_id)
 
 
 def require_admin_access(
@@ -37,7 +50,19 @@ def require_admin_access(
             "Не удалось проверить участие администратора в клане"
         ) from error
     if not is_group_member(member):
-        database.del_clan_admin(user_id, group_id)
+        try:
+            remove_clan_admin_access(user_id, group_id, database)
+        except Exception as error:
+            logger.warning(
+                "Unable to revoke departed clan admin access "
+                "user_id=%s group_id=%s: %s",
+                user_id,
+                group_id,
+                type(error).__name__,
+            )
+            raise AdminAccessCheckError(
+                "Не удалось отозвать доступ покинувшего клан администратора"
+            ) from error
         raise AdminAccessError("Администратор больше не состоит в выбранном клане")
 
 

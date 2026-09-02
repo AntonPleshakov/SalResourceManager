@@ -106,6 +106,7 @@ def test_initial_migrations_have_one_global_continuous_history():
         "0009_add_reminder_preferences",
         "0010_add_clans",
         "0011_allow_unassigned_accounts",
+        "0012_add_clan_google_sheets",
     ]
     assert all(
         "IF NOT EXISTS" not in migration.path.read_text(encoding="utf-8").upper()
@@ -130,9 +131,9 @@ def test_runner_applies_only_pending_migrations(tmp_path):
 
     assert [migration.version for migration in first_applied] == [1, 2]
     assert [migration.version for migration in second_applied] == [
-        3, 4, 5, 6, 7, 8, 9, 10, 11
+        3, 4, 5, 6, 7, 8, 9, 10, 11, 12
     ]
-    assert final_version == 11
+    assert final_version == 12
 
 
 def test_war_stages_table_is_removed_from_final_schema(tmp_path):
@@ -200,6 +201,7 @@ def test_game_account_migration_preserves_every_value_for_every_user(tmp_path):
         "0009_add_reminder_preferences",
         "0010_add_clans",
         "0011_allow_unassigned_accounts",
+        "0012_add_clan_google_sheets",
     ]
     expected_rows = [
         (
@@ -290,10 +292,10 @@ def test_game_account_migration_is_idempotent_after_success(tmp_path):
         ).fetchall()
         version = connection.execute("PRAGMA user_version").fetchone()[0]
 
-    assert [migration.version for migration in first_applied] == [8, 9, 10, 11]
+    assert [migration.version for migration in first_applied] == [8, 9, 10, 11, 12]
     assert second_applied == ()
     assert snapshot_after == snapshot_before
-    assert version == 11
+    assert version == 12
 
 
 def test_game_account_migration_rolls_back_drop_table_on_late_failure(tmp_path):
@@ -382,7 +384,7 @@ def test_runner_rejects_a_gap_in_migration_versions(tmp_path):
 
 def test_runner_rejects_a_database_from_a_newer_application(tmp_path):
     with sqlite3.connect(tmp_path / "database.db") as connection:
-        connection.execute("PRAGMA user_version = 12")
+        connection.execute("PRAGMA user_version = 13")
 
         with pytest.raises(MigrationError, match="newer than supported"):
             apply_migrations(connection)

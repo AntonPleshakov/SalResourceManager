@@ -87,6 +87,80 @@ class AdminsDB(DatabaseRepository):
         )
         return 0 if row is None else int(row[0])
 
+    def get_clan_admin_google_email(
+        self, user_id: int, group_id: int
+    ) -> Optional[str]:
+        row = self._database.fetch_one(
+            "SELECT google_email FROM admin_clans "
+            "WHERE user_id = ? AND group_id = ?",
+            (int(user_id), int(group_id)),
+        )
+        if row is None:
+            raise ValueError("Нет прав администратора выбранного клана")
+        return None if row[0] is None else str(row[0])
+
+    def set_clan_admin_google_email(
+        self,
+        user_id: int,
+        group_id: int,
+        google_email: str,
+    ) -> None:
+        normalized_email = str(google_email or "").strip().casefold()
+        if not normalized_email:
+            raise ValueError("Google-почта не указана")
+
+        def save(connection) -> None:
+            try:
+                changed = connection.execute(
+                    "UPDATE admin_clans "
+                    "SET google_email = ?, google_access_requested_at = NULL "
+                    "WHERE user_id = ? AND group_id = ?",
+                    (
+                        normalized_email,
+                        int(user_id),
+                        int(group_id),
+                    ),
+                ).rowcount
+            except Exception as error:
+                if "UNIQUE constraint failed" in str(error):
+                    raise ValueError(
+                        "Этот Google-аккаунт уже используется другим "
+                        "администратором клана"
+                    ) from error
+                raise
+            if not changed:
+                raise ValueError("Нет прав администратора выбранного клана")
+
+        self._database.run_in_transaction(save)
+
+    def start_google_access_request(
+        self,
+        user_id: int,
+        group_id: int,
+        requested_at: int,
+    ) -> None:
+        changed = self._database.run_in_transaction(
+            lambda connection: connection.execute(
+                "UPDATE admin_clans SET google_access_requested_at = ? "
+                "WHERE user_id = ? AND group_id = ?",
+                (int(requested_at), int(user_id), int(group_id)),
+            ).rowcount
+        )
+        if not changed:
+            raise ValueError("Нет прав администратора выбранного клана")
+
+    def get_google_access_requested_at(
+        self, user_id: int, group_id: int
+    ) -> Optional[int]:
+        row = self._database.fetch_one(
+            "SELECT google_access_requested_at FROM admin_clans "
+            "WHERE user_id = ? AND group_id = ?",
+            (int(user_id), int(group_id)),
+        )
+        if row is None:
+            raise ValueError("Нет прав администратора выбранного клана")
+        return None if row[0] is None else int(row[0])
+
     def get_clans(self, user_id: int) -> List[AccessGroup]:
         rows = self._database.fetch_all(
             "SELECT c.group_id, c.title FROM clans c "

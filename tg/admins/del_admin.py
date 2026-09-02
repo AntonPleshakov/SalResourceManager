@@ -7,6 +7,7 @@ from logger.app_logger import logger
 from tg.admins.common import (
     AdminAccessError,
     get_active_admin_group,
+    remove_clan_admin_access,
     require_admin_access,
 )
 from tg.navigation import home
@@ -134,7 +135,20 @@ def del_admin_approved(callback_query: CallbackQuery, bot: TeleBot):
         callback_query.from_user.id,
         get_username(callback_query),
     )
-    get_admins_db().del_clan_admin(admin_id, group_id)
+    try:
+        remove_clan_admin_access(admin_id, group_id, get_admins_db())
+    except Exception as error:
+        logger.warning(
+            "Unable to revoke admin access target_id=%s group_id=%s: %s",
+            admin_id,
+            group_id,
+            type(error).__name__,
+        )
+        bot.answer_callback_query(
+            callback_query.id,
+            "Не удалось отозвать доступ. Попробуйте ещё раз позже.",
+        )
+        return
     user_id = get_ids(callback_query)[0]
     bot.delete_state(user_id)
     bot.answer_callback_query(

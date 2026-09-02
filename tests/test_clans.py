@@ -1,5 +1,7 @@
 from types import SimpleNamespace
 
+import pytest
+
 from db.access_group import (
     AccessGroup,
     AccessGroupDB,
@@ -163,6 +165,39 @@ def test_active_clan_does_not_fall_back_to_an_administered_clan(tmp_path):
     )
 
     assert admins.get_active_group(42) is None
+    connection.close()
+
+
+def test_google_sheet_and_viewer_email_are_scoped_to_clan(tmp_path):
+    connection = Database(tmp_path / "database.db")
+    groups = AccessGroupDB(connection)
+    groups.add_group(-100001, "Alpha")
+    groups.add_group(-100002, "Beta")
+    admins = AdminsDB(connection)
+    admins.add_admin(Admin("first", 42), -100001)
+    admins.add_admin(Admin("second", 77), -100001)
+    admins.add_admin(Admin("first", 42), -100002)
+
+    groups.set_spreadsheet_id(-100001, "alpha-sheet")
+    with pytest.raises(ValueError, match="другому клану"):
+        groups.set_spreadsheet_id(-100002, "alpha-sheet")
+    groups.set_spreadsheet_id(-100002, "beta-sheet")
+    admins.start_google_access_request(42, -100001, 1_000)
+    assert admins.get_google_access_requested_at(42, -100001) == 1_000
+    assert admins.get_google_access_requested_at(42, -100002) is None
+    admins.set_clan_admin_google_email(42, -100001, " Admin@Example.COM ")
+    admins.set_clan_admin_google_email(42, -100002, "other@example.com")
+
+    assert groups.get_spreadsheet_id(-100001) == "alpha-sheet"
+    assert groups.get_spreadsheet_id(-100002) == "beta-sheet"
+    assert admins.get_clan_admin_google_email(42, -100001) == (
+        "admin@example.com"
+    )
+    assert admins.get_google_access_requested_at(42, -100001) is None
+    assert admins.get_clan_admin_google_email(77, -100001) is None
+
+    with pytest.raises(ValueError, match="другим администратором"):
+        admins.set_clan_admin_google_email(77, -100001, "admin@example.com")
     connection.close()
 
 
