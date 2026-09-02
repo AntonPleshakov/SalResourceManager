@@ -33,7 +33,7 @@ CANCEL_ADD_ADMINS_TEXT = "✖️ Отмена"
 
 def add_admins(callback_query: CallbackQuery, bot: TeleBot):
     user_id, chat_id, message_id = get_ids(callback_query)
-    group = get_active_admin_group(user_id)
+    group = get_active_admin_group(bot, user_id)
     logger.info(
         "Add admin requested by user_id=%s username=%s",
         user_id,
@@ -82,7 +82,7 @@ def add_admins_confirmation(message: Message, bot: TeleBot):
     try:
         if not isinstance(group_id, int):
             raise AdminAccessError("Не выбран клан")
-        require_admin_access(user_id, group_id, get_admins_db())
+        require_admin_access(bot, user_id, group_id, get_admins_db())
     except AdminAccessError:
         bot.delete_state(user_id)
         bot.send_message(
@@ -133,7 +133,7 @@ def add_admins_approved(callback_query: CallbackQuery, bot: TeleBot):
     try:
         if not isinstance(group_id, int):
             raise AdminAccessError("Не выбран клан")
-        require_admin_access(user_id, group_id, get_admins_db())
+        require_admin_access(bot, user_id, group_id, get_admins_db())
     except AdminAccessError:
         bot.delete_state(user_id)
         bot.answer_callback_query(

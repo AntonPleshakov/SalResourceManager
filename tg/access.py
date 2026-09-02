@@ -4,8 +4,6 @@ from telebot import TeleBot, util
 from telebot.handler_backends import CancelUpdate
 from telebot.types import (
     CallbackQuery,
-    InlineKeyboardButton,
-    InlineKeyboardMarkup,
     Message,
 )
 
@@ -70,36 +68,10 @@ class GroupAccessMiddleware(NoOpPostProcessMiddleware):
         self._user_data_db = user_data_db
         self._metrics = metrics
 
-    def _group_link_keyboard(self, groups) -> InlineKeyboardMarkup | None:
-        keyboard = InlineKeyboardMarkup(row_width=1)
-        for registered_group in groups:
-            try:
-                group = self._bot.get_chat(registered_group.group_id)
-            except Exception as error:
-                logger.warning(
-                    "Unable to get clan link group_id=%s: %s",
-                    registered_group.group_id,
-                    type(error).__name__,
-                )
-                continue
-            invite_link = group.invite_link
-            username = str(group.username or "").lstrip("@")
-            group_url = invite_link or (
-                f"https://t.me/{username}" if username else None
-            )
-            if group_url:
-                keyboard.add(
-                    InlineKeyboardButton(
-                        f"👥 {registered_group.title}", url=group_url
-                    )
-                )
-        return keyboard if keyboard.keyboard else None
-
     def _deny_access(
         self,
         update: Union[Message, CallbackQuery],
         text: str,
-        reply_markup: InlineKeyboardMarkup | None = None,
     ) -> None:
         try:
             if isinstance(update, CallbackQuery):
@@ -111,10 +83,7 @@ class GroupAccessMiddleware(NoOpPostProcessMiddleware):
                 self._bot.send_message(
                     update.message.chat.id,
                     text,
-                    reply_markup=reply_markup,
                 )
-            elif reply_markup is not None:
-                self._bot.reply_to(update, text, reply_markup=reply_markup)
             else:
                 self._bot.reply_to(update, text)
         except Exception as error:
@@ -193,10 +162,6 @@ class GroupAccessMiddleware(NoOpPostProcessMiddleware):
             user_id,
             get_username(update),
         )
-        self._deny_access(
-            update,
-            ACCESS_DENIED_MESSAGE,
-            self._group_link_keyboard(groups),
-        )
+        self._deny_access(update, ACCESS_DENIED_MESSAGE)
         self._metrics.access_checks.labels(result="denied").inc()
         return CancelUpdate()

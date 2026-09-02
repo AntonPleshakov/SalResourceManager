@@ -27,7 +27,7 @@ def _back_keyboard() -> InlineKeyboardMarkup:
 
 def request_clan_rename(callback_query: CallbackQuery, bot: TeleBot) -> None:
     user_id, chat_id, message_id = get_ids(callback_query)
-    group = get_active_admin_group(user_id)
+    group = get_active_admin_group(bot, user_id)
     bot.set_state(user_id, RenameClanStates.title)
     bot.add_data(user_id, rename_clan_group_id=group.group_id)
     keyboard = InlineKeyboardMarkup(row_width=1)
@@ -50,7 +50,7 @@ def rename_clan(message: Message, bot: TeleBot) -> None:
     try:
         if not isinstance(group_id, int):
             raise AdminAccessError("Не выбран клан")
-        require_admin_access(user_id, group_id, get_admins_db())
+        require_admin_access(bot, user_id, group_id, get_admins_db())
     except AdminAccessError:
         bot.delete_state(user_id)
         bot.send_message(

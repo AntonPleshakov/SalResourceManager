@@ -157,7 +157,7 @@ def show_game_data(callback_query: CallbackQuery, bot: TeleBot) -> None:
         get_username(callback_query),
     )
     try:
-        group = get_active_admin_group(user_id)
+        group = get_active_admin_group(bot, user_id)
         database = get_user_data_db()
         refresh_clan_accounts(bot, group.group_id, database)
         users = database.get_clan_users(group.group_id)
@@ -197,7 +197,7 @@ def export_game_data(callback_query: CallbackQuery, bot: TeleBot) -> None:
     result = "failed"
     try:
         group_id = int(callback_query.data.rsplit("/", maxsplit=1)[-1])
-        require_admin_access(user_id, group_id, get_admins_db())
+        require_admin_access(bot, user_id, group_id, get_admins_db())
         database = get_user_data_db()
         refresh_clan_accounts(bot, group_id, database)
         url = GameDataReport().export(database.get_clan_users(group_id))

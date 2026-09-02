@@ -1,6 +1,7 @@
 from contextlib import nullcontext
 from pathlib import Path
 
+import pytest
 from telebot.types import (
     CallbackQuery,
     Chat,
@@ -22,6 +23,11 @@ from tg.admins.add_admin import (
     add_admins_approved,
     add_admins_confirmation,
     cancel_add_admins,
+)
+from tg.admins.common import (
+    AdminAccessCheckError,
+    AdminAccessError,
+    require_admin_access,
 )
 from tg.admins.del_admin import del_admin_approved, del_admin_options
 from tg.admins.rename_clan import rename_clan, request_clan_rename
@@ -103,6 +109,9 @@ class RecordingBot:
     def retrieve_data(self, user_id):
         return nullcontext(self.data)
 
+    def get_chat_member(self, group_id, user_id):
+        return type("Member", (), {"status": "member"})()
+
 
 class RenameClanBot:
     def __init__(self):
@@ -130,6 +139,9 @@ class RenameClanBot:
     def send_message(self, chat_id, text, **kwargs):
         self.sent.append((chat_id, text, kwargs))
 
+    def get_chat_member(self, group_id, user_id):
+        return type("Member", (), {"status": "member"})()
+
 
 def test_delete_admin_options_exclude_requester(monkeypatch):
     admins = [
@@ -145,7 +157,7 @@ def test_delete_admin_options_exclude_requester(monkeypatch):
     monkeypatch.setattr("tg.admins.del_admin.get_admins_db", lambda: fake_db)
     monkeypatch.setattr(
         "tg.admins.del_admin.get_active_admin_group",
-        lambda user_id: AccessGroup(-100123, "Test clan"),
+        lambda bot, user_id: AccessGroup(-100123, "Test clan"),
     )
     bot = FakeBot()
 
@@ -212,7 +224,7 @@ def test_add_admins_result_names_rejected_users(monkeypatch):
     bot.get_chat_member = lambda group_id, user_id: type(
         "Member",
         (),
-        {"status": "member" if user_id == 101 else "left"},
+        {"status": "left" if user_id == 102 else "member"},
     )()
     callback = make_callback()
 
@@ -245,7 +257,7 @@ def test_add_admins_omits_rejection_details_when_all_users_are_rejected(
     monkeypatch.setattr("tg.admins.add_admin.home", lambda callback_query, bot: None)
     bot = FakeBot({"new_admins": new_admins, "admin_group_id": -100123})
     bot.get_chat_member = lambda group_id, user_id: type(
-        "Member", (), {"status": "left"}
+        "Member", (), {"status": "left" if user_id == 102 else "member"}
     )()
 
     add_admins_approved(make_callback(), bot)
@@ -373,7 +385,7 @@ def test_admin_can_rename_active_clan(tmp_path, monkeypatch):
     monkeypatch.setattr("tg.admins.rename_clan.get_admins_db", lambda: admins)
     monkeypatch.setattr(
         "tg.admins.rename_clan.get_active_admin_group",
-        lambda user_id: groups.get_group(-100123),
+        lambda bot, user_id: groups.get_group(-100123),
     )
     bot = RenameClanBot()
 
@@ -384,4 +396,44 @@ def test_admin_can_rename_active_clan(tmp_path, monkeypatch):
     assert groups.get_group(-100123).title == "New <clan>"
     assert bot.deleted_states == [42]
     assert "New &lt;clan&gt;" in bot.sent[-1][1]
+    connection.close()
+
+
+def test_departed_admin_loses_only_the_departed_clan_acl(tmp_path):
+    connection = Database(tmp_path / "database.db")
+    groups = AccessGroupDB(connection)
+    groups.add_group(-100001, "Alpha")
+    groups.add_group(-100002, "Beta")
+    admins = AdminsDB(connection)
+    admins.add_admin(Admin("requester", 42), -100001)
+    admins.add_admin(Admin("requester", 42), -100002)
+
+    class MembershipBot:
+        def get_chat_member(self, group_id, user_id):
+            status = "left" if group_id == -100001 else "member"
+            return type("Member", (), {"status": status})()
+
+    with pytest.raises(AdminAccessError, match="больше не состоит"):
+        require_admin_access(MembershipBot(), 42, -100001, admins)
+
+    assert not admins.is_clan_admin(42, -100001)
+    assert admins.is_clan_admin(42, -100002)
+    connection.close()
+
+
+def test_admin_membership_check_failure_keeps_acl_but_denies_access(tmp_path):
+    connection = Database(tmp_path / "database.db")
+    groups = AccessGroupDB(connection)
+    groups.add_group(-100123, "Alpha")
+    admins = AdminsDB(connection)
+    admins.add_admin(Admin("requester", 42), -100123)
+
+    class FailingBot:
+        def get_chat_member(self, group_id, user_id):
+            raise RuntimeError("Telegram unavailable")
+
+    with pytest.raises(AdminAccessCheckError, match="Не удалось проверить"):
+        require_admin_access(FailingBot(), 42, -100123, admins)
+
+    assert admins.is_clan_admin(42, -100123)
     connection.close()

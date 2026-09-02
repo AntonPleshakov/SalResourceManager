@@ -89,7 +89,7 @@ def confirm_standard_notification(
     callback_query: CallbackQuery, bot: TeleBot
 ) -> None:
     user_id, chat_id, message_id = get_ids(callback_query)
-    group = get_active_admin_group(user_id)
+    group = get_active_admin_group(bot, user_id)
     database = get_user_data_db()
     refresh_clan_accounts(bot, group.group_id, database)
     plan = build_standard_notification_plan(
@@ -139,7 +139,7 @@ def send_standard_notification_confirmed(
     try:
         if not isinstance(group_id, int):
             raise AdminAccessError("Не выбран клан")
-        require_admin_access(user_id, group_id, get_admins_db())
+        require_admin_access(bot, user_id, group_id, get_admins_db())
     except AdminAccessError:
         bot.delete_state(user_id)
         bot.answer_callback_query(
@@ -181,7 +181,7 @@ def request_custom_notification(
     callback_query: CallbackQuery, bot: TeleBot
 ) -> None:
     user_id, chat_id, message_id = get_ids(callback_query)
-    group = get_active_admin_group(user_id)
+    group = get_active_admin_group(bot, user_id)
     bot.set_state(user_id, NotificationStates.custom_text)
     bot.add_data(user_id, admin_group_id=group.group_id)
     keyboard = InlineKeyboardMarkup(row_width=1)
@@ -238,7 +238,7 @@ def receive_custom_notification_text(message: Message, bot: TeleBot) -> None:
     try:
         if not isinstance(group_id, int):
             raise AdminAccessError("Не выбран клан")
-        require_admin_access(user_id, group_id, get_admins_db())
+        require_admin_access(bot, user_id, group_id, get_admins_db())
     except AdminAccessError:
         bot.delete_state(user_id)
         bot.send_message(
@@ -297,7 +297,7 @@ def select_custom_notification_audience(
     try:
         if not isinstance(group_id, int):
             raise AdminAccessError("Не выбран клан")
-        require_admin_access(user_id, group_id, get_admins_db())
+        require_admin_access(bot, user_id, group_id, get_admins_db())
     except AdminAccessError:
         bot.delete_state(user_id)
         bot.answer_callback_query(
@@ -341,7 +341,7 @@ def _get_custom_notification_data(
         group_id = data.get("admin_group_id")
         if not isinstance(group_id, int):
             raise AdminAccessError("Не выбран клан")
-        require_admin_access(user_id, group_id, get_admins_db())
+        require_admin_access(bot, user_id, group_id, get_admins_db())
         return (
             data.get("notification_text", ""),
             data.get("admin_name", "Администратор"),

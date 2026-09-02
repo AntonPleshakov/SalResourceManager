@@ -15,6 +15,7 @@ from db.access_group import (
 )
 from db.initializer import get_access_group_db, get_admins_db
 from logger.app_logger import logger
+from tg.admins.common import AdminAccessCheckError, has_current_admin_access
 from tg.clans import is_group_admin, is_group_member
 from tg.utils import empty_filter, get_ids, get_username
 
@@ -81,7 +82,12 @@ def request_group_registration(update: CallbackQuery, bot: TeleBot) -> None:
         user_id,
         get_username(update),
     )
-    if not get_admins_db().has_admin_access(user_id):
+    try:
+        authorized = has_current_admin_access(bot, user_id, get_admins_db())
+    except AdminAccessCheckError:
+        bot.send_message(chat_id, REGISTRATION_FAILED_MESSAGE)
+        return
+    if not authorized:
         logger.warning(
             "Access group selection rejected for non-admin user_id=%s username=%s",
             user_id,
@@ -165,6 +171,16 @@ def _register_group(
             )
             return
 
+        if not check_user_admin and not has_current_admin_access(
+            bot, user_id, get_admins_db()
+        ):
+            bot.reply_to(
+                message,
+                NOT_ADMIN_MESSAGE,
+                reply_markup=reply_markup,
+            )
+            return
+
         title = str(group.title or group_id)
         get_access_group_db().register_group(
             group_id,
@@ -233,7 +249,16 @@ def register_selected_group(message: Message, bot: TeleBot) -> None:
         shared_chat.request_id,
     )
 
-    if not get_admins_db().has_admin_access(user_id):
+    try:
+        authorized = has_current_admin_access(bot, user_id, get_admins_db())
+    except AdminAccessCheckError:
+        bot.reply_to(
+            message,
+            REGISTRATION_FAILED_MESSAGE,
+            reply_markup=ReplyKeyboardRemove(),
+        )
+        return
+    if not authorized:
         logger.warning(
             "Access group registration rejected for non-admin user_id=%s username=%s",
             user_id,

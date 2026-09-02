@@ -40,6 +40,10 @@ def allow_admin_access(monkeypatch):
             is_clan_admin=lambda user_id, group_id: True
         ),
     )
+    monkeypatch.setattr(
+        "tg.admins.notification.views.get_active_admin_group",
+        lambda bot, user_id: AccessGroup(-100123, "Test clan"),
+    )
 
 
 def make_callback(data: str = "admins/notifications/standard") -> CallbackQuery:
@@ -93,6 +97,9 @@ class NotificationFlowBot:
     def delete_state(self, user_id):
         self.deleted_states.append(user_id)
 
+    def get_chat_member(self, group_id, user_id):
+        return SimpleNamespace(status="member")
+
 
 def test_standard_notification_is_sent_to_every_user(monkeypatch):
     users = [UserData(user_id=1), UserData(user_id=2)]
@@ -138,7 +145,7 @@ def test_standard_notification_ignores_stale_technologies(monkeypatch):
     )
     monkeypatch.setattr(
         "tg.admins.notifications.get_active_admin_group",
-        lambda user_id: AccessGroup(-100123, "Test clan"),
+        lambda bot, user_id: AccessGroup(-100123, "Test clan"),
     )
 
     class FakeBot:
@@ -236,7 +243,7 @@ def test_standard_notification_confirmation_is_compact_and_uses_snapshot(
     )
     monkeypatch.setattr(
         "tg.admins.notifications.get_active_admin_group",
-        lambda user_id: AccessGroup(-100123, "Test clan"),
+        lambda bot, user_id: AccessGroup(-100123, "Test clan"),
     )
 
     class FakeBot:
@@ -356,7 +363,7 @@ def test_custom_notifications_show_progress_before_sending(monkeypatch):
     )
     monkeypatch.setattr(
         "tg.admins.notifications.get_active_admin_group",
-        lambda user_id: AccessGroup(-100123, "Test clan"),
+        lambda bot, user_id: AccessGroup(-100123, "Test clan"),
     )
 
     group_bot = NotificationFlowBot(

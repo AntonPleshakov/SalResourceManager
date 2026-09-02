@@ -20,7 +20,7 @@ class DelAdminStates(StatesGroup):
 
 def del_admin_options(callback_query: CallbackQuery, bot: TeleBot):
     requester_id = callback_query.from_user.id
-    group = get_active_admin_group(requester_id)
+    group = get_active_admin_group(bot, requester_id)
     current_admins = [
         admin
         for admin in get_admins_db().get_clan_admins(group.group_id)
@@ -63,7 +63,7 @@ def del_admin_confirmation(callback_query: CallbackQuery, bot: TeleBot):
     try:
         if not isinstance(group_id, int):
             raise AdminAccessError("Не выбран клан")
-        require_admin_access(requester_id, group_id, get_admins_db())
+        require_admin_access(bot, requester_id, group_id, get_admins_db())
     except AdminAccessError:
         bot.delete_state(requester_id)
         bot.answer_callback_query(
@@ -108,7 +108,7 @@ def del_admin_approved(callback_query: CallbackQuery, bot: TeleBot):
     try:
         if not isinstance(group_id, int):
             raise AdminAccessError("Не выбран клан")
-        require_admin_access(requester_id, group_id, get_admins_db())
+        require_admin_access(bot, requester_id, group_id, get_admins_db())
     except AdminAccessError:
         bot.delete_state(requester_id)
         bot.answer_callback_query(

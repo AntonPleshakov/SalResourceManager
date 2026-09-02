@@ -36,6 +36,7 @@ from tg.group_registration import (
     request_group_registration,
 )
 from tg.metrics import ApplicationMetrics
+from tg.utils import get_permissions_denied_message
 
 
 def make_message(user_id=42, chat_type="private", text="hello"):
@@ -308,11 +309,12 @@ def test_middleware_denies_callback_with_an_alert():
     assert bot.sent == [(42, ACCESS_DENIED_MESSAGE, None)]
 
 
-def test_access_denial_links_to_public_group():
-    bot = FakeBot(
-        SimpleNamespace(status="left"),
-        group_chat=SimpleNamespace(username="ShadowAl", invite_link=None),
-    )
+def test_access_denial_does_not_expose_group_links():
+    class NoGroupLookupBot(FakeBot):
+        def get_chat(self, group_id):
+            raise AssertionError("Denied users must not receive clan links")
+
+    bot = NoGroupLookupBot(SimpleNamespace(status="left"))
     message = make_message()
 
     result = GroupAccessMiddleware(bot, FakeAccessGroupDB(-100123)).pre_process(
@@ -320,9 +322,14 @@ def test_access_denial_links_to_public_group():
     )
 
     assert isinstance(result, CancelUpdate)
-    button = bot.reply_markups[0].keyboard[0][0]
-    assert button.text == "👥 Test group"
-    assert button.url == "https://t.me/ShadowAl"
+    assert bot.reply_markups == [None]
+
+
+def test_permission_denial_does_not_expose_global_admins():
+    message = get_permissions_denied_message(42)
+
+    assert "Ваш ID: 42" in message
+    assert "Администраторы" not in message
 
 
 def test_access_messages_explain_next_step_and_support_contact():
@@ -413,10 +420,12 @@ class FakeRegistrationBot:
         self,
         bot_status="administrator",
         user_status="administrator",
+        user_statuses=None,
         group_type="supergroup",
     ):
         self.bot_status = bot_status
         self.user_status = user_status
+        self.user_statuses = user_statuses or {}
         self.group_type = group_type
         self.replies = []
         self.sent = []
@@ -427,7 +436,11 @@ class FakeRegistrationBot:
         return SimpleNamespace(id=999)
 
     def get_chat_member(self, chat_id, user_id):
-        status = self.bot_status if user_id == 999 else self.user_status
+        status = (
+            self.bot_status
+            if user_id == 999
+            else self.user_statuses.get(chat_id, self.user_status)
+        )
         return SimpleNamespace(status=status)
 
     def get_chat(self, chat_id):
@@ -449,6 +462,11 @@ class FakeRegistrationBot:
 def test_bot_admin_gets_picker_without_telegram_admin_requirement(monkeypatch):
     import tg.group_registration as registration
 
+    monkeypatch.setattr(
+        registration,
+        "has_current_admin_access",
+        lambda bot, user_id, admins: True,
+    )
     monkeypatch.setattr(
         registration,
         "get_admins_db",
@@ -513,7 +531,9 @@ def test_bot_admin_cannot_register_group_without_membership(
     admins.add_admin(Admin("tester", 42), -100001)
     monkeypatch.setattr(registration, "get_admins_db", lambda: admins)
     monkeypatch.setattr(registration, "get_access_group_db", lambda: groups)
-    bot = FakeRegistrationBot(user_status="left")
+    bot = FakeRegistrationBot(
+        user_statuses={-100001: "member", -100123: "left"}
+    )
     message = make_shared_group_message()
 
     register_selected_group(message, bot)
@@ -524,6 +544,31 @@ def test_bot_admin_cannot_register_group_without_membership(
         message,
         USER_NOT_GROUP_MEMBER_MESSAGE,
     )
+    connection.close()
+
+
+def test_departed_bot_admin_cannot_register_from_an_unrelated_membership(
+    tmp_path, monkeypatch
+):
+    import tg.group_registration as registration
+
+    connection = Database(tmp_path / "database.db")
+    groups = AccessGroupDB(connection)
+    groups.add_group(-100001, "Former clan")
+    admins = AdminsDB(connection)
+    admins.add_admin(Admin("tester", 42), -100001)
+    monkeypatch.setattr(registration, "get_admins_db", lambda: admins)
+    monkeypatch.setattr(registration, "get_access_group_db", lambda: groups)
+    bot = FakeRegistrationBot(
+        user_statuses={-100001: "left", -100123: "member"}
+    )
+    message = make_shared_group_message()
+
+    register_selected_group(message, bot)
+
+    assert groups.get_group(-100123) is None
+    assert not admins.has_admin_access(42)
+    assert bot.replies[0][0:2] == (message, NOT_ADMIN_MESSAGE)
     connection.close()
 
 
@@ -595,6 +640,11 @@ def test_panel_registration_rechecks_existing_acl_inside_transaction(
     monkeypatch.setattr(registration, "get_access_group_db", lambda: groups)
     monkeypatch.setattr(
         registration,
+        "has_current_admin_access",
+        lambda bot, user_id, admins: True,
+    )
+    monkeypatch.setattr(
+        registration,
         "get_admins_db",
         lambda: SimpleNamespace(has_admin_access=lambda user_id: True),
     )
@@ -611,6 +661,11 @@ def test_panel_registration_rechecks_existing_acl_inside_transaction(
 def test_non_admin_cannot_register_group(monkeypatch):
     import tg.group_registration as registration
 
+    monkeypatch.setattr(
+        registration,
+        "has_current_admin_access",
+        lambda bot, user_id, admins: False,
+    )
     monkeypatch.setattr(
         registration,
         "get_admins_db",
@@ -696,6 +751,11 @@ def test_bot_must_be_group_admin_before_registration(monkeypatch):
     import tg.group_registration as registration
 
     database = FakeAccessGroupDB()
+    monkeypatch.setattr(
+        registration,
+        "has_current_admin_access",
+        lambda bot, user_id, admins: True,
+    )
     monkeypatch.setattr(
         registration,
         "get_admins_db",

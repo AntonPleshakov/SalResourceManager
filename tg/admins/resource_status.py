@@ -79,7 +79,7 @@ def _split_report(report: str) -> List[str]:
 
 def last_updates(callback_query: CallbackQuery, bot: TeleBot) -> None:
     user_id, chat_id, message_id = get_ids(callback_query)
-    group = get_active_admin_group(user_id)
+    group = get_active_admin_group(bot, user_id)
     database = get_user_data_db()
     refresh_clan_accounts(bot, group.group_id, database)
     users = database.get_clan_users(group.group_id)

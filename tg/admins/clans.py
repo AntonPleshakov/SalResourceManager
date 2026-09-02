@@ -3,12 +3,17 @@ from telebot.types import CallbackQuery, InlineKeyboardMarkup
 
 from db.initializer import get_admins_db
 from logger.app_logger import logger
+from tg.admins.common import (
+    AdminAccessError,
+    get_current_admin_clans,
+    require_admin_access,
+)
 from tg.utils import Button, empty_filter, get_ids
 
 
 def clans_menu(callback_query: CallbackQuery, bot: TeleBot) -> None:
     user_id, chat_id, message_id = get_ids(callback_query)
-    groups = get_admins_db().get_clans(user_id)
+    groups = get_current_admin_clans(bot, user_id, get_admins_db())
     keyboard = InlineKeyboardMarkup(row_width=1)
     for group in groups:
         keyboard.add(
@@ -28,8 +33,10 @@ def select_clan(callback_query: CallbackQuery, bot: TeleBot) -> None:
     user_id = callback_query.from_user.id
     try:
         group_id = int(callback_query.data.rsplit("/", maxsplit=1)[-1])
-        get_admins_db().select_group(user_id, group_id)
-    except ValueError as error:
+        admins = get_admins_db()
+        require_admin_access(bot, user_id, group_id, admins)
+        admins.select_group(user_id, group_id)
+    except (AdminAccessError, ValueError) as error:
         bot.answer_callback_query(callback_query.id, str(error), show_alert=True)
         return
 

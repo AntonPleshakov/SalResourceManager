@@ -95,6 +95,9 @@ class FakeBot:
     def delete_state(self, user_id):
         self.deleted_states.append(user_id)
 
+    def get_chat_member(self, group_id, user_id):
+        return type("Member", (), {"status": "member"})()
+
 
 def make_callback(data="admins/game_data"):
     user = User(42, False, "Admin", username="admin")
@@ -237,6 +240,31 @@ def test_admin_menu_requires_selection_after_active_access_is_revoked(
     connection.close()
 
 
+def test_departed_admin_menu_revokes_acl_and_hides_admin_actions(
+    tmp_path, monkeypatch
+):
+    connection = Database(tmp_path / "database.db")
+    groups = AccessGroupDB(connection)
+    groups.add_group(-100001, "Alpha")
+    admins = AdminsDB(connection)
+    admins.add_admin(Admin("admin", 42), -100001)
+    monkeypatch.setattr("tg.admins.get_admins_db", lambda: admins)
+
+    class DepartedBot(FakeBot):
+        def get_chat_member(self, group_id, user_id):
+            return type("Member", (), {"status": "left"})()
+
+    bot = DepartedBot()
+
+    admins_main_menu(make_callback("admins"), bot)
+
+    buttons = callback_data(bot.edits[-1][1]["reply_markup"])
+    assert buttons == ["home"]
+    assert "нет актуальных прав администратора" in bot.edits[-1][0][0]
+    assert not admins.has_admin_access(42)
+    connection.close()
+
+
 def test_game_data_rich_message_contains_native_tables_and_escaped_values():
     user = UserData(
         account_id=7,
@@ -291,7 +319,7 @@ def test_game_data_callback_shows_table_before_export(monkeypatch):
     )
     monkeypatch.setattr(
         "tg.admins.game_data.get_active_admin_group",
-        lambda user_id: AccessGroup(-100123, "Test clan"),
+        lambda bot, user_id: AccessGroup(-100123, "Test clan"),
     )
     bot = FakeBot()
 
