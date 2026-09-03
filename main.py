@@ -22,6 +22,7 @@ from tg.metrics import (
 )
 from tg.middleware import NoOpPostProcessMiddleware, NoOpPreProcessMiddleware
 from tg.reminders import ReminderScheduler
+from tg.scheduling import AdminReconciliationScheduler
 from tg.utils import (
     Button,
     empty_filter,
@@ -166,9 +167,11 @@ if __name__ == "__main__":
     bot.setup_middleware(UserFacingErrorMiddleware(bot))
     bot.exception_handler = BotExceptionHandler()
     reminder_scheduler = ReminderScheduler(bot)
+    admin_reconciliation_scheduler = AdminReconciliationScheduler(bot)
     metrics_server = start_metrics_server()
     try:
         reminder_scheduler.start()
+        admin_reconciliation_scheduler.start()
         APPLICATION_METRICS.ready.set(1)
         logger.info(
             "Sal Resources Manager started; listening for Telegram webhooks "
@@ -184,6 +187,7 @@ if __name__ == "__main__":
         APPLICATION_METRICS.ready.set(0)
         logger.info("Stopping Sal Resources Manager")
         try:
+            admin_reconciliation_scheduler.stop()
             reminder_scheduler.stop()
             bot.stop_bot()
         finally:
