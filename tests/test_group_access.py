@@ -485,6 +485,8 @@ def test_bot_admin_gets_picker_without_telegram_admin_requirement(monkeypatch):
     button = bot.sent[0][2].keyboard[0][0]
     assert button["request_chat"]["chat_is_channel"] is False
     assert button["request_chat"]["bot_is_member"] is True
+    assert "request_title" not in button["request_chat"]
+    assert "request_username" not in button["request_chat"]
     assert "user_administrator_rights" not in button["request_chat"]
     assert "bot_administrator_rights" not in button["request_chat"]
     assert bot.states == [(42, GroupRegistrationStates.select_group)]

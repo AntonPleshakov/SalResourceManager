@@ -67,8 +67,6 @@ def _group_selection_keyboard() -> ReplyKeyboardMarkup:
                 request_id=GROUP_REGISTRATION_REQUEST_ID,
                 chat_is_channel=False,
                 bot_is_member=True,
-                request_title=True,
-                request_username=True,
             ),
         )
     )
