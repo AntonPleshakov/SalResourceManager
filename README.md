@@ -7,10 +7,10 @@ cp config/config_template.ini config/config.ini
 ```
 
 Set `TOKEN`, `WEBHOOK_URL`, `GAME_DATA_GFOLDER_KEY`, and Grafana credentials in
-`config/config.ini`. The Google Drive folder must be private and accessible only
-to the service account, which must be able to create files and approve access
-requests. Report viewers request an individual clan file and receive the
-`reader` role.
+`config/config.ini`. `GAME_DATA_GFOLDER_KEY` must identify a folder in a Google
+Workspace Shared Drive. The folder must be private and accessible only to the
+service account, which must be able to create files and approve access requests.
+Report viewers request an individual clan file and receive the `reader` role.
 Enable the Drive API and place the service-account key at
 `gapi_service_file.json`. See
 [`infra/README.md`](infra/README.md) for server deployment.

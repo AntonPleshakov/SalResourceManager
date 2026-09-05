@@ -83,9 +83,18 @@ class FakeSpreadsheet:
         self.removed_permissions.append((email, permission_id))
 
 
+class FakeGoogleDrive:
+    def __init__(self):
+        self.enabled_team_drives = []
+
+    def enable_team_drive(self, drive_id):
+        self.enabled_team_drives.append(drive_id)
+
+
 class FakeClient:
     def __init__(self, spreadsheet):
         self.spreadsheet = spreadsheet
+        self.drive = FakeGoogleDrive()
         self.opened_key = None
         self.created = []
 
@@ -122,8 +131,9 @@ class FakeHTTPResponse:
 
 
 class FakeDriveSession:
-    def __init__(self, responses=None):
+    def __init__(self, responses=None, post_responses=None):
         self.responses = list(responses or [])
+        self.post_responses = list(post_responses or [])
         self.gets = []
         self.posts = []
 
@@ -133,7 +143,23 @@ class FakeDriveSession:
 
     def post(self, url, **kwargs):
         self.posts.append((url, kwargs))
+        if self.post_responses:
+            return self.post_responses.pop(0)
         return FakeHTTPResponse()
+
+
+def shared_drive_session():
+    return FakeDriveSession(
+        [
+            FakeHTTPResponse(
+                {
+                    "mimeType": "application/vnd.google-apps.folder",
+                    "driveId": "shared-drive-123",
+                    "capabilities": {"canAddChildren": True},
+                }
+            )
+        ]
+    )
 
 
 class FakeBot:
@@ -201,7 +227,7 @@ def test_report_replaces_google_worksheet_with_sqlite_snapshot(monkeypatch):
         "common.datetime_utils.now", lambda: datetime(2026, 8, 2, 12)
     )
 
-    url = GameDataReport(client, FakeGroups()).export(
+    url = GameDataReport(client, FakeGroups(), shared_drive_session()).export(
         -100123, "Test clan", "admin@example.com", users
     )
 
@@ -237,7 +263,9 @@ def test_report_creates_missing_worksheet():
     worksheet = FakeWorksheet()
     spreadsheet = FakeSpreadsheet(worksheet, exists=False)
 
-    GameDataReport(FakeClient(spreadsheet), FakeGroups()).export(
+    GameDataReport(
+        FakeClient(spreadsheet), FakeGroups(), shared_drive_session()
+    ).export(
         -100123, "Test clan", "admin@example.com", []
     )
 
@@ -250,15 +278,67 @@ def test_report_creates_a_clan_spreadsheet_in_configured_folder():
     spreadsheet = FakeSpreadsheet(worksheet)
     client = FakeClient(spreadsheet)
     groups = FakeGroups(spreadsheet_id=None)
+    drive = FakeDriveSession(
+        [
+            FakeHTTPResponse(
+                {
+                    "mimeType": "application/vnd.google-apps.folder",
+                    "driveId": "shared-drive-123",
+                    "capabilities": {"canAddChildren": True},
+                }
+            )
+        ],
+        [FakeHTTPResponse({"id": spreadsheet.id})],
+    )
 
-    GameDataReport(client, groups).export(
+    GameDataReport(client, groups, drive).export(
         -100123, "Test clan", "admin@example.com", []
     )
 
-    assert client.created == [
-        ("Forge Master — Test clan", getconf("GAME_DATA_GFOLDER_KEY"))
+    assert drive.posts == [
+        (
+            "https://www.googleapis.com/drive/v3/files",
+            {
+                "params": {"fields": "id", "supportsAllDrives": "true"},
+                "json": {
+                    "name": "Forge Master — Test clan",
+                    "mimeType": "application/vnd.google-apps.spreadsheet",
+                    "parents": [getconf("GAME_DATA_GFOLDER_KEY")],
+                },
+                "timeout": 10,
+            },
+        )
     ]
+    assert client.opened_key == spreadsheet.id
+    assert client.drive.enabled_team_drives == ["shared-drive-123"]
     assert groups.spreadsheet_id == spreadsheet.id
+
+
+def test_report_rejects_a_my_drive_folder_for_service_account():
+    spreadsheet = FakeSpreadsheet(FakeWorksheet())
+    groups = FakeGroups(spreadsheet_id=None)
+    drive = FakeDriveSession(
+        [
+            FakeHTTPResponse(
+                {
+                    "mimeType": "application/vnd.google-apps.folder",
+                    "capabilities": {"canAddChildren": True},
+                }
+            )
+        ]
+    )
+
+    try:
+        GameDataReport(FakeClient(spreadsheet), groups, drive).prepare(
+            -100123, "Test clan"
+        )
+    except RuntimeError as error:
+        assert "Shared Drive" in str(error)
+    else:
+        raise AssertionError("A My Drive folder must be rejected")
+
+    assert drive.posts == []
+    assert groups.spreadsheet_id is None
 
 
 def test_report_prepares_closed_clan_spreadsheet_without_exporting_data():
@@ -266,7 +346,7 @@ def test_report_prepares_closed_clan_spreadsheet_without_exporting_data():
     spreadsheet = FakeSpreadsheet(worksheet)
 
     url = GameDataReport(
-        FakeClient(spreadsheet), FakeGroups()
+        FakeClient(spreadsheet), FakeGroups(), shared_drive_session()
     ).prepare(-100123, "Test clan")
 
     assert url == spreadsheet.url
@@ -350,7 +430,9 @@ def test_report_replaces_existing_writer_permission_with_reader():
         }
     ]
 
-    GameDataReport(FakeClient(spreadsheet), FakeGroups()).export(
+    GameDataReport(
+        FakeClient(spreadsheet), FakeGroups(), shared_drive_session()
+    ).export(
         -100123, "Test clan", "admin@example.com", []
     )
 
@@ -378,7 +460,7 @@ def test_report_revokes_case_insensitive_permission_from_clan_spreadsheet():
     ]
     client = FakeClient(spreadsheet)
 
-    GameDataReport(client, FakeGroups()).revoke_access(
+    GameDataReport(client, FakeGroups(), shared_drive_session()).revoke_access(
         -100123, "admin@example.com"
     )
 

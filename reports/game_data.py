@@ -28,6 +28,8 @@ _TRACKED_FIELD_BY_UPDATE_FIELD = {
     for tracked_field, update_field in UPDATED_AT_FIELDS.items()
 }
 _DRIVE_API_BASE_URL = "https://www.googleapis.com/drive/v3/files"
+_GOOGLE_FOLDER_MIME_TYPE = "application/vnd.google-apps.folder"
+_GOOGLE_SPREADSHEET_MIME_TYPE = "application/vnd.google-apps.spreadsheet"
 
 
 @dataclass(frozen=True)
@@ -50,6 +52,7 @@ class GameDataReport:
         self._client = client
         self._groups = groups
         self._drive = drive_session
+        self._report_folder_id = None
 
     def _google_client(self) -> Client:
         if self._client is None:
@@ -71,9 +74,59 @@ class GameDataReport:
         with cls._creation_locks_guard:
             return cls._creation_locks.setdefault(int(group_id), Lock())
 
+    def _shared_drive_folder_id(self) -> str:
+        if self._report_folder_id is not None:
+            return self._report_folder_id
+
+        folder_id = getconf("GAME_DATA_GFOLDER_KEY")
+        folder_response = self._drive_session().get(
+            f"{_DRIVE_API_BASE_URL}/{quote(folder_id, safe='')}",
+            params={
+                "fields": "mimeType,driveId,capabilities(canAddChildren)",
+                "supportsAllDrives": "true",
+            },
+            timeout=10,
+        )
+        folder_response.raise_for_status()
+        folder = folder_response.json()
+        if folder.get("mimeType") != _GOOGLE_FOLDER_MIME_TYPE:
+            raise RuntimeError(
+                "GAME_DATA_GFOLDER_KEY does not point to a Google Drive folder"
+            )
+        if not folder.get("driveId"):
+            raise RuntimeError(
+                "GAME_DATA_GFOLDER_KEY must point to a Shared Drive folder; "
+                "service accounts cannot own files"
+            )
+        if not folder.get("capabilities", {}).get("canAddChildren"):
+            raise PermissionError(
+                "The Google service account cannot add files to the configured "
+                "Shared Drive folder"
+            )
+
+        self._google_client().drive.enable_team_drive(folder["driveId"])
+        self._report_folder_id = folder_id
+        return folder_id
+
+    def _create_spreadsheet(self, title: str):
+        folder_id = self._shared_drive_folder_id()
+        create_response = self._drive_session().post(
+            _DRIVE_API_BASE_URL,
+            params={"fields": "id", "supportsAllDrives": "true"},
+            json={
+                "name": title,
+                "mimeType": _GOOGLE_SPREADSHEET_MIME_TYPE,
+                "parents": [folder_id],
+            },
+            timeout=10,
+        )
+        create_response.raise_for_status()
+        return self._google_client().open_by_key(create_response.json()["id"])
+
     def _open_or_create_spreadsheet(self, group_id: int, clan_title: str):
         groups = self._group_database()
         client = self._google_client()
+        self._shared_drive_folder_id()
         spreadsheet_id = groups.get_spreadsheet_id(group_id)
         if spreadsheet_id is not None:
             return client.open_by_key(spreadsheet_id)
@@ -82,9 +135,8 @@ class GameDataReport:
             spreadsheet_id = groups.get_spreadsheet_id(group_id)
             if spreadsheet_id is not None:
                 return client.open_by_key(spreadsheet_id)
-            spreadsheet = client.create(
-                f"Forge Master — {clan_title}",
-                folder=getconf("GAME_DATA_GFOLDER_KEY"),
+            spreadsheet = self._create_spreadsheet(
+                f"Forge Master — {clan_title}"
             )
             groups.set_spreadsheet_id(group_id, spreadsheet.id)
             logger.info(
@@ -252,6 +304,7 @@ class GameDataReport:
         spreadsheet_id = self._group_database().get_spreadsheet_id(group_id)
         if spreadsheet_id is None:
             return
+        self._shared_drive_folder_id()
         spreadsheet = self._google_client().open_by_key(spreadsheet_id)
         for permission in spreadsheet.permissions:
             if (
