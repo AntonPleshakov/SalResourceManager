@@ -1,5 +1,7 @@
 import sqlite3
+from html import unescape
 from pathlib import Path
+import re
 
 import pytest
 from telebot.types import CallbackQuery, Chat, Message, User
@@ -78,12 +80,21 @@ class FakeBot:
 
 
 def callback_data(markup):
+    if isinstance(markup, str):
+        return re.findall(r'<tg-button[^>]+data="([^"]+)"', markup)
     return [
         button.callback_data for row in markup.keyboard for button in row
     ]
 
 
 def callback_texts(markup):
+    if isinstance(markup, str):
+        return [
+            unescape(text)
+            for text in re.findall(
+                r"<tg-button\s[^>]*>(.*?)</tg-button>", markup
+            )
+        ]
     return [button.text for row in markup.keyboard for button in row]
 
 
@@ -219,8 +230,8 @@ def test_clan_actions_separate_moving_and_leaving(
 
     accounts_menu(make_callback("accounts"), bot)
 
-    assert "🏰 Сменить клан" in callback_texts(bot.edited[-1][3])
-    assert "🚪 Выйти из клана" in callback_texts(bot.edited[-1][3])
+    assert "🏰 Сменить клан" in callback_texts(bot.edited[-1][0])
+    assert "🚪 Выйти из клана" in callback_texts(bot.edited[-1][0])
 
     request_move(make_callback("accounts/move"), bot)
 
@@ -276,14 +287,14 @@ def test_accounts_menu_uses_explicit_clan_actions(tmp_path, monkeypatch):
 
     accounts_menu(make_callback("accounts"), bot)
 
-    assert "🔄 Detached · клан не выбран" in callback_texts(bot.edited[-1][3])
-    assert "🏰 Сменить клан" not in callback_texts(bot.edited[-1][3])
-    assert "🚪 Выйти из клана" in callback_texts(bot.edited[-1][3])
+    assert "🔄 Detached · клан не выбран" in callback_texts(bot.edited[-1][0])
+    assert "🏰 Сменить клан" not in callback_texts(bot.edited[-1][0])
+    assert "🚪 Выйти из клана" in callback_texts(bot.edited[-1][0])
 
     database.select_account(42, detached.account_id)
     accounts_menu(make_callback("accounts"), bot)
 
-    assert "🏰 Выбрать клан" in callback_texts(bot.edited[-1][3])
+    assert "🏰 Выбрать клан" in callback_texts(bot.edited[-1][0])
 
     class NoClansBot(FakeBot):
         def get_chat_member(self, group_id, user_id):
@@ -291,7 +302,7 @@ def test_accounts_menu_uses_explicit_clan_actions(tmp_path, monkeypatch):
 
     no_clans_bot = NoClansBot()
     accounts_menu(make_callback("accounts"), no_clans_bot)
-    no_clan_actions = callback_texts(no_clans_bot.edited[-1][3])
+    no_clan_actions = callback_texts(no_clans_bot.edited[-1][0])
     assert "🏰 Выбрать клан" not in no_clan_actions
     connection.close()
 
@@ -357,15 +368,13 @@ def test_account_selector_returns_to_resource_screen_after_switch(
 
     accounts_menu(make_callback("accounts/resources"), bot)
 
-    menu_buttons = callback_data(bot.edited[-1][3])
-    assert f"Активный аккаунт: <b>Alt</b>" in bot.edited[-1][0]
+    menu_buttons = callback_data(bot.edited[-1][0])
+    assert "Активный аккаунт</td><td><b>Alt</b>" in bot.edited[-1][0]
     assert menu_buttons[0] == f"accounts/select/resources/{first.account_id}"
     assert f"accounts/select/resources/{second.account_id}" not in menu_buttons
     assert "accounts/add/resources" in menu_buttons
     assert "accounts/delete" in menu_buttons
-    assert "✏️ Переименовать" in [
-        button.text for row in bot.edited[-1][3].keyboard for button in row
-    ]
+    assert "✏️ Переименовать" in callback_texts(bot.edited[-1][0])
     assert menu_buttons[-1] == "resources"
 
     select_account(
@@ -399,14 +408,14 @@ def test_data_account_selector_hides_accounts_without_a_clan(
 
     assert (
         f"accounts/select/resources/{detached.account_id}"
-        not in callback_data(bot.edited[-1][3])
+        not in callback_data(bot.edited[-1][0])
     )
 
     accounts_menu(make_callback("accounts"), bot)
 
     assert (
         f"accounts/select/accounts/{detached.account_id}"
-        in callback_data(bot.edited[-1][3])
+        in callback_data(bot.edited[-1][0])
     )
     connection.close()
 
@@ -559,7 +568,7 @@ def test_single_account_menu_does_not_offer_deletion(tmp_path, monkeypatch):
 
     accounts_menu(make_callback("accounts"), bot)
 
-    assert "accounts/delete" not in callback_data(bot.edited[-1][3])
+    assert "accounts/delete" not in callback_data(bot.edited[-1][0])
     connection.close()
 
 

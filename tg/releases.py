@@ -1,28 +1,36 @@
 from typing import Sequence, Union
 
-from telebot import TeleBot, formatting
-from telebot.types import CallbackQuery, InlineKeyboardMarkup, Message
+from html import escape
+
+from telebot import TeleBot
+from telebot.types import CallbackQuery, Message
 
 from common.datetime_utils import format_last_update
 from db.initializer import get_release_views_db
 from logger.app_logger import logger
 from resources.releases import CURRENT_VERSION, RELEASES, Release, unseen_releases
 from tg.handlers import HandlerRegistry
-from tg.utils import Button, get_ids, get_username
+from tg.rich import (
+    button_row,
+    callback_button,
+    deliver_rich_message,
+    input_rich_message,
+)
+from tg.utils import get_ids, get_username
 
 
 def format_release_notes(releases: Sequence[Release]) -> str:
     sections = []
     for release in reversed(releases):
-        changes = "\n".join(
-            f"• {formatting.escape_html(change)}" for change in release.changes
+        changes = "".join(
+            f"<li>{escape(change)}</li>" for change in release.changes
         )
         sections.append(
-            f"<b>Версия {release.version}</b> · "
-            f"{format_last_update(release.released_on)}\n"
-            f"{changes}"
+            f"<h2>Версия {escape(release.version)}</h2>"
+            f"<p><i>{escape(format_last_update(release.released_on))}</i></p>"
+            f"<ul>{changes}</ul>"
         )
-    return "🆕 <b>Что нового</b>\n\n" + "\n\n".join(sections)
+    return "<h2>🆕 Что нового</h2>" + "".join(sections)
 
 
 def _show_notes(
@@ -30,14 +38,23 @@ def _show_notes(
     bot: TeleBot,
     releases: Sequence[Release],
 ) -> None:
-    user_id, chat_id, message_id = get_ids(message)
-    keyboard = InlineKeyboardMarkup(row_width=1)
-    keyboard.add(Button("🏠 Перейти в меню", "home").inline())
-    text = format_release_notes(releases)
-    if isinstance(message, CallbackQuery):
-        bot.edit_message_text(text, chat_id, message_id, reply_markup=keyboard)
-    else:
-        bot.send_message(chat_id, text, reply_markup=keyboard)
+    user_id = get_ids(message)[0]
+    deliver_rich_message(
+        message,
+        bot,
+        input_rich_message(
+            (
+                format_release_notes(releases),
+                button_row(
+                    (
+                        callback_button(
+                            "🏠 Перейти в меню", "home", style="primary"
+                        ),
+                    )
+                ),
+            )
+        ),
+    )
     get_release_views_db().mark_seen(
         user_id,
         get_username(message),

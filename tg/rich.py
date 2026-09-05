@@ -1,7 +1,8 @@
 from html import escape
 from typing import Iterable
 
-from telebot.types import InputRichMessage
+from telebot import TeleBot
+from telebot.types import CallbackQuery, InputRichMessage, Message
 
 
 _BUTTON_STYLES = frozenset({"danger", "success", "primary", "link"})
@@ -36,3 +37,33 @@ def input_rich_message(parts: Iterable[str]) -> InputRichMessage:
         html="".join(parts),
         skip_entity_detection=True,
     )
+
+
+def edit_rich_message(
+    bot: TeleBot,
+    chat_id: int,
+    message_id: int,
+    rich_message: InputRichMessage,
+) -> None:
+    bot.edit_message_text(
+        chat_id=chat_id,
+        message_id=message_id,
+        rich_message=rich_message,
+    )
+
+
+def deliver_rich_message(
+    update: Message | CallbackQuery,
+    bot: TeleBot,
+    rich_message: InputRichMessage,
+) -> None:
+    if isinstance(update, CallbackQuery):
+        edit_rich_message(
+            bot,
+            update.message.chat.id,
+            update.message.id,
+            rich_message,
+        )
+        return
+
+    bot.send_rich_message(update.chat.id, rich_message)

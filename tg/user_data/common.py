@@ -27,7 +27,13 @@ from tg.clans import (
     get_user_clans,
     refresh_user_accounts,
 )
-from tg.rich import button_row, callback_button, input_rich_message
+from tg.rich import (
+    button_row,
+    callback_button,
+    deliver_rich_message,
+    edit_rich_message,
+    input_rich_message,
+)
 from tg.utils import Button, format_points, get_ids, get_username
 
 
@@ -238,11 +244,7 @@ def edit_menu_message(
     content: MenuContent,
 ) -> None:
     if content.rich_message is not None:
-        bot.edit_message_text(
-            chat_id=chat_id,
-            message_id=message_id,
-            rich_message=content.rich_message,
-        )
+        edit_rich_message(bot, chat_id, message_id, content.rich_message)
         return
 
     bot.edit_message_text(
@@ -269,7 +271,7 @@ def deliver_menu(
         return
 
     if content.rich_message is not None:
-        bot.send_rich_message(update.chat.id, content.rich_message)
+        deliver_rich_message(update, bot, content.rich_message)
         return
 
     bot.send_message(

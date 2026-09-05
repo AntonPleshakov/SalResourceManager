@@ -1,13 +1,20 @@
+from html import escape
 from typing import Union
 
-from telebot import TeleBot, formatting
-from telebot.types import CallbackQuery, InlineKeyboardMarkup, Message
+from telebot import TeleBot
+from telebot.types import CallbackQuery, Message
 
 from db.initializer import get_admins_db, get_user_data_db
 from logger.app_logger import logger
 from tg.onboarding import show_new_user_welcome
 from tg.releases import mark_current_release_seen, show_unseen_releases
-from tg.utils import Button, get_ids, get_username
+from tg.rich import (
+    button_row,
+    callback_button,
+    deliver_rich_message,
+    input_rich_message,
+)
+from tg.utils import get_ids, get_username
 
 
 def _show_onboarding(
@@ -22,70 +29,89 @@ def _show_onboarding(
 def show_home_menu(
     message: Union[Message, CallbackQuery], bot: TeleBot
 ) -> None:
-    user_id, chat_id, message_id = get_ids(message)
+    user_id = get_ids(message)[0]
     database = get_user_data_db()
     accounts = database.get_accounts(user_id)
     active_account = next(
         (account for account in accounts if account.is_active),
         None,
     )
-    keyboard = InlineKeyboardMarkup()
-    keyboard.row(Button("🎮 Игровые аккаунты", "accounts").inline())
-    keyboard.row(
-        Button("📦 Ресурсы", "resources").inline(),
-        Button("🔬 Технологии", "technologies").inline(),
-    )
-    keyboard.row(
-        Button("🐾 Питомцы", "pets").inline(),
-        Button("⚔️ Очки войны", "war_menu").inline(),
-    )
     reminders_enabled = database.reminders_enabled(user_id)
-    keyboard.row(
-        Button(
-            "🔕 Выключить напоминания"
-            if reminders_enabled
-            else "🔔 Включить напоминания",
-            "reminders/toggle",
-        ).inline()
-    )
-    keyboard.row(Button("🆕 Что нового", "releases").inline())
     logger.debug(
         "Opening home menu for user_id=%s username=%s",
         user_id,
         get_username(message),
     )
-    if get_admins_db().has_admin_access(user_id):
-        keyboard.row(Button("🛠 Админ-панель", "admins").inline())
-    text_lines = []
+    parts = ["<h2>Главное меню</h2>"]
     if active_account is not None:
-        text_lines.append(
-            "Игровой аккаунт: "
-            f"<b>{formatting.escape_html(active_account.tag)}</b>"
-        )
+        account_rows = [
+            "<tr><td>Игровой аккаунт</td>"
+            f"<td><b>{escape(active_account.tag)}</b></td></tr>"
+        ]
         if active_account.clan_title:
-            text_lines.append(
-                "Клан: "
-                f"<b>{formatting.escape_html(active_account.clan_title)}</b>"
+            account_rows.append(
+                "<tr><td>Клан</td>"
+                f"<td><b>{escape(active_account.clan_title)}</b></td></tr>"
             )
         if len(accounts) > 1:
-            text_lines.append(f"Всего аккаунтов: {len(accounts)}")
-        text_lines.append("")
-    text_lines.append("Выберите раздел.")
-    text_lines.extend(
+            account_rows.append(
+                "<tr><td>Всего аккаунтов</td>"
+                f'<td align="right"><b>{len(accounts)}</b></td></tr>'
+            )
+        parts.extend(
+            (
+                '<table compact><caption>Текущий выбор</caption>',
+                *account_rows,
+                "</table>",
+            )
+        )
+    parts.extend(
         (
-            "",
-            "Настройка напоминаний влияет только на автоматическое "
-            "уведомление по понедельникам и не отключает сообщения "
-            "администраторов.",
-            "Пожалуйста, не выключайте уведомления от бота в Telegram, "
-            "чтобы не пропустить сообщения администраторов.",
+            "<p>Выберите раздел.</p>",
+            button_row(
+                (
+                    callback_button("🎮 Игровые аккаунты", "accounts"),
+                )
+            ),
+            button_row(
+                (
+                    callback_button("📦 Ресурсы", "resources"),
+                    callback_button("🔬 Технологии", "technologies"),
+                )
+            ),
+            button_row(
+                (
+                    callback_button("🐾 Питомцы", "pets"),
+                    callback_button(
+                        "⚔️ Очки войны", "war_menu", style="primary"
+                    ),
+                )
+            ),
+            button_row(
+                (
+                    callback_button(
+                        "🔕 Выключить напоминания"
+                        if reminders_enabled
+                        else "🔔 Включить напоминания",
+                        "reminders/toggle",
+                    ),
+                )
+            ),
+            button_row((callback_button("🆕 Что нового", "releases"),)),
         )
     )
-    text = "\n".join(text_lines)
-    if isinstance(message, CallbackQuery):
-        bot.edit_message_text(text, chat_id, message_id, reply_markup=keyboard)
-    else:
-        bot.send_message(chat_id, text, reply_markup=keyboard)
+    if get_admins_db().has_admin_access(user_id):
+        parts.append(
+            button_row((callback_button("🛠 Админ-панель", "admins"),))
+        )
+    parts.append(
+        "<details><summary>О напоминаниях</summary>"
+        "<p>Настройка влияет только на автоматическое уведомление по "
+        "понедельникам и не отключает сообщения администраторов.</p>"
+        "<p>Не выключайте уведомления от бота в Telegram, чтобы не "
+        "пропустить сообщения администраторов.</p></details>"
+    )
+    deliver_rich_message(message, bot, input_rich_message(parts))
 
 
 def start(message: Union[Message, CallbackQuery], bot: TeleBot) -> None:

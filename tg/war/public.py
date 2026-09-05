@@ -1,7 +1,8 @@
 from datetime import date, datetime
+from html import escape
 
 from telebot import TeleBot
-from telebot.types import CallbackQuery, InlineKeyboardMarkup
+from telebot.types import CallbackQuery
 
 from common.datetime_utils import now, week_started_on
 from logger.app_logger import logger
@@ -10,8 +11,14 @@ from resources.war import WarPointsCalculator
 import tg.war as war
 from tg.handlers import HandlerRegistry
 from tg.metrics import observe_score_calculation
+from tg.rich import (
+    button_row,
+    callback_button,
+    edit_rich_message,
+    input_rich_message,
+)
 from tg.user_data.common import prompt_for_account_clan
-from tg.utils import Button, format_points, get_ids, get_username
+from tg.utils import format_points, get_ids, get_username
 
 
 def _war_week_started_on(reference: datetime) -> date:
@@ -41,36 +48,53 @@ def _war_points_text(clan_id: int) -> str:
     with observe_score_calculation("public"):
         report = WarPointsCalculator().calculate(accounted_users, war.WAR_STAGES)
     logger.info("War points calculated")
-    lines = [
-        "<b>Максимальные очки войны</b>",
-        "<i>Максимум по каждому дню</i>",
-        "",
-    ]
+    day_rows = []
     for day, points in report.points_by_day.items():
         activities = ", ".join(
             activity.title for activity in war.WAR_STAGES[day]
         )
-        lines.append(f"День {day}: <b>{format_points(points)}</b> — {activities}")
-    lines.extend(
-        [
-            "",
-            "<b>Итого по активностям</b>",
-            *(
-                f"• {activity.title}: <b>{format_points(points)}</b>"
-                for activity, points in report.points_by_activity.items()
-            ),
-            "",
-            f"Всего: <b>{format_points(report.total)}</b>",
-            "",
-            f"Учтено аккаунтов: <b>{len(accounted_users)}</b>",
-            "Не учтено (ни один ресурс не обновлён с 03:00 понедельника): "
-            f"<b>{stale_users_count}</b>",
-            "",
-            "Максимум каждого дня считается отдельно. В итогах расходуемые "
-            "ресурсы учитываются один раз.",
-        ]
+        day_rows.append(
+            "<tr>"
+            f'<td align="center"><b>{day}</b></td>'
+            f"<td>{escape(activities)}</td>"
+            f'<td align="right"><b>{format_points(points)}</b></td>'
+            "</tr>"
+        )
+    activity_rows = "".join(
+        "<tr>"
+        f"<td>{escape(activity.title)}</td>"
+        f'<td align="right"><b>{format_points(points)}</b></td>'
+        "</tr>"
+        for activity, points in report.points_by_activity.items()
     )
-    return "\n".join(lines)
+    return "".join(
+        (
+            "<h2>Максимальные очки войны</h2>",
+            "<p><i>Максимум по каждому дню</i></p>",
+            '<table bordered striped compact><caption>По дням</caption>',
+            "<tr><th>День</th><th>Активности</th><th>Очки</th></tr>",
+            *day_rows,
+            "</table>",
+            '<table bordered compact><caption>Итого по активностям</caption>',
+            "<tr><th>Активность</th><th>Очки</th></tr>",
+            activity_rows,
+            "<tr><th>Всего</th>"
+            f'<th align="right">{format_points(report.total)}</th></tr>',
+            "</table>",
+            '<table compact><caption>Данные аккаунтов</caption>',
+            "<tr><td>Учтено</td>"
+            f'<td align="right"><b>{len(accounted_users)}</b></td></tr>',
+            "<tr><td>Не учтено</td>"
+            f'<td align="right"><b>{stale_users_count}</b></td></tr>',
+            "</table>",
+            "<details><summary>Какие аккаунты не учитываются</summary>"
+            "<p>Аккаунты, у которых ни один ресурс не обновлён с 03:00 "
+            "понедельника.</p></details>",
+            "<details><summary>Как считается результат</summary>"
+            "<p>Максимум каждого дня считается отдельно. В итогах "
+            "расходуемые ресурсы учитываются один раз.</p></details>",
+        )
+    )
 
 
 def public_war_points(callback_query: CallbackQuery, bot: TeleBot) -> None:
@@ -80,8 +104,6 @@ def public_war_points(callback_query: CallbackQuery, bot: TeleBot) -> None:
         user_id,
         get_username(callback_query),
     )
-    keyboard = InlineKeyboardMarkup(row_width=1)
-    keyboard.add(Button("⬅️ Назад к очкам войны", "war_menu").inline())
     account = war.get_user_data_db().get_active_account(user_id)
     if account is None:
         bot.answer_callback_query(
@@ -93,11 +115,23 @@ def public_war_points(callback_query: CallbackQuery, bot: TeleBot) -> None:
     if account.clan_id is None:
         prompt_for_account_clan(callback_query, bot, account.account_id)
         return
-    bot.edit_message_text(
-        _war_points_text(account.clan_id),
+    edit_rich_message(
+        bot,
         chat_id,
         message_id,
-        reply_markup=keyboard,
+        input_rich_message(
+            (
+                _war_points_text(account.clan_id),
+                button_row(
+                    (
+                        callback_button(
+                            "⬅️ Назад к очкам войны", "war_menu"
+                        ),
+                    ),
+                    align="left",
+                ),
+            )
+        ),
     )
 
 

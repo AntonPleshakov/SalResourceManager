@@ -1,4 +1,5 @@
 from pathlib import Path
+import re
 from telebot.types import CallbackQuery, Chat, Message, User
 
 from config.config import reset_config
@@ -21,11 +22,21 @@ class FakeBot:
     def __init__(self):
         self.edited = []
 
-    def edit_message_text(self, text, chat_id, message_id, reply_markup=None):
-        self.edited.append((text, chat_id, message_id, reply_markup))
+    def edit_message_text(
+        self,
+        text=None,
+        chat_id=None,
+        message_id=None,
+        reply_markup=None,
+        rich_message=None,
+    ):
+        content = rich_message.html if rich_message is not None else text
+        self.edited.append((content, chat_id, message_id, reply_markup))
 
 
 def callback_data(markup):
+    if isinstance(markup, str):
+        return re.findall(r'<tg-button[^>]+data="([^"]+)"', markup)
     return [button.callback_data for row in markup.keyboard for button in row]
 
 
@@ -54,7 +65,8 @@ def test_new_user_sees_account_created_from_group_tag(monkeypatch):
     text, _, _, markup = bot.edited[0]
     assert "Добро пожаловать" in text
     assert "По вашему тегу в группе создан игровой аккаунт <b>Лидер</b>" in text
-    assert callback_data(markup) == ["home"]
+    assert callback_data(text) == ["home"]
+    assert markup is None
 
 
 def test_new_user_is_asked_to_rename_account_when_group_tag_is_missing(
@@ -74,7 +86,8 @@ def test_new_user_is_asked_to_rename_account_when_group_tag_is_missing(
     assert "Не удалось получить ваш тег из группы" in text
     assert "временно назван <b>tester</b>" in text
     assert "Переименуйте его" in text
-    assert callback_data(markup) == ["accounts/rename", "home"]
+    assert callback_data(text) == ["accounts/rename", "home"]
+    assert markup is None
 
 
 def test_existing_account_does_not_trigger_onboarding(monkeypatch):

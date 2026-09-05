@@ -1,11 +1,18 @@
+from html import escape
 from typing import Union
 
-from telebot import TeleBot, formatting
-from telebot.types import CallbackQuery, InlineKeyboardMarkup, Message
+from telebot import TeleBot
+from telebot.types import CallbackQuery, Message
 
 from logger.app_logger import logger
+from tg.rich import (
+    button_row,
+    callback_button,
+    deliver_rich_message,
+    input_rich_message,
+)
 from tg.user_data.common import ensure_active_user
-from tg.utils import Button, get_ids, get_username
+from tg.utils import get_ids, get_username
 
 
 def show_created_account_welcome(
@@ -14,13 +21,13 @@ def show_created_account_welcome(
     user,
     group_tag_found: bool,
 ) -> None:
-    user_id, chat_id, message_id = get_ids(message)
-    account_name = formatting.escape_html(user.tag.value)
-    keyboard = InlineKeyboardMarkup(row_width=1)
+    user_id = get_ids(message)[0]
+    account_name = escape(str(user.tag.value))
+    action_buttons = []
 
     if not group_tag_found:
-        keyboard.add(
-            Button("✏️ Переименовать аккаунт", "accounts/rename").inline()
+        action_buttons.append(
+            callback_button("✏️ Переименовать аккаунт", "accounts/rename")
         )
         account_text = (
             "Не удалось получить ваш тег из группы, поэтому аккаунт временно "
@@ -33,17 +40,23 @@ def show_created_account_welcome(
             f"<b>{account_name}</b>."
         )
 
-    keyboard.add(Button("🏠 Открыть меню", "home").inline())
-    text = (
-        "👋 <b>Добро пожаловать!</b>\n\n"
-        "Бот помогает хранить ресурсы игровых аккаунтов, напоминает об "
-        "обновлении данных и рассчитывает очки войны.\n\n"
-        f"{account_text}"
+    action_buttons.append(
+        callback_button("🏠 Открыть меню", "home", style="primary")
     )
-    if isinstance(message, CallbackQuery):
-        bot.edit_message_text(text, chat_id, message_id, reply_markup=keyboard)
-    else:
-        bot.send_message(chat_id, text, reply_markup=keyboard)
+    deliver_rich_message(
+        message,
+        bot,
+        input_rich_message(
+            (
+                "<h2>👋 Добро пожаловать!</h2>",
+                "<p>Бот помогает хранить ресурсы игровых аккаунтов, "
+                "напоминает об обновлении данных и рассчитывает очки "
+                "войны.</p>",
+                f"<p>{account_text}</p>",
+                button_row(action_buttons),
+            )
+        ),
+    )
     logger.info(
         "New user onboarding shown to user_id=%s username=%s",
         user_id,

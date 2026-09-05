@@ -1,4 +1,6 @@
+from html import unescape
 from pathlib import Path
+import re
 
 from telebot.types import CallbackQuery, Chat, Message, User
 
@@ -25,10 +27,19 @@ def make_callback(data: str) -> CallbackQuery:
 
 
 def callback_data(markup):
+    if isinstance(markup, str):
+        return re.findall(r'<tg-button[^>]+data="([^"]+)"', markup)
     return [
         button.callback_data
         for row in markup.keyboard
         for button in row
+    ]
+
+
+def button_texts(html):
+    return [
+        unescape(text)
+        for text in re.findall(r"<tg-button\s[^>]*>(.*?)</tg-button>", html)
     ]
 
 
@@ -38,8 +49,16 @@ class FakeBot:
         self.deleted_states = []
         self.answers = []
 
-    def edit_message_text(self, text, chat_id, message_id, reply_markup=None):
-        self.edited.append((text, chat_id, message_id, reply_markup))
+    def edit_message_text(
+        self,
+        text=None,
+        chat_id=None,
+        message_id=None,
+        reply_markup=None,
+        rich_message=None,
+    ):
+        content = rich_message.html if rich_message is not None else text
+        self.edited.append((content, chat_id, message_id, reply_markup))
 
     def delete_state(self, user_id):
         self.deleted_states.append(user_id)
@@ -99,18 +118,19 @@ def test_pets_menu_shows_current_settings_and_edit_actions(monkeypatch):
     pets_menu(make_callback("pets"), bot)
 
     text, _, _, markup = bot.edited[0]
-    assert "<b>Питомцы</b>" in text
-    assert "Яиц в одном пакете: <b>4</b>" in text
+    assert "<h2>Питомцы</h2>" in text
+    assert "Яиц в одном пакете</td><td align=\"right\"><b>4</b>" in text
     assert "🟣 Mythic / Мифическое" in text
     assert "🔴 Ultimate / Максимальное" in text
-    assert "Пакетов в день: <b>2</b>" in text
-    assert callback_data(markup) == [
-        "accounts/pets",
+    assert "Пакетов в день</td><td align=\"right\"><b>2</b>" in text
+    assert callback_data(text) == [
         "user_data/edit/eggs_per_hatch_batch",
         "pets/max_level",
         "pets/batches",
+        "accounts/pets",
         "home",
     ]
+    assert markup is None
 
 
 def test_max_egg_level_is_selected_by_bilingual_colored_names(monkeypatch):
@@ -119,8 +139,8 @@ def test_max_egg_level_is_selected_by_bilingual_colored_names(monkeypatch):
 
     max_egg_level_menu(make_callback("pets/max_level"), bot)
 
-    markup = bot.edited[0][3]
-    labels = [button.text for row in markup.keyboard for button in row]
+    text = bot.edited[0][0]
+    labels = button_texts(text)
     assert labels[:6] == [
         "🟣 Mythic / Мифическое ✓",
         "🔴 Ultimate / Максимальное",
@@ -152,10 +172,11 @@ def test_lowering_max_level_warns_before_clearing_daily_batches(monkeypatch):
     assert "Будут обнулены" in text
     assert "Mythic / Мифическое: <b>2 пакета</b>" in text
     assert "Ultimate / Максимальное: <b>3 пакета</b>" in text
-    assert callback_data(markup) == [
+    assert callback_data(text) == [
         "pets/max_level/confirm/4",
         "pets/max_level",
     ]
+    assert markup is None
 
 
 def test_confirming_lower_max_level_clears_unavailable_daily_batches(
@@ -209,8 +230,8 @@ def test_daily_batch_editor_changes_each_level_independently(monkeypatch):
     )
 
     hatch_batches_menu(make_callback("pets/batches"), bot)
-    assert "pets/batches/6/plus" in callback_data(bot.edited[-1][3])
-    assert "pets/batches/5/minus" in callback_data(bot.edited[-1][3])
+    assert "pets/batches/6/plus" in callback_data(bot.edited[-1][0])
+    assert "pets/batches/5/minus" in callback_data(bot.edited[-1][0])
 
     change_hatch_batch_count(make_callback("pets/batches/6/plus"), bot)
     change_hatch_batch_count(make_callback("pets/batches/5/minus"), bot)

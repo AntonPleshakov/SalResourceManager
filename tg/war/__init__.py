@@ -1,5 +1,5 @@
 from telebot import TeleBot
-from telebot.types import CallbackQuery, InlineKeyboardMarkup
+from telebot.types import CallbackQuery
 
 from db.initializer import get_user_data_db
 from logger.app_logger import logger
@@ -7,7 +7,13 @@ from resources.user_data import UserData
 from resources.war import WAR_STAGES, WarActivity, WarPointsCalculator
 from resources.war_rules.forge import explain_forge_occurrences
 from tg.handlers import HandlerRegistry
-from tg.utils import Button, get_ids, get_username
+from tg.rich import (
+    button_row,
+    callback_button,
+    edit_rich_message,
+    input_rich_message,
+)
+from tg.utils import get_ids, get_username
 from tg.war import personal, public
 from tg.war.personal import (
     _activity_days,
@@ -29,17 +35,30 @@ def war_menu(callback_query: CallbackQuery, bot: TeleBot) -> None:
         user_id,
         get_username(callback_query),
     )
-    keyboard = InlineKeyboardMarkup()
-    keyboard.row(
-        Button("🧮 Мои очки", "war_calculator").inline(),
-        Button("👥 Общие", "war").inline(),
-    )
-    keyboard.row(Button("⬅️ Назад в меню", "home").inline())
-    bot.edit_message_text(
-        "<b>Очки войны</b>\n\nВыберите вариант расчёта.",
+    edit_rich_message(
+        bot,
         chat_id,
         message_id,
-        reply_markup=keyboard,
+        input_rich_message(
+            (
+                "<h2>Очки войны</h2>",
+                "<p>Выберите вариант расчёта.</p>",
+                button_row(
+                    (
+                        callback_button(
+                            "🧮 Мои очки",
+                            "war_calculator",
+                            style="primary",
+                        ),
+                        callback_button("👥 Общие", "war"),
+                    )
+                ),
+                button_row(
+                    (callback_button("⬅️ Назад в меню", "home"),),
+                    align="left",
+                ),
+            )
+        ),
     )
 
 

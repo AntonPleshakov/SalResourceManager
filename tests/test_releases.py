@@ -1,5 +1,6 @@
 from datetime import date, datetime
 from pathlib import Path
+import re
 
 import pytest
 from telebot.types import CallbackQuery, Chat, Message, User
@@ -55,13 +56,28 @@ class FakeBot:
             raise RuntimeError("Telegram unavailable")
         self.sent.append((chat_id, text, reply_markup))
 
-    def edit_message_text(self, text, chat_id, message_id, reply_markup=None):
+    def send_rich_message(self, chat_id, rich_message):
         if self.fail:
             raise RuntimeError("Telegram unavailable")
-        self.edited.append((text, chat_id, message_id, reply_markup))
+        self.sent.append((chat_id, rich_message.html, None))
+
+    def edit_message_text(
+        self,
+        text=None,
+        chat_id=None,
+        message_id=None,
+        reply_markup=None,
+        rich_message=None,
+    ):
+        if self.fail:
+            raise RuntimeError("Telegram unavailable")
+        content = rich_message.html if rich_message is not None else text
+        self.edited.append((content, chat_id, message_id, reply_markup))
 
 
 def callback_data(markup):
+    if isinstance(markup, str):
+        return re.findall(r'<tg-button[^>]+data="([^"]+)"', markup)
     return [button.callback_data for row in markup.keyboard for button in row]
 
 
@@ -152,4 +168,5 @@ def test_release_button_shows_current_release_and_returns_home(monkeypatch):
     show_release_notes(make_callback(), bot)
 
     assert f"Версия {CURRENT_VERSION}" in bot.edited[0][0]
-    assert callback_data(bot.edited[0][3]) == ["home"]
+    assert callback_data(bot.edited[0][0]) == ["home"]
+    assert bot.edited[0][3] is None

@@ -1,19 +1,27 @@
 from typing import Union
 
-from telebot import TeleBot, formatting
-from telebot.types import CallbackQuery, InlineKeyboardMarkup, Message
+from html import escape
+
+from telebot import TeleBot
+from telebot.types import CallbackQuery, Message
 
 import tg.user_data as user_data
 from tg.clans import get_user_clans
 from tg.user_data.account.routing import DESTINATIONS, requested_destination
 from tg.user_data.common import ensure_active_user, get_current_accounts
-from tg.utils import Button, get_ids, get_username
+from tg.rich import (
+    button_row,
+    callback_button,
+    deliver_rich_message,
+    input_rich_message,
+)
+from tg.utils import get_ids, get_username
 
 
 def accounts_menu(
     message: Union[Message, CallbackQuery], bot: TeleBot, notice: str = ""
 ) -> None:
-    user_id, chat_id, message_id = get_ids(message)
+    user_id = get_ids(message)[0]
     bot.delete_state(user_id)
     database = user_data.get_user_data_db()
     accounts = get_current_accounts(message, bot, database)
@@ -35,84 +43,97 @@ def accounts_menu(
         )
     }
     destination = requested_destination(message)
-    lines = ["<b>Игровые аккаунты</b>"]
+    parts = []
+    if notice:
+        parts.append(f"<blockquote>{notice}</blockquote>")
+    parts.append("<h2>Игровые аккаунты</h2>")
     if accounts:
         active_tag = (
-            formatting.escape_html(active.tag)
+            escape(active.tag)
             if active is not None
             else "не выбран"
         )
         clan_title = (
-            formatting.escape_html(active.clan_title)
+            escape(active.clan_title)
             if active is not None and active.clan_id is not None
             else "не выбран"
         )
-        lines.extend(
-            [
-                "",
-                f"Активный аккаунт: <b>{active_tag}</b>.",
-                f"Клан: <b>{clan_title}</b>.",
-            ]
+        parts.extend(
+            (
+                '<table compact><caption>Текущий выбор</caption>',
+                "<tr><td>Активный аккаунт</td>"
+                f"<td><b>{active_tag}</b></td></tr>",
+                "<tr><td>Клан</td><td><b>"
+                f"{clan_title}</b></td></tr>",
+                "</table>",
+            )
         )
         if len(accounts) > 1:
-            lines.extend(
-                ["", "Выберите другой аккаунт, чтобы переключиться."]
+            parts.append(
+                "<p>Выберите другой аккаунт, чтобы переключиться.</p>"
             )
     else:
-        lines.extend(
-            [
-                "",
-                "Добавьте игровой аккаунт. Для каждого аккаунта ресурсы "
-                "и очки учитываются отдельно.",
-            ]
+        parts.append(
+            "<p>Добавьте игровой аккаунт. Для каждого аккаунта ресурсы "
+            "и очки учитываются отдельно.</p>"
         )
-    if notice:
-        lines = [notice, "", *lines]
-
-    keyboard = InlineKeyboardMarkup(row_width=1)
     for account in accounts:
         if account.is_active or (
             destination != "accounts" and account.clan_id is None
         ):
             continue
         clan_title = account.clan_title or "клан не выбран"
-        keyboard.add(
-            Button(
-                f"🔄 {account.tag} · {clan_title}",
-                f"accounts/select/{destination}/{account.account_id}",
-            ).inline()
+        parts.append(
+            button_row(
+                (
+                    callback_button(
+                        f"🔄 {account.tag} · {clan_title}",
+                        f"accounts/select/{destination}/{account.account_id}",
+                    ),
+                )
+            )
         )
-    account_actions = [
-        Button("➕ Добавить", f"accounts/add/{destination}").inline()
-    ]
+    account_actions = [callback_button("➕ Добавить", f"accounts/add/{destination}")]
     if active is not None:
         account_actions.append(
-            Button("✏️ Переименовать", "accounts/rename").inline()
+            callback_button("✏️ Переименовать", "accounts/rename")
         )
         target_clan_ids = available_clan_ids - {active.clan_id}
         if active.clan_id is None and target_clan_ids:
             account_actions.append(
-                Button("🏰 Выбрать клан", "accounts/move").inline()
+                callback_button("🏰 Выбрать клан", "accounts/move")
             )
         elif active.clan_id is not None and target_clan_ids:
             account_actions.append(
-                Button("🏰 Сменить клан", "accounts/move").inline()
+                callback_button("🏰 Сменить клан", "accounts/move")
             )
         if active.clan_id is not None:
             account_actions.append(
-                Button(
+                callback_button(
                     "🚪 Выйти из клана",
                     f"accounts/move/{active.account_id}/leave",
-                ).inline()
+                    style="danger",
+                )
             )
-    keyboard.row(*account_actions)
+    for index in range(0, len(account_actions), 2):
+        parts.append(button_row(account_actions[index : index + 2]))
     if len(accounts) > 1:
-        keyboard.add(Button("🗑 Удалить аккаунт", "accounts/delete").inline())
+        parts.append(
+            button_row(
+                (
+                    callback_button(
+                        "🗑 Удалить аккаунт",
+                        "accounts/delete",
+                        style="danger",
+                    ),
+                )
+            )
+        )
     back_callback = destination if destination in DESTINATIONS else "home"
-    keyboard.add(Button("⬅️ Назад", back_callback).inline())
-
-    text = "\n".join(lines)
-    if isinstance(message, CallbackQuery):
-        bot.edit_message_text(text, chat_id, message_id, reply_markup=keyboard)
-    else:
-        bot.send_message(chat_id, text, reply_markup=keyboard)
+    parts.append(
+        button_row(
+            (callback_button("⬅️ Назад", back_callback),),
+            align="left",
+        )
+    )
+    deliver_rich_message(message, bot, input_rich_message(parts))

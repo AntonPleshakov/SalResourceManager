@@ -11,7 +11,12 @@ from resources.war_rules.forge import explain_forge_occurrences
 import tg.war as war
 from tg.handlers import HandlerRegistry
 from tg.metrics import observe_score_calculation
-from tg.rich import button_row, callback_button, input_rich_message
+from tg.rich import (
+    button_row,
+    callback_button,
+    edit_rich_message,
+    input_rich_message,
+)
 from tg.utils import format_points, get_ids, get_username
 
 
@@ -177,11 +182,7 @@ def _edit_rich_message(
     message_id: int,
     parts: list[str],
 ) -> None:
-    bot.edit_message_text(
-        chat_id=chat_id,
-        message_id=message_id,
-        rich_message=input_rich_message(parts),
-    )
+    edit_rich_message(bot, chat_id, message_id, input_rich_message(parts))
 
 
 def personal_war_points(callback_query: CallbackQuery, bot: TeleBot) -> None:

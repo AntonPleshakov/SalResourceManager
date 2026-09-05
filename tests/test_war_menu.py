@@ -40,6 +40,9 @@ class FakeBot:
     def send_message(self, chat_id, text, reply_markup=None):
         self.sent.append((chat_id, text, reply_markup))
 
+    def send_rich_message(self, chat_id, rich_message):
+        self.sent.append((chat_id, rich_message.html, None))
+
     def edit_message_text(
         self,
         text=None,
@@ -80,6 +83,8 @@ class FakeUserDataDB:
 
 
 def callback_data(markup):
+    if isinstance(markup, str):
+        return rich_callback_data(markup)
     return [button.callback_data for row in markup.keyboard for button in row]
 
 
@@ -119,7 +124,7 @@ def test_home_contains_single_war_points_menu(monkeypatch):
 
     home(make_callback().message, bot)
 
-    buttons = callback_data(bot.sent[0][2])
+    buttons = callback_data(bot.sent[0][1])
     assert "accounts" in buttons
     assert "pets" in buttons
     assert "war_menu" in buttons
@@ -135,7 +140,8 @@ def test_war_points_menu_contains_both_calculations():
 
     text, _, _, markup = bot.edited[0]
     assert "Очки войны" in text
-    assert callback_data(markup) == ["war_calculator", "war", "home"]
+    assert callback_data(text) == ["war_calculator", "war", "home"]
+    assert markup is None
 
 
 def test_personal_war_calculator_uses_requesting_users_data(monkeypatch):
@@ -254,9 +260,9 @@ def test_maximum_war_points_returns_to_war_menu(monkeypatch):
     public_war_points(make_callback(data="war"), bot)
 
     text = bot.edited[0][0]
-    assert "<b>Итого по активностям</b>" in text
-    assert "Всего:" in text
-    assert callback_data(bot.edited[0][3]) == ["war_menu"]
+    assert "<caption>Итого по активностям</caption>" in text
+    assert "<th>Всего</th>" in text
+    assert callback_data(text) == ["war_menu"]
 
 
 def test_war_week_starts_at_three_on_monday():
@@ -305,13 +311,15 @@ def test_maximum_war_points_excludes_accounts_not_updated_since_monday(
         WAR_STAGES,
     )
     text = bot.edited[0][0]
-    assert f"Всего: <b>{format_points(expected.total)}</b>" in text
-    assert "Учтено аккаунтов: <b>2</b>" in text
     assert (
-        "Не учтено (ни один ресурс не обновлён с 03:00 понедельника): "
-        "<b>2</b>"
+        f'<th align="right">{format_points(expected.total)}</th>' in text
+    )
+    assert "<tr><td>Учтено</td><td align=\"right\"><b>2</b>" in text
+    assert (
+        "<tr><td>Не учтено</td><td align=\"right\"><b>2</b>"
         in text
     )
+    assert "ни один ресурс не обновлён с 03:00 понедельника" in text
 
 
 def test_personal_war_calculator_prompts_when_data_is_missing(monkeypatch):
