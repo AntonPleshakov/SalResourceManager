@@ -21,7 +21,6 @@ from tg.admins.notification import (
 from tg.admins.notification import delivery
 from tg.admins.notification.handlers import register_handlers
 from tg.admins.notification.views import notifications_menu
-from tg.clans import refresh_clan_accounts
 from tg.handlers import ClanAdminContext
 from tg.utils import (
     Button,
@@ -45,7 +44,6 @@ def send_custom_notification(
     audience: CustomNotificationAudience = CustomNotificationAudience.ALL,
 ) -> BroadcastResult:
     database = get_user_data_db()
-    refresh_clan_accounts(bot, group_id, database)
     users = filter_custom_notification_users(
         database.get_clan_users(group_id), audience, now()
     )
@@ -73,7 +71,6 @@ def send_custom_private_notification(
     clean_text = validate_custom_notification_text(text)
     message = custom_notification_header(clean_text, admin_name)
     database = get_user_data_db()
-    refresh_clan_accounts(bot, group_id, database)
     users = filter_custom_notification_users(
         database.get_clan_users(group_id), audience, now()
     )
@@ -88,7 +85,6 @@ def confirm_standard_notification(
     bot = context.bot
     user_id, chat_id, message_id = get_ids(callback_query)
     database = get_user_data_db()
-    refresh_clan_accounts(bot, context.group.group_id, database)
     plan = build_standard_notification_plan(
         database.get_clan_users(context.group.group_id), week_started_on(now())
     )
@@ -151,7 +147,6 @@ def send_standard_notification_confirmed(
         message_id,
     )
     database = get_user_data_db()
-    refresh_clan_accounts(bot, group_id, database)
     current_plan = build_standard_notification_plan(
         database.get_clan_users(group_id), week_started_on(now())
     )

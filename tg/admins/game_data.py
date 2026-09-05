@@ -20,7 +20,6 @@ from tg.admins.common import (
     AdminAccessError,
     require_admin_access,
 )
-from tg.clans import refresh_clan_accounts
 from tg.handlers import (
     ActiveClan,
     ClanAdminContext,
@@ -211,7 +210,6 @@ def _export_group_data(
     if group is None:
         raise ValueError("Клан не найден")
     database = get_user_data_db()
-    refresh_clan_accounts(bot, group_id, database)
     return GameDataReport().export(
         group_id,
         group.title,
@@ -231,7 +229,6 @@ def show_game_data(context: ClanAdminContext) -> None:
     )
     try:
         database = get_user_data_db()
-        refresh_clan_accounts(bot, context.group.group_id, database)
         users = database.get_clan_users(context.group.group_id)
         rich_message = build_game_data_message(context.group.title, users)
     except Exception as error:

@@ -1,3 +1,5 @@
+import ast
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -11,6 +13,35 @@ from db.admins import Admin, AdminsDB
 from db.database import Database
 from db.user_data import UserDataDB
 from tg.clans import sync_migrated_clan_titles
+
+
+PROJECT_ROOT = Path(__file__).parents[1]
+BACKGROUND_CLAN_REFRESH_FILES = {
+    PROJECT_ROOT / "tg" / "clans.py",
+    PROJECT_ROOT / "tg" / "reminders.py",
+}
+
+
+def _clan_refresh_calls(path: Path) -> list[int]:
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    return [
+        node.lineno
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == "refresh_clan_accounts"
+    ]
+
+
+def test_full_clan_refresh_is_confined_to_background_work():
+    violations = {
+        str(path.relative_to(PROJECT_ROOT)): lines
+        for path in (PROJECT_ROOT / "tg").rglob("*.py")
+        if path not in BACKGROUND_CLAN_REFRESH_FILES
+        and (lines := _clan_refresh_calls(path))
+    }
+
+    assert violations == {}
 
 
 def test_accounts_are_owned_and_filtered_by_clan(tmp_path):

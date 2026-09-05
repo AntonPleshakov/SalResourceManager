@@ -8,7 +8,6 @@ from common.datetime_utils import format_last_update, now
 from db.initializer import get_user_data_db
 from logger.app_logger import logger
 from resources.user_data import UserData
-from tg.clans import refresh_clan_accounts
 from tg.handlers import ActiveClan, ClanAdminContext, HandlerRegistry
 from tg.utils import (
     Button,
@@ -81,7 +80,6 @@ def last_updates(context: ClanAdminContext) -> None:
     bot = context.bot
     user_id, chat_id, message_id = get_ids(callback_query)
     database = get_user_data_db()
-    refresh_clan_accounts(bot, context.group.group_id, database)
     users = database.get_clan_users(context.group.group_id)
     report = build_last_updates_report(users)
     chunks = _split_report(report)
