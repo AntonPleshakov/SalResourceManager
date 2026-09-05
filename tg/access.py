@@ -99,7 +99,6 @@ class GroupAccessMiddleware(NoOpPostProcessMiddleware):
                 logger.debug("Allowing access group registration command")
                 self._metrics.access_checks.labels(result="bypassed").inc()
                 return None
-            logger.debug("Ignoring non-private Telegram update")
             self._metrics.access_checks.labels(result="ignored").inc()
             return CancelUpdate()
 

@@ -8,6 +8,7 @@ from typing import Iterable
 from urllib.parse import quote
 
 from google.auth.transport.requests import AuthorizedSession
+from google.oauth2.credentials import Credentials
 import pygsheets
 from pygsheets.client import Client
 from pygsheets.exceptions import WorksheetNotFound
@@ -21,14 +22,17 @@ from resources.user_data import UPDATED_AT_FIELDS, UserData
 
 
 _PROJECT_ROOT = Path(__file__).resolve().parents[1]
-GOOGLE_SERVICE_FILE = _PROJECT_ROOT / "gapi_service_file.json"
+GOOGLE_OAUTH_TOKEN_FILE = _PROJECT_ROOT / "config/google_oauth_token.json"
+GOOGLE_OAUTH_SCOPES = (
+    "https://www.googleapis.com/auth/spreadsheets",
+    "https://www.googleapis.com/auth/drive",
+)
 USER_DATA_PAGE_NAME = "User data"
 _TRACKED_FIELD_BY_UPDATE_FIELD = {
     update_field: tracked_field
     for tracked_field, update_field in UPDATED_AT_FIELDS.items()
 }
 _DRIVE_API_BASE_URL = "https://www.googleapis.com/drive/v3/files"
-_GOOGLE_FOLDER_MIME_TYPE = "application/vnd.google-apps.folder"
 _GOOGLE_SPREADSHEET_MIME_TYPE = "application/vnd.google-apps.spreadsheet"
 
 
@@ -52,13 +56,14 @@ class GameDataReport:
         self._client = client
         self._groups = groups
         self._drive = drive_session
-        self._report_folder_id = None
 
     def _google_client(self) -> Client:
         if self._client is None:
-            self._client = pygsheets.authorize(
-                service_file=str(GOOGLE_SERVICE_FILE)
+            credentials = Credentials.from_authorized_user_file(
+                str(GOOGLE_OAUTH_TOKEN_FILE),
+                scopes=GOOGLE_OAUTH_SCOPES,
             )
+            self._client = pygsheets.authorize(custom_credentials=credentials)
         return self._client
 
     def _group_database(self) -> AccessGroupDB:
@@ -74,49 +79,14 @@ class GameDataReport:
         with cls._creation_locks_guard:
             return cls._creation_locks.setdefault(int(group_id), Lock())
 
-    def _shared_drive_folder_id(self) -> str:
-        if self._report_folder_id is not None:
-            return self._report_folder_id
-
-        folder_id = getconf("GAME_DATA_GFOLDER_KEY")
-        folder_response = self._drive_session().get(
-            f"{_DRIVE_API_BASE_URL}/{quote(folder_id, safe='')}",
-            params={
-                "fields": "mimeType,driveId,capabilities(canAddChildren)",
-                "supportsAllDrives": "true",
-            },
-            timeout=10,
-        )
-        folder_response.raise_for_status()
-        folder = folder_response.json()
-        if folder.get("mimeType") != _GOOGLE_FOLDER_MIME_TYPE:
-            raise RuntimeError(
-                "GAME_DATA_GFOLDER_KEY does not point to a Google Drive folder"
-            )
-        if not folder.get("driveId"):
-            raise RuntimeError(
-                "GAME_DATA_GFOLDER_KEY must point to a Shared Drive folder; "
-                "service accounts cannot own files"
-            )
-        if not folder.get("capabilities", {}).get("canAddChildren"):
-            raise PermissionError(
-                "The Google service account cannot add files to the configured "
-                "Shared Drive folder"
-            )
-
-        self._google_client().drive.enable_team_drive(folder["driveId"])
-        self._report_folder_id = folder_id
-        return folder_id
-
     def _create_spreadsheet(self, title: str):
-        folder_id = self._shared_drive_folder_id()
         create_response = self._drive_session().post(
             _DRIVE_API_BASE_URL,
             params={"fields": "id", "supportsAllDrives": "true"},
             json={
                 "name": title,
                 "mimeType": _GOOGLE_SPREADSHEET_MIME_TYPE,
-                "parents": [folder_id],
+                "parents": [getconf("GAME_DATA_GFOLDER_KEY")],
             },
             timeout=10,
         )
@@ -126,7 +96,6 @@ class GameDataReport:
     def _open_or_create_spreadsheet(self, group_id: int, clan_title: str):
         groups = self._group_database()
         client = self._google_client()
-        self._shared_drive_folder_id()
         spreadsheet_id = groups.get_spreadsheet_id(group_id)
         if spreadsheet_id is not None:
             return client.open_by_key(spreadsheet_id)
@@ -304,7 +273,6 @@ class GameDataReport:
         spreadsheet_id = self._group_database().get_spreadsheet_id(group_id)
         if spreadsheet_id is None:
             return
-        self._shared_drive_folder_id()
         spreadsheet = self._google_client().open_by_key(spreadsheet_id)
         for permission in spreadsheet.permissions:
             if (

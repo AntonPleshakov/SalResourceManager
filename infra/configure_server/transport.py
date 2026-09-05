@@ -88,7 +88,7 @@ def _cleanup_remote_files(
         "grafana-dashboard.json",
         "grafana-system-dashboard.json",
         "config.ini",
-        "gapi_service_file.json",
+        "google_oauth_token.json",
         "ghcr-credentials",
     )
     quoted_files = " ".join(
@@ -124,7 +124,7 @@ def configure_server(settings: Settings) -> None:
             (GRAFANA_DASHBOARD_FILE, "grafana-dashboard.json"),
             (GRAFANA_SYSTEM_DASHBOARD_FILE, "grafana-system-dashboard.json"),
             (settings.config_file, "config.ini"),
-            (settings.google_credentials_file, "gapi_service_file.json"),
+            (settings.google_oauth_token_file, "google_oauth_token.json"),
         )
         for source, name in uploads:
             run_command(scp_command(settings, source, f"{remote_dir}/{name}"))

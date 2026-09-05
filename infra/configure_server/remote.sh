@@ -144,7 +144,8 @@ install_configuration() {
         "$SOURCE_DIR/config.ini" "$APP_DIR/config/config.ini" \
         "$APP_UID" "$APP_GID" 0400 true
     install_managed_file \
-        "$SOURCE_DIR/gapi_service_file.json" "$APP_DIR/gapi_service_file.json" \
+        "$SOURCE_DIR/google_oauth_token.json" \
+        "$APP_DIR/config/google_oauth_token.json" \
         "$APP_UID" "$APP_GID" 0400 true
 }
 
@@ -383,8 +384,8 @@ main() {
     [[ -f "$SOURCE_DIR/generate-webhook-certificate.sh" ]] ||
         fail "Certificate generator was not uploaded."
     [[ -f "$SOURCE_DIR/config.ini" ]] || fail "config.ini was not uploaded."
-    [[ -f "$SOURCE_DIR/gapi_service_file.json" ]] ||
-        fail "gapi_service_file.json was not uploaded."
+    [[ -f "$SOURCE_DIR/google_oauth_token.json" ]] ||
+        fail "google_oauth_token.json was not uploaded."
     require_command cmp
     require_command install
     check_docker

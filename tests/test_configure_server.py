@@ -10,7 +10,7 @@ def make_settings(**overrides):
     values = {
         "target": "sal-production",
         "config_file": Path("config.ini"),
-        "google_credentials_file": Path("credentials.json"),
+        "google_oauth_token_file": Path("google_oauth_token.json"),
         "identity_file": None,
         "port": None,
         "ghcr_username": None,
@@ -52,18 +52,21 @@ def test_explicit_port_uses_correct_ssh_and_scp_flags(tmp_path):
 
 def test_environment_provides_target_and_connection_settings(tmp_path):
     identity = tmp_path / "id_ed25519"
+    google_token = tmp_path / "google_oauth_token.json"
     settings = configure_settings.resolve_settings(
         [],
         {
             "SSH_TARGET": "sal-staging",
             "SSH_IDENTITY_FILE": str(identity),
             "SSH_PORT": "2200",
+            "GOOGLE_OAUTH_TOKEN_FILE": str(google_token),
         },
     )
 
     assert settings.target == "sal-staging"
     assert settings.identity_file == identity.resolve()
     assert settings.port == 2200
+    assert settings.google_oauth_token_file == google_token.resolve()
 
 
 @pytest.mark.parametrize("port", ["zero", "0", "65536"])
@@ -111,6 +114,14 @@ def test_remote_script_is_uploaded_executed_and_cleaned_up(monkeypatch):
     )
     assert any(
         call[0][0] == "scp"
+        and call[0][-2] == str(settings.google_oauth_token_file)
+        and call[0][-1].endswith(
+            f":{remote_dir}/google_oauth_token.json"
+        )
+        for call in calls
+    )
+    assert any(
+        call[0][0] == "scp"
         and call[0][-2] == str(configure_settings.CERTIFICATE_SCRIPT_FILE)
         and call[0][-1].endswith(
             f":{remote_dir}/generate-webhook-certificate.sh"
@@ -151,3 +162,13 @@ def test_remote_script_is_uploaded_executed_and_cleaned_up(monkeypatch):
     assert calls[-2][1] == {}
     assert calls[-1][1] == {"quiet": True}
     assert calls[-1][0][-1].startswith("rm -f ")
+
+
+def test_remote_script_installs_oauth_token_in_application_config():
+    remote_script = configure_settings.REMOTE_SCRIPT_FILE.read_text(
+        encoding="utf-8"
+    )
+
+    assert '"$SOURCE_DIR/google_oauth_token.json"' in remote_script
+    assert '"$APP_DIR/config/google_oauth_token.json"' in remote_script
+    assert "gapi_service_file.json" not in remote_script

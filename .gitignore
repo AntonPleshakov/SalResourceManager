@@ -3,7 +3,9 @@
 .env
 compose.override.yaml
 config/config.ini
-gapi_service_file.json
+config/gapi_service_file.json
+config/google_oauth_client.json
+config/google_oauth_token.json
 *.log*
 data/
 certs/

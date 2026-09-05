@@ -32,7 +32,7 @@ class ConfigureError(RuntimeError):
 class Settings:
     target: str
     config_file: Path
-    google_credentials_file: Path
+    google_oauth_token_file: Path
     identity_file: Optional[Path]
     port: Optional[int]
     ghcr_username: Optional[str]
@@ -50,8 +50,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("-c", "--config", help="application config file")
     parser.add_argument(
         "-g",
-        "--google-credentials",
-        help="Google service account JSON file used for report export",
+        "--google-oauth-token",
+        help="authorized-user token JSON used for Google report export",
     )
     parser.add_argument("-i", "--identity", help="SSH identity override")
     parser.add_argument("-p", "--port", help="SSH port override")
@@ -96,20 +96,20 @@ def resolve_settings(
     config_file = _optional_path(
         args.config or env.get("CONFIG_FILE") or str(PROJECT_DIR / "config/config.ini")
     )
-    google_credentials_file = _optional_path(
-        args.google_credentials
-        or env.get("GOOGLE_CREDENTIALS_FILE")
-        or str(PROJECT_DIR / "gapi_service_file.json")
+    google_oauth_token_file = _optional_path(
+        args.google_oauth_token
+        or env.get("GOOGLE_OAUTH_TOKEN_FILE")
+        or str(PROJECT_DIR / "config/google_oauth_token.json")
     )
     identity_file = _optional_path(args.identity or env.get("SSH_IDENTITY_FILE"))
     port = _parse_port(args.port or env.get("SSH_PORT"))
 
     assert config_file is not None
-    assert google_credentials_file is not None
+    assert google_oauth_token_file is not None
     return Settings(
         target=target,
         config_file=config_file,
-        google_credentials_file=google_credentials_file,
+        google_oauth_token_file=google_oauth_token_file,
         identity_file=identity_file,
         port=port,
         ghcr_username=username,
@@ -132,7 +132,7 @@ def require_local_prerequisites(settings: Settings) -> None:
         REMOTE_SCRIPT_FILE,
         CERTIFICATE_SCRIPT_FILE,
         settings.config_file,
-        settings.google_credentials_file,
+        settings.google_oauth_token_file,
     ]
     if settings.identity_file:
         files.append(settings.identity_file)
