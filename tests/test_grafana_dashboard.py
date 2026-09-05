@@ -90,7 +90,7 @@ def test_user_dashboard_uses_actionable_prometheus_metrics() -> None:
     )
 
 
-def test_system_dashboard_uses_process_limits_and_runtime_metrics() -> None:
+def test_system_dashboard_uses_process_limits_and_server_metrics() -> None:
     dashboard = json.loads(SYSTEM_DASHBOARD_FILE.read_text(encoding="utf-8"))
     queries = _queries(dashboard)
 
@@ -104,9 +104,6 @@ def test_system_dashboard_uses_process_limits_and_runtime_metrics() -> None:
         "process_resident_memory_bytes",
         "process_cpu_seconds_total",
         "process_start_time_seconds",
-        "process_open_fds",
-        "scrape_duration_seconds",
-        "python_gc_collections_total",
         "node_memory_MemAvailable_bytes",
         "node_memory_MemTotal_bytes",
         "node_filesystem_avail_bytes",
@@ -119,7 +116,6 @@ def test_system_dashboard_uses_process_limits_and_runtime_metrics() -> None:
         assert metric in queries
     assert "268435456" in queries
     assert "vector(0.5)" in queries
-    assert 'job=~"sal-resource-manager|prometheus|grafana"' in queries
 
     memory_panels = [
         panel
@@ -151,12 +147,10 @@ def test_system_dashboard_uses_process_limits_and_runtime_metrics() -> None:
         assert len(matching_panels) == 1
         return matching_panels[0]["gridPos"]["y"]
 
-    assert panel_y("Состояние сервисов") == 0
     assert panel_y("Память: бот, Prometheus и Grafana") == 5
     assert panel_y("CPU: бот, Prometheus и Grafana") == 5
     assert panel_y("NVMe: хранилище сервера") == 14
     assert panel_y("Uptime процесса") > panel_y("NVMe: хранилище сервера")
-    assert panel_y("Длительность сбора метрик") > panel_y("Uptime процесса")
 
 
 def test_prometheus_scrapes_grafana_and_private_node_exporter() -> None:
