@@ -171,13 +171,13 @@ def _open_section(
     )
 
 
-def _delete_registered_input(message: Message, bot: TeleBot) -> None:
+def _delete_input_message(message: Message, bot: TeleBot) -> None:
     _, chat_id, message_id = get_ids(message)
     try:
         bot.delete_message(chat_id, message_id)
     except ApiTelegramException as error:
         logger.warning(
-            "Unable to delete registered value input chat_id=%s "
+            "Unable to delete value input chat_id=%s "
             "message_id=%s reason=%s",
             chat_id,
             message_id,
@@ -219,6 +219,7 @@ def save_value(message: Message, bot: TeleBot) -> None:
         _stop_invalid_edit(message, bot)
         return
 
+    _delete_input_message(message, bot)
     value = _parse_value(message, bot, state)
     if value is None:
         return
@@ -233,7 +234,6 @@ def save_value(message: Message, bot: TeleBot) -> None:
         state.field_name,
     )
     displayed_value = format_field_value(state.field, value)
-    _delete_registered_input(message, bot)
     _open_section(
         message,
         bot,

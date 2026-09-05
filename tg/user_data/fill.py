@@ -226,13 +226,13 @@ def _advance_fill(
     )
 
 
-def _delete_registered_input(message: Message, bot: TeleBot) -> None:
+def _delete_input_message(message: Message, bot: TeleBot) -> None:
     _, chat_id, message_id = get_ids(message)
     try:
         bot.delete_message(chat_id, message_id)
     except ApiTelegramException as error:
         logger.warning(
-            "Unable to delete registered fill input chat_id=%s "
+            "Unable to delete fill input chat_id=%s "
             "message_id=%s reason=%s",
             chat_id,
             message_id,
@@ -304,6 +304,7 @@ def save_fill_value(message: Message, bot: TeleBot) -> None:
     context = _load_fill_context(message, bot)
     if context is None:
         return
+    _delete_input_message(message, bot)
     value = _parse_fill_value(message, bot, context)
     if value is None:
         return
@@ -312,7 +313,6 @@ def save_fill_value(message: Message, bot: TeleBot) -> None:
         return
     field = context.state.current_field
     displayed_value = format_field_value(field, value)
-    _delete_registered_input(message, bot)
     _advance_fill(
         message,
         bot,

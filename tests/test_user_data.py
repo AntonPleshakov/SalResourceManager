@@ -929,9 +929,13 @@ def test_single_value_edit_reuses_prompt_for_invalid_input():
                 }
             }
             self.edited = []
+            self.deleted = []
 
         def retrieve_data(self, _user_id):
             return nullcontext(self.data)
+
+        def delete_message(self, chat_id, message_id):
+            self.deleted.append((chat_id, message_id))
 
         def edit_message_text(
             self, text, chat_id, message_id, reply_markup=None
@@ -948,6 +952,7 @@ def test_single_value_edit_reuses_prompt_for_invalid_input():
 
     save_value(message, bot)
 
+    assert bot.deleted == [(42, 99)]
     assert len(bot.edited) == 1
     assert bot.edited[0][1:3] == (42, 15)
     assert "Значение для «Молотки» не подходит" in bot.edited[0][0]
@@ -985,9 +990,13 @@ def test_fill_all_rejects_invalid_value_before_advancing_to_next_field(
                 },
             }
             self.edited = []
+            self.deleted = []
 
         def retrieve_data(self, _user_id):
             return nullcontext(self.data)
+
+        def delete_message(self, chat_id, message_id):
+            self.deleted.append((chat_id, message_id))
 
         def edit_message_text(
             self, text, chat_id, message_id, reply_markup=None
@@ -1007,6 +1016,7 @@ def test_fill_all_rejects_invalid_value_before_advancing_to_next_field(
 
     save_fill_value(message, bot)
 
+    assert bot.deleted == [(42, 1)]
     assert bot.data["fill_state"]["index"] == 0
     assert "Значение не подходит" in bot.edited[0][0]
     assert "Сейчас сохранено: <b>10</b>" in bot.edited[0][0]
