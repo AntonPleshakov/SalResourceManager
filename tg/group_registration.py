@@ -1,7 +1,6 @@
 from telebot import TeleBot, formatting
 from telebot.handler_backends import State, StatesGroup
 from telebot.types import (
-    CallbackQuery,
     KeyboardButton,
     KeyboardButtonRequestChat,
     Message,
@@ -15,9 +14,10 @@ from db.access_group import (
 )
 from db.initializer import get_access_group_db, get_admins_db
 from logger.app_logger import logger
-from tg.admins.common import AdminAccessCheckError, has_current_admin_access
+from tg.admins.common import has_current_admin_access
 from tg.clans import is_group_admin, is_group_member
-from tg.utils import empty_filter, get_ids, get_username
+from tg.handlers import AdminContext, HandlerRegistry
+from tg.utils import get_ids, get_username
 
 
 GROUP_REGISTRATION_REQUEST_ID = 1
@@ -73,27 +73,15 @@ def _group_selection_keyboard() -> ReplyKeyboardMarkup:
     return keyboard
 
 
-def request_group_registration(update: CallbackQuery, bot: TeleBot) -> None:
+def request_group_registration(context: AdminContext) -> None:
+    update = context.update
+    bot = context.bot
     user_id, chat_id = get_ids(update)[:2]
     logger.info(
         "Access group selection requested by user_id=%s username=%s",
         user_id,
         get_username(update),
     )
-    try:
-        authorized = has_current_admin_access(bot, user_id, get_admins_db())
-    except AdminAccessCheckError:
-        bot.send_message(chat_id, REGISTRATION_FAILED_MESSAGE)
-        return
-    if not authorized:
-        logger.warning(
-            "Access group selection rejected for non-admin user_id=%s username=%s",
-            user_id,
-            get_username(update),
-        )
-        bot.send_message(chat_id, NOT_ADMIN_MESSAGE)
-        return
-
     bot.send_message(
         chat_id,
         GROUP_SELECTION_MESSAGE,
@@ -233,8 +221,10 @@ def _register_group(
     )
 
 
-def register_selected_group(message: Message, bot: TeleBot) -> None:
+def register_selected_group(context: AdminContext) -> None:
     """Register a group selected by an existing bot administrator."""
+    message = context.update
+    bot = context.bot
     user_id = message.from_user.id
     bot.delete_state(user_id)
     shared_chat = message.chat_shared
@@ -246,24 +236,6 @@ def register_selected_group(message: Message, bot: TeleBot) -> None:
         shared_chat.chat_id,
         shared_chat.request_id,
     )
-
-    try:
-        authorized = has_current_admin_access(bot, user_id, get_admins_db())
-    except AdminAccessCheckError:
-        bot.reply_to(
-            message,
-            REGISTRATION_FAILED_MESSAGE,
-            reply_markup=ReplyKeyboardRemove(),
-        )
-        return
-    if not authorized:
-        logger.warning(
-            "Access group registration rejected for non-admin user_id=%s username=%s",
-            user_id,
-            get_username(message),
-        )
-        bot.reply_to(message, NOT_ADMIN_MESSAGE, reply_markup=ReplyKeyboardRemove())
-        return
 
     if shared_chat.request_id != GROUP_REGISTRATION_REQUEST_ID:
         logger.warning(
@@ -297,24 +269,18 @@ def register_current_group(message: Message, bot: TeleBot) -> None:
 
 def register_handlers(bot: TeleBot) -> None:
     logger.debug("Registering access group handlers")
-    bot.register_message_handler(
+    handlers = HandlerRegistry(bot)
+    handlers.group_message(
         register_current_group,
         commands=["register_group"],
         chat_types=["group", "supergroup"],
-        pass_bot=True,
     )
-    bot.register_callback_query_handler(
+    handlers.admin_callback(
         request_group_registration,
-        func=empty_filter,
         button="admins/register_group",
-        is_private=True,
-        is_admin=True,
-        pass_bot=True,
     )
-    bot.register_message_handler(
+    handlers.admin_message(
         register_selected_group,
         content_types=["chat_shared"],
-        chat_types=["private"],
         state=GroupRegistrationStates.select_group,
-        pass_bot=True,
     )

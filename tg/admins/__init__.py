@@ -1,6 +1,9 @@
+from collections.abc import Sequence
+
 from telebot import TeleBot, formatting
 from telebot.types import CallbackQuery, InlineKeyboardMarkup
 
+from db.access_group import AccessGroup
 from db.initializer import get_admins_db
 from logger.app_logger import logger
 from tg.admins import (
@@ -12,11 +15,20 @@ from tg.admins import (
     rename_clan,
     resource_status,
 )
-from tg.admins.common import get_active_admin_group, get_current_admin_clans
-from tg.utils import Button, empty_filter, get_ids, get_user_link, get_username
+from tg.handlers import (
+    ActiveClan,
+    AdminContext,
+    ClanAdminContext,
+    HandlerRegistry,
+)
+from tg.utils import Button, get_ids, get_user_link, get_username
 
 
-def admins_main_menu(callback_query: CallbackQuery, bot: TeleBot):
+def _show_admins_main_menu(
+    callback_query: CallbackQuery,
+    bot: TeleBot,
+    groups: Sequence[AccessGroup],
+) -> None:
     user_id, chat_id, message_id = get_ids(callback_query)
     logger.debug(
         "Opening admin menu for user_id=%s username=%s",
@@ -26,12 +38,17 @@ def admins_main_menu(callback_query: CallbackQuery, bot: TeleBot):
     bot.delete_state(user_id)
     keyboard = InlineKeyboardMarkup()
     admins = get_admins_db()
-    try:
-        group = get_active_admin_group(bot, user_id, admins)
-    except ValueError:
-        group = None
+    active_group = admins.get_active_group(user_id)
+    group = next(
+        (
+            candidate
+            for candidate in groups
+            if active_group is not None
+            and candidate.group_id == active_group.group_id
+        ),
+        None,
+    )
     if group is None:
-        groups = get_current_admin_clans(bot, user_id, admins)
         if groups:
             keyboard.row(
                 Button("🏰 Выбрать клан", "admins/clans").inline()
@@ -59,7 +76,7 @@ def admins_main_menu(callback_query: CallbackQuery, bot: TeleBot):
     keyboard.row(
         Button("➕ Добавить клан", "admins/register_group").inline()
     )
-    if len(get_current_admin_clans(bot, user_id, admins)) > 1:
+    if len(groups) > 1:
         keyboard.row(Button("🔄 Сменить клан", "admins/clans").inline())
     keyboard.row(
         Button("✏️ Переименовать клан", "admins/rename_clan").inline()
@@ -78,11 +95,20 @@ def admins_main_menu(callback_query: CallbackQuery, bot: TeleBot):
     )
 
 
-def admins_list(callback_query: CallbackQuery, bot: TeleBot):
+def admins_main_menu(context: AdminContext) -> None:
+    _show_admins_main_menu(
+        context.update,
+        context.bot,
+        list(context.clans),
+    )
+
+
+def admins_list(context: ClanAdminContext) -> None:
+    callback_query = context.update
+    bot = context.bot
     user_id = callback_query.from_user.id
     admins_db = get_admins_db()
-    group = get_active_admin_group(bot, user_id, admins_db)
-    admins = admins_db.get_clan_admins(group.group_id)
+    admins = admins_db.get_clan_admins(context.group.group_id)
     logger.debug(
         "Showing admin list to user_id=%s username=%s count=%d",
         callback_query.from_user.id,
@@ -100,21 +126,15 @@ def admins_list(callback_query: CallbackQuery, bot: TeleBot):
 
 def register_handlers(bot: TeleBot):
     logger.debug("Registering admin handlers")
-    bot.register_callback_query_handler(
+    handlers = HandlerRegistry(bot)
+    handlers.admin_callback(
         admins_main_menu,
-        func=empty_filter,
         button="admins",
-        is_private=True,
-        is_admin=True,
-        pass_bot=True,
     )
-    bot.register_callback_query_handler(
+    handlers.clan_admin_callback(
         admins_list,
-        func=empty_filter,
         button="admins/admins_list",
-        is_private=True,
-        is_admin=True,
-        pass_bot=True,
+        clan=ActiveClan(),
     )
     add_admin.register_handlers(bot)
     clans.register_handlers(bot)

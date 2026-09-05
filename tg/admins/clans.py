@@ -1,19 +1,23 @@
 from telebot import TeleBot
-from telebot.types import CallbackQuery, InlineKeyboardMarkup
+from telebot.types import InlineKeyboardMarkup
 
 from db.initializer import get_admins_db
 from logger.app_logger import logger
-from tg.admins.common import (
-    AdminAccessError,
-    get_current_admin_clans,
-    require_admin_access,
+from tg.admins.common import get_current_admin_clans
+from tg.handlers import (
+    AdminContext,
+    ClanAdminContext,
+    ClanFromCallback,
+    HandlerRegistry,
 )
-from tg.utils import Button, empty_filter, get_ids
+from tg.utils import Button, get_ids
 
 
-def clans_menu(callback_query: CallbackQuery, bot: TeleBot) -> None:
+def clans_menu(context: AdminContext) -> None:
+    callback_query = context.update
+    bot = context.bot
     user_id, chat_id, message_id = get_ids(callback_query)
-    groups = get_current_admin_clans(bot, user_id, get_admins_db())
+    groups = list(context.clans)
     keyboard = InlineKeyboardMarkup(row_width=1)
     for group in groups:
         keyboard.add(
@@ -29,37 +33,33 @@ def clans_menu(callback_query: CallbackQuery, bot: TeleBot) -> None:
     )
 
 
-def select_clan(callback_query: CallbackQuery, bot: TeleBot) -> None:
+def select_clan(context: ClanAdminContext) -> None:
+    callback_query = context.update
+    bot = context.bot
     user_id = callback_query.from_user.id
     try:
-        group_id = int(callback_query.data.rsplit("/", maxsplit=1)[-1])
+        group_id = context.group.group_id
         admins = get_admins_db()
-        require_admin_access(bot, user_id, group_id, admins)
         admins.select_group(user_id, group_id)
-    except (AdminAccessError, ValueError) as error:
+    except ValueError as error:
         bot.answer_callback_query(callback_query.id, str(error), show_alert=True)
         return
 
-    from tg.admins import admins_main_menu
+    from tg.admins import _show_admins_main_menu
 
-    admins_main_menu(callback_query, bot)
+    groups = get_current_admin_clans(bot, user_id, admins)
+    _show_admins_main_menu(callback_query, bot, groups)
 
 
 def register_handlers(bot: TeleBot) -> None:
     logger.debug("Registering admin clan-selection handlers")
-    bot.register_callback_query_handler(
+    handlers = HandlerRegistry(bot)
+    handlers.admin_callback(
         clans_menu,
-        func=empty_filter,
         button="admins/clans",
-        is_private=True,
-        is_admin=True,
-        pass_bot=True,
     )
-    bot.register_callback_query_handler(
+    handlers.clan_admin_callback(
         select_clan,
-        func=empty_filter,
         button=r"admins/clans/-?[0-9]+",
-        is_private=True,
-        is_admin=True,
-        pass_bot=True,
+        clan=ClanFromCallback(),
     )

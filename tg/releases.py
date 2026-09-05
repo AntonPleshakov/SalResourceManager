@@ -7,7 +7,8 @@ from common.datetime_utils import format_last_update
 from db.initializer import get_release_views_db
 from logger.app_logger import logger
 from resources.releases import CURRENT_VERSION, RELEASES, Release, unseen_releases
-from tg.utils import Button, empty_filter, get_ids, get_username
+from tg.handlers import HandlerRegistry
+from tg.utils import Button, get_ids, get_username
 
 
 def format_release_notes(releases: Sequence[Release]) -> str:
@@ -95,10 +96,7 @@ def show_release_notes(callback_query: CallbackQuery, bot: TeleBot) -> None:
 
 def register_handlers(bot: TeleBot) -> None:
     logger.debug("Registering release notes handlers")
-    bot.register_callback_query_handler(
+    HandlerRegistry(bot).private_callback(
         show_release_notes,
-        func=empty_filter,
         button="releases",
-        is_private=True,
-        pass_bot=True,
     )

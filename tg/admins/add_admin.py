@@ -1,11 +1,9 @@
 from telebot import TeleBot, formatting
 from telebot.handler_backends import State, StatesGroup
 from telebot.types import (
-    CallbackQuery,
     InlineKeyboardMarkup,
     KeyboardButton,
     KeyboardButtonRequestUsers,
-    Message,
     ReplyKeyboardMarkup,
     ReplyKeyboardRemove,
 )
@@ -13,14 +11,15 @@ from telebot.types import (
 from db.admins import Admin
 from db.initializer import get_admins_db
 from logger.app_logger import logger
-from tg.admins.common import (
-    AdminAccessError,
-    get_active_admin_group,
-    require_admin_access,
-)
 from tg.clans import is_group_member
+from tg.handlers import (
+    ActiveClan,
+    ClanAdminContext,
+    ClanFromState,
+    HandlerRegistry,
+)
 from tg.navigation import home
-from tg.utils import Button, empty_filter, get_ids, get_user_link, get_username
+from tg.utils import Button, get_ids, get_user_link, get_username
 
 
 class AddAdminStates(StatesGroup):
@@ -31,9 +30,10 @@ class AddAdminStates(StatesGroup):
 CANCEL_ADD_ADMINS_TEXT = "✖️ Отмена"
 
 
-def add_admins(callback_query: CallbackQuery, bot: TeleBot):
+def add_admins(context: ClanAdminContext) -> None:
+    callback_query = context.update
+    bot = context.bot
     user_id, chat_id, message_id = get_ids(callback_query)
-    group = get_active_admin_group(bot, user_id)
     logger.info(
         "Add admin requested by user_id=%s username=%s",
         user_id,
@@ -56,10 +56,12 @@ def add_admins(callback_query: CallbackQuery, bot: TeleBot):
         reply_markup=keyboard,
     )
     bot.set_state(user_id, AddAdminStates.share_users)
-    bot.add_data(user_id, admin_group_id=group.group_id)
+    bot.add_data(user_id, admin_group_id=context.group.group_id)
 
 
-def cancel_add_admins(message: Message, bot: TeleBot):
+def cancel_add_admins(context: ClanAdminContext) -> None:
+    message = context.update
+    bot = context.bot
     user_id, chat_id = get_ids(message)[:2]
     logger.info(
         "Admin addition cancelled by user_id=%s username=%s",
@@ -75,22 +77,10 @@ def cancel_add_admins(message: Message, bot: TeleBot):
     home(message, bot)
 
 
-def add_admins_confirmation(message: Message, bot: TeleBot):
+def add_admins_confirmation(context: ClanAdminContext) -> None:
+    message = context.update
+    bot = context.bot
     user_id, chat_id, message_id = get_ids(message)
-    with bot.retrieve_data(user_id) as data:
-        group_id = data.get("admin_group_id")
-    try:
-        if not isinstance(group_id, int):
-            raise AdminAccessError("Не выбран клан")
-        require_admin_access(bot, user_id, group_id, get_admins_db())
-    except AdminAccessError:
-        bot.delete_state(user_id)
-        bot.send_message(
-            chat_id,
-            "Нет прав администратора выбранного клана.",
-            reply_markup=ReplyKeyboardRemove(),
-        )
-        return
     new_admins = [
         Admin(user.username or str(user.user_id), user.user_id)
         for user in message.users_shared.users
@@ -125,22 +115,13 @@ def add_admins_confirmation(message: Message, bot: TeleBot):
     )
 
 
-def add_admins_approved(callback_query: CallbackQuery, bot: TeleBot):
+def add_admins_approved(context: ClanAdminContext) -> None:
+    callback_query = context.update
+    bot = context.bot
     user_id = get_ids(callback_query)[0]
     with bot.retrieve_data(user_id) as data:
         new_admins = data.pop("new_admins")
-        group_id = data.get("admin_group_id")
-    try:
-        if not isinstance(group_id, int):
-            raise AdminAccessError("Не выбран клан")
-        require_admin_access(bot, user_id, group_id, get_admins_db())
-    except AdminAccessError:
-        bot.delete_state(user_id)
-        bot.answer_callback_query(
-            callback_query.id,
-            "Нет прав администратора выбранного клана",
-        )
-        return
+    group_id = context.group.group_id
     logger.info(
         "Admin addition approved requester_id=%s username=%s count=%d",
         user_id,
@@ -204,37 +185,29 @@ def add_admins_approved(callback_query: CallbackQuery, bot: TeleBot):
 
 def register_handlers(bot: TeleBot):
     logger.debug("Registering add-admin handlers")
-    bot.register_callback_query_handler(
+    handlers = HandlerRegistry(bot)
+    handlers.clan_admin_callback(
         add_admins,
-        func=empty_filter,
         button="admins/add_admins",
-        is_private=True,
-        is_admin=True,
-        pass_bot=True,
+        clan=ActiveClan(),
     )
-    bot.register_message_handler(
+    handlers.clan_admin_message(
         cancel_add_admins,
-        func=lambda message: message.text in {CANCEL_ADD_ADMINS_TEXT, "Отмена"},
+        predicate=lambda message: message.text
+        in {CANCEL_ADD_ADMINS_TEXT, "Отмена"},
         content_types=["text"],
-        chat_types=["private"],
         state=AddAdminStates.share_users,
-        is_admin=True,
-        pass_bot=True,
+        clan=ClanFromState(),
     )
-    bot.register_message_handler(
+    handlers.clan_admin_message(
         add_admins_confirmation,
         content_types=["users_shared"],
-        chat_types=["private"],
         state=AddAdminStates.share_users,
-        is_admin=True,
-        pass_bot=True,
+        clan=ClanFromState(),
     )
-    bot.register_callback_query_handler(
+    handlers.clan_admin_callback(
         add_admins_approved,
-        func=empty_filter,
         button="approved",
         state=AddAdminStates.add_admin,
-        is_private=True,
-        is_admin=True,
-        pass_bot=True,
+        clan=ClanFromState(),
     )

@@ -9,7 +9,7 @@ from tg.user_data.common import (
     build_section_menu,
     show_section_menu,
 )
-from tg.utils import empty_filter
+from tg.handlers import HandlerRegistry
 
 
 def build_technologies_menu(
@@ -38,10 +38,7 @@ def technologies_menu(
 
 
 def register_handlers(bot: TeleBot) -> None:
-    bot.register_callback_query_handler(
+    HandlerRegistry(bot).private_callback(
         technologies_menu,
-        func=empty_filter,
         button="technologies",
-        is_private=True,
-        pass_bot=True,
     )

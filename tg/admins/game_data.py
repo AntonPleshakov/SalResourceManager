@@ -18,12 +18,17 @@ from reports.game_data import GameDataReport
 from resources.user_data import UserData
 from tg.admins.common import (
     AdminAccessError,
-    get_active_admin_group,
     require_admin_access,
 )
 from tg.clans import refresh_clan_accounts
+from tg.handlers import (
+    ActiveClan,
+    ClanAdminContext,
+    ClanFromCallback,
+    HandlerRegistry,
+)
 from tg.metrics import APPLICATION_METRICS
-from tg.utils import Button, empty_filter, get_ids, get_username
+from tg.utils import Button, get_ids, get_username
 
 
 _GOOGLE_EXPORT_BUTTON = "admins/game_data/google"
@@ -215,7 +220,9 @@ def _export_group_data(
     )
 
 
-def show_game_data(callback_query: CallbackQuery, bot: TeleBot) -> None:
+def show_game_data(context: ClanAdminContext) -> None:
+    callback_query = context.update
+    bot = context.bot
     user_id, chat_id, message_id = get_ids(callback_query)
     logger.info(
         "Game data preview requested by user_id=%s username=%s",
@@ -223,11 +230,10 @@ def show_game_data(callback_query: CallbackQuery, bot: TeleBot) -> None:
         get_username(callback_query),
     )
     try:
-        group = get_active_admin_group(bot, user_id)
         database = get_user_data_db()
-        refresh_clan_accounts(bot, group.group_id, database)
-        users = database.get_clan_users(group.group_id)
-        rich_message = build_game_data_message(group.title, users)
+        refresh_clan_accounts(bot, context.group.group_id, database)
+        users = database.get_clan_users(context.group.group_id)
+        rich_message = build_game_data_message(context.group.title, users)
     except Exception as error:
         logger.exception(
             "Unable to build game data preview for user_id=%s: %s",
@@ -248,19 +254,17 @@ def show_game_data(callback_query: CallbackQuery, bot: TeleBot) -> None:
         chat_id=chat_id,
         message_id=message_id,
         rich_message=rich_message,
-        reply_markup=_preview_keyboard(group.group_id),
+        reply_markup=_preview_keyboard(context.group.group_id),
     )
 
 
-def connect_google_account(
-    callback_query: CallbackQuery,
-    bot: TeleBot,
-) -> None:
+def connect_google_account(context: ClanAdminContext) -> None:
+    callback_query = context.update
+    bot = context.bot
     user_id = callback_query.from_user.id
     try:
-        group_id = int(callback_query.data.rsplit("/", maxsplit=1)[-1])
+        group_id = context.group.group_id
         admins = get_admins_db()
-        require_admin_access(bot, user_id, group_id, admins)
         _request_google_access(
             callback_query, bot, group_id, admins
         )
@@ -272,15 +276,13 @@ def connect_google_account(
         )
 
 
-def check_google_access_request(
-    callback_query: CallbackQuery,
-    bot: TeleBot,
-) -> None:
+def check_google_access_request(context: ClanAdminContext) -> None:
+    callback_query = context.update
+    bot = context.bot
     user_id, chat_id, message_id = get_ids(callback_query)
     try:
-        group_id = int(callback_query.data.rsplit("/", maxsplit=1)[-1])
+        group_id = context.group.group_id
         admins = get_admins_db()
-        require_admin_access(bot, user_id, group_id, admins)
         requested_at = admins.get_google_access_requested_at(user_id, group_id)
         if requested_at is None:
             raise ValueError("Сначала откройте таблицу и запросите доступ.")
@@ -335,7 +337,9 @@ def check_google_access_request(
     )
 
 
-def export_game_data(callback_query: CallbackQuery, bot: TeleBot) -> None:
+def export_game_data(context: ClanAdminContext) -> None:
+    callback_query = context.update
+    bot = context.bot
     user_id, chat_id, message_id = get_ids(callback_query)
     logger.info(
         "Google game data export requested by user_id=%s username=%s",
@@ -345,9 +349,8 @@ def export_game_data(callback_query: CallbackQuery, bot: TeleBot) -> None:
     started_at = monotonic()
     result = "failed"
     try:
-        group_id = int(callback_query.data.rsplit("/", maxsplit=1)[-1])
+        group_id = context.group.group_id
         admins = get_admins_db()
-        require_admin_access(bot, user_id, group_id, admins)
         google_email = admins.get_clan_admin_google_email(user_id, group_id)
         if google_email is None:
             result = "access_request_required"
@@ -398,35 +401,24 @@ def export_game_data(callback_query: CallbackQuery, bot: TeleBot) -> None:
 
 
 def register_handlers(bot: TeleBot) -> None:
-    bot.register_callback_query_handler(
+    handlers = HandlerRegistry(bot)
+    handlers.clan_admin_callback(
         show_game_data,
-        func=empty_filter,
         button="admins/game_data",
-        is_private=True,
-        is_admin=True,
-        pass_bot=True,
+        clan=ActiveClan(),
     )
-    bot.register_callback_query_handler(
+    handlers.clan_admin_callback(
         connect_google_account,
-        func=empty_filter,
         button=rf"{_GOOGLE_CONNECT_BUTTON}/-?[0-9]+",
-        is_private=True,
-        is_admin=True,
-        pass_bot=True,
+        clan=ClanFromCallback(),
     )
-    bot.register_callback_query_handler(
+    handlers.clan_admin_callback(
         check_google_access_request,
-        func=empty_filter,
         button=rf"{_GOOGLE_CHECK_BUTTON}/-?[0-9]+",
-        is_private=True,
-        is_admin=True,
-        pass_bot=True,
+        clan=ClanFromCallback(),
     )
-    bot.register_callback_query_handler(
+    handlers.clan_admin_callback(
         export_game_data,
-        func=empty_filter,
         button=rf"{_GOOGLE_EXPORT_BUTTON}/-?[0-9]+",
-        is_private=True,
-        is_admin=True,
-        pass_bot=True,
+        clan=ClanFromCallback(),
     )

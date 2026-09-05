@@ -1,14 +1,14 @@
-from telebot import TeleBot
-from telebot.types import CallbackQuery, InlineKeyboardMarkup
+from telebot.types import InlineKeyboardMarkup
 
 from logger.app_logger import logger
-from tg.admins.common import get_active_admin_group
+from tg.handlers import ClanAdminContext
 from tg.utils import Button, get_ids, get_username
 
 
-def notifications_menu(callback_query: CallbackQuery, bot: TeleBot) -> None:
+def notifications_menu(context: ClanAdminContext) -> None:
+    callback_query = context.update
+    bot = context.bot
     user_id, chat_id, message_id = get_ids(callback_query)
-    get_active_admin_group(bot, user_id)
     logger.debug(
         "Opening notifications menu for admin_id=%s username=%s",
         user_id,

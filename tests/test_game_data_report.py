@@ -29,6 +29,7 @@ from tg.admins.game_data import (
     show_game_data,
 )
 from tg.metrics import ApplicationMetrics
+from tests.handler_context import admin_context, clan_admin_context
 
 
 class FakeWorksheet:
@@ -406,7 +407,10 @@ def test_admin_menu_contains_game_data_report(monkeypatch):
     )
     bot = FakeBot()
 
-    admins_main_menu(make_callback("admins"), bot)
+    callback = make_callback("admins")
+    admins_main_menu(
+        admin_context(callback, bot, AccessGroup(-100123, "Test clan"))
+    )
 
     markup = bot.edits[0][1]["reply_markup"]
     assert "admins/game_data" in callback_data(markup)
@@ -438,10 +442,13 @@ def test_admin_can_switch_active_clan(tmp_path, monkeypatch):
     monkeypatch.setattr("tg.admins.clans.get_admins_db", lambda: admins)
     bot = FakeBot()
 
-    admins_main_menu(make_callback("admins"), bot)
+    callback = make_callback("admins")
+    clans = (AccessGroup(-100001, "Alpha"), AccessGroup(-100002, "Beta"))
+    admins_main_menu(admin_context(callback, bot, *clans))
     assert "admins/clans" in callback_data(bot.edits[-1][1]["reply_markup"])
 
-    select_clan(make_callback("admins/clans/-100002"), bot)
+    select_callback = make_callback("admins/clans/-100002")
+    select_clan(clan_admin_context(select_callback, bot, -100002, "Beta"))
 
     assert admins.get_active_group(42) == AccessGroup(-100002, "Beta")
     assert "Клан: <b>Beta</b>" in bot.edits[-1][0][0]
@@ -463,7 +470,10 @@ def test_admin_menu_requires_selection_after_active_access_is_revoked(
     monkeypatch.setattr("tg.admins.get_admins_db", lambda: admins)
     bot = FakeBot()
 
-    admins_main_menu(make_callback("admins"), bot)
+    callback = make_callback("admins")
+    admins_main_menu(
+        admin_context(callback, bot, AccessGroup(-100001, "Alpha"))
+    )
 
     buttons = callback_data(bot.edits[-1][1]["reply_markup"])
     assert "admins/clans" in buttons
@@ -472,7 +482,7 @@ def test_admin_menu_requires_selection_after_active_access_is_revoked(
     connection.close()
 
 
-def test_departed_admin_menu_revokes_acl_and_hides_admin_actions(
+def test_admin_menu_without_current_clans_hides_admin_actions(
     tmp_path, monkeypatch
 ):
     connection = Database(tmp_path / "database.db")
@@ -482,18 +492,14 @@ def test_departed_admin_menu_revokes_acl_and_hides_admin_actions(
     admins.add_admin(Admin("admin", 42), -100001)
     monkeypatch.setattr("tg.admins.get_admins_db", lambda: admins)
 
-    class DepartedBot(FakeBot):
-        def get_chat_member(self, group_id, user_id):
-            return type("Member", (), {"status": "left"})()
+    bot = FakeBot()
+    callback = make_callback("admins")
 
-    bot = DepartedBot()
-
-    admins_main_menu(make_callback("admins"), bot)
+    admins_main_menu(admin_context(callback, bot))
 
     buttons = callback_data(bot.edits[-1][1]["reply_markup"])
     assert buttons == ["home"]
     assert "нет актуальных прав администратора" in bot.edits[-1][0][0]
-    assert not admins.has_admin_access(42)
     connection.close()
 
 
@@ -549,13 +555,10 @@ def test_game_data_callback_shows_table_before_export(monkeypatch):
             },
         )(),
     )
-    monkeypatch.setattr(
-        "tg.admins.game_data.get_active_admin_group",
-        lambda bot, user_id: AccessGroup(-100123, "Test clan"),
-    )
     bot = FakeBot()
+    callback = make_callback()
 
-    show_game_data(make_callback(), bot)
+    show_game_data(clan_admin_context(callback, bot))
 
     assert bot.edits[0][0] == ()
     rich_message = bot.edits[0][1]["rich_message"]
@@ -623,7 +626,8 @@ def test_google_export_callback_exports_and_shows_url(monkeypatch):
     )
     bot = FakeBot()
 
-    export_game_data(make_callback("admins/game_data/google/-100123"), bot)
+    callback = make_callback("admins/game_data/google/-100123")
+    export_game_data(clan_admin_context(callback, bot))
 
     assert exported == users
     markup = bot.markup_edits[0][1]["reply_markup"]
@@ -678,7 +682,8 @@ def test_google_export_prepares_table_and_requests_drive_access(monkeypatch):
     )
     bot = FakeBot()
 
-    export_game_data(make_callback("admins/game_data/google/-100123"), bot)
+    callback = make_callback("admins/game_data/google/-100123")
+    export_game_data(clan_admin_context(callback, bot))
 
     assert exported == []
     assert requested[0][0:2] == (42, -100123)
@@ -720,9 +725,8 @@ def test_existing_email_can_start_explicit_account_change(monkeypatch):
     )
     bot = FakeBot()
 
-    connect_google_account(
-        make_callback("admins/game_data/google/connect/-100123"), bot
-    )
+    callback = make_callback("admins/game_data/google/connect/-100123")
+    connect_google_account(clan_admin_context(callback, bot))
 
     assert bot.edits[-1][1]["reply_markup"].keyboard[0][0].url == (
         "https://docs.google.test/restricted-report"
@@ -766,9 +770,8 @@ def test_drive_access_request_saves_email_approves_reader_and_exports(
     monkeypatch.setattr("tg.admins.game_data.get_admins_db", lambda: admins)
     bot = FakeBot()
 
-    check_google_access_request(
-        make_callback("admins/game_data/google/check/-100123"), bot
-    )
+    callback = make_callback("admins/game_data/google/check/-100123")
+    check_google_access_request(clan_admin_context(callback, bot))
 
     assert admins.get_clan_admin_google_email(42, -100123) == (
         "admin@example.com"
@@ -820,9 +823,9 @@ def test_drive_request_for_new_email_revokes_previous_access_first(
         lambda *args: "https://docs.google.test/clan-report",
     )
 
-    check_google_access_request(
-        make_callback("admins/game_data/google/check/-100123"), FakeBot()
-    )
+    bot = FakeBot()
+    callback = make_callback("admins/game_data/google/check/-100123")
+    check_google_access_request(clan_admin_context(callback, bot))
 
     assert revoked == [(-100123, "old@example.com")]
     assert admins.get_clan_admin_google_email(42, -100123) == (
@@ -866,7 +869,8 @@ def test_google_export_callback_reports_failure(monkeypatch):
     )
     bot = FakeBot()
 
-    export_game_data(make_callback("admins/game_data/google/-100123"), bot)
+    callback = make_callback("admins/game_data/google/-100123")
+    export_game_data(clan_admin_context(callback, bot))
 
     assert bot.markup_edits == []
     assert bot.answers[0][0][0] == "callback-1"
@@ -888,14 +892,18 @@ def test_google_export_rechecks_access_to_pinned_clan(monkeypatch):
         lambda: type(
             "Admins",
             (),
-            {"is_clan_admin": lambda _, user_id, group_id: False},
+            {
+                "is_clan_admin": lambda _, user_id, group_id: False,
+                "get_clan_admin_google_email": (
+                    lambda _, user_id, group_id: "admin@example.com"
+                ),
+            },
         )(),
     )
     bot = FakeBot()
 
-    export_game_data(
-        make_callback("admins/game_data/google/-100123"), bot
-    )
+    callback = make_callback("admins/game_data/google/-100123")
+    export_game_data(clan_admin_context(callback, bot))
 
     assert exported == []
     assert bot.markup_edits == []

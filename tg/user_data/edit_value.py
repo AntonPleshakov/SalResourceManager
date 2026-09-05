@@ -13,8 +13,6 @@ from tg.user_data.common import (
 )
 from tg.user_data.editing_common import (
     EditUserDataStates,
-    PRIVATE_CALLBACK_HANDLER,
-    PRIVATE_TEXT_HANDLER,
     VALUE_EDIT_SECTIONS,
     ValueEditState,
     account_line,
@@ -22,6 +20,7 @@ from tg.user_data.editing_common import (
     load_state,
     save_state,
 )
+from tg.handlers import HandlerRegistry
 from tg.utils import Button, get_ids, get_username
 
 
@@ -245,13 +244,13 @@ def save_value(message: Message, bot: TeleBot) -> None:
 
 
 def register_handlers(bot: TeleBot) -> None:
-    bot.register_callback_query_handler(
+    handlers = HandlerRegistry(bot)
+    handlers.private_callback(
         request_value,
         button=r"user_data/edit/[a-z_]+",
-        **PRIVATE_CALLBACK_HANDLER,
     )
-    bot.register_message_handler(
+    handlers.private_message(
         save_value,
+        content_types=["text"],
         state=EditUserDataStates.value,
-        **PRIVATE_TEXT_HANDLER,
     )

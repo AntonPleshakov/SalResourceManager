@@ -1,15 +1,16 @@
 from telebot import TeleBot, formatting
 from telebot.handler_backends import State, StatesGroup
-from telebot.types import CallbackQuery, InlineKeyboardMarkup, Message
+from telebot.types import InlineKeyboardMarkup
 
-from db.initializer import get_access_group_db, get_admins_db
+from db.initializer import get_access_group_db
 from logger.app_logger import logger
-from tg.admins.common import (
-    AdminAccessError,
-    get_active_admin_group,
-    require_admin_access,
+from tg.handlers import (
+    ActiveClan,
+    ClanAdminContext,
+    ClanFromState,
+    HandlerRegistry,
 )
-from tg.utils import Button, empty_filter, get_ids, get_username
+from tg.utils import Button, get_ids, get_username
 
 
 MAX_CLAN_TITLE_LENGTH = 100
@@ -25,16 +26,18 @@ def _back_keyboard() -> InlineKeyboardMarkup:
     return keyboard
 
 
-def request_clan_rename(callback_query: CallbackQuery, bot: TeleBot) -> None:
+def request_clan_rename(context: ClanAdminContext) -> None:
+    callback_query = context.update
+    bot = context.bot
     user_id, chat_id, message_id = get_ids(callback_query)
-    group = get_active_admin_group(bot, user_id)
     bot.set_state(user_id, RenameClanStates.title)
-    bot.add_data(user_id, rename_clan_group_id=group.group_id)
+    bot.add_data(user_id, rename_clan_group_id=context.group.group_id)
     keyboard = InlineKeyboardMarkup(row_width=1)
     keyboard.add(Button("⬅️ Отмена", "admins").inline())
     bot.edit_message_text(
         "<b>Переименование клана</b>\n\n"
-        f"Текущее название: <b>{formatting.escape_html(group.title)}</b>.\n"
+        "Текущее название: "
+        f"<b>{formatting.escape_html(context.group.title)}</b>.\n"
         "Отправьте новое название.",
         chat_id,
         message_id,
@@ -42,23 +45,11 @@ def request_clan_rename(callback_query: CallbackQuery, bot: TeleBot) -> None:
     )
 
 
-def rename_clan(message: Message, bot: TeleBot) -> None:
+def rename_clan(context: ClanAdminContext) -> None:
+    message = context.update
+    bot = context.bot
     user_id, chat_id = get_ids(message)[:2]
-    with bot.retrieve_data(user_id) as data:
-        group_id = data.get("rename_clan_group_id")
-
-    try:
-        if not isinstance(group_id, int):
-            raise AdminAccessError("Не выбран клан")
-        require_admin_access(bot, user_id, group_id, get_admins_db())
-    except AdminAccessError:
-        bot.delete_state(user_id)
-        bot.send_message(
-            chat_id,
-            "Нет прав на переименование этого клана.",
-            reply_markup=_back_keyboard(),
-        )
-        return
+    group_id = context.group.group_id
 
     title = " ".join((message.text or "").split())
     if not title:
@@ -86,21 +77,19 @@ def rename_clan(message: Message, bot: TeleBot) -> None:
         f"{formatting.escape_html(group.title)}</b>.",
         reply_markup=_back_keyboard(),
     )
+
+
 def register_handlers(bot: TeleBot) -> None:
     logger.debug("Registering rename-clan handlers")
-    bot.register_callback_query_handler(
+    handlers = HandlerRegistry(bot)
+    handlers.clan_admin_callback(
         request_clan_rename,
-        func=empty_filter,
         button="admins/rename_clan",
-        is_private=True,
-        is_admin=True,
-        pass_bot=True,
+        clan=ActiveClan(),
     )
-    bot.register_message_handler(
+    handlers.clan_admin_message(
         rename_clan,
         content_types=["text"],
-        chat_types=["private"],
         state=RenameClanStates.title,
-        is_admin=True,
-        pass_bot=True,
+        clan=ClanFromState("rename_clan_group_id"),
     )

@@ -9,9 +9,10 @@ from resources.user_data import UserData
 from resources.war import WarActivity, WarPointsCalculator
 from resources.war_rules.forge import explain_forge_occurrences
 import tg.war as war
+from tg.handlers import HandlerRegistry
 from tg.metrics import observe_score_calculation
 from tg.rich import button_row, callback_button, input_rich_message
-from tg.utils import empty_filter, format_points, get_ids, get_username
+from tg.utils import format_points, get_ids, get_username
 
 
 def _personal_war_points_text(user: UserData) -> str:
@@ -360,24 +361,16 @@ def personal_war_activity_details(
 
 
 def register_handlers(bot: TeleBot) -> None:
-    bot.register_callback_query_handler(
+    handlers = HandlerRegistry(bot)
+    handlers.private_callback(
         personal_war_points,
-        func=empty_filter,
         button="war_calculator",
-        is_private=True,
-        pass_bot=True,
     )
-    bot.register_callback_query_handler(
+    handlers.private_callback(
         personal_war_details_menu,
-        func=empty_filter,
         button="war_calculator/details",
-        is_private=True,
-        pass_bot=True,
     )
-    bot.register_callback_query_handler(
+    handlers.private_callback(
         personal_war_activity_details,
-        func=empty_filter,
         button=r"war_calculator/details/[a-z_]+",
-        is_private=True,
-        pass_bot=True,
     )

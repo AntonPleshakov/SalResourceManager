@@ -6,7 +6,8 @@ from logger.app_logger import logger
 from resources.user_data import UserData
 from resources.war import WAR_STAGES, WarActivity, WarPointsCalculator
 from resources.war_rules.forge import explain_forge_occurrences
-from tg.utils import Button, empty_filter, get_ids, get_username
+from tg.handlers import HandlerRegistry
+from tg.utils import Button, get_ids, get_username
 from tg.war import personal, public
 from tg.war.personal import (
     _activity_days,
@@ -44,12 +45,9 @@ def war_menu(callback_query: CallbackQuery, bot: TeleBot) -> None:
 
 def register_handlers(bot: TeleBot) -> None:
     logger.debug("Registering war handlers")
-    bot.register_callback_query_handler(
+    HandlerRegistry(bot).private_callback(
         war_menu,
-        func=empty_filter,
         button="war_menu",
-        is_private=True,
-        pass_bot=True,
     )
     personal.register_handlers(bot)
     public.register_handlers(bot)

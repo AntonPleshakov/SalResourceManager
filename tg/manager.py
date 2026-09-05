@@ -11,8 +11,8 @@ from tg import group_registration
 from tg import releases
 from tg import user_data
 from tg import war
+from tg.handlers import HandlerRegistry
 from tg.navigation import home, start, toggle_reminders
-from tg.utils import empty_filter
 from logger.app_logger import logger
 
 
@@ -69,44 +69,32 @@ def configure_commands(bot: TeleBot) -> None:
 
 def register_handlers(bot: TeleBot):
     logger.debug("Registering Telegram command and callback handlers")
-    bot.register_message_handler(
+    handlers = HandlerRegistry(bot)
+    handlers.private_message(
         start_command,
         commands=["start"],
-        chat_types=["private"],
-        pass_bot=True,
     )
-    bot.register_message_handler(
+    handlers.private_message(
         open_menu_command,
         commands=["menu"],
-        chat_types=["private"],
-        pass_bot=True,
     )
-    bot.register_message_handler(
+    handlers.private_message(
         cancel_command,
         commands=["cancel"],
-        chat_types=["private"],
-        pass_bot=True,
     )
     group_registration.register_handlers(bot)
     user_data.register_handlers(bot)
     war.register_handlers(bot)
     releases.register_handlers(bot)
-    bot.register_message_handler(
+    handlers.private_message(
         home,
         content_types=["text"],
-        chat_types=["private"],
         state=None,
-        pass_bot=True,
     )
-    bot.register_callback_query_handler(
-        home, func=empty_filter, button="home", is_private=True, pass_bot=True
-    )
-    bot.register_callback_query_handler(
+    handlers.private_callback(home, button="home")
+    handlers.private_callback(
         toggle_reminders,
-        func=empty_filter,
         button="reminders/toggle",
-        is_private=True,
-        pass_bot=True,
     )
     admins.register_handlers(bot)
     logger.info("Telegram handlers registered")

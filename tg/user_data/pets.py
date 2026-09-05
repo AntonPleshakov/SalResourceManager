@@ -8,12 +8,13 @@ from resources.egg_levels import EGG_LEVELS, EggLevel, format_hatch_batch_count
 from resources.user_data import UserData
 import tg.user_data as user_data
 from tg.metrics import record_resource_update
+from tg.handlers import HandlerRegistry
 from tg.user_data.common import (
     MenuContent,
     deliver_menu,
     get_active_user_or_prompt,
 )
-from tg.utils import Button, empty_filter, get_ids, get_username
+from tg.utils import Button, get_ids, get_username
 
 
 def build_pets_menu(user: UserData, notice: str = "") -> MenuContent:
@@ -263,45 +264,28 @@ def change_hatch_batch_count(callback_query: CallbackQuery, bot: TeleBot) -> Non
 
 
 def register_handlers(bot: TeleBot) -> None:
-    bot.register_callback_query_handler(
+    handlers = HandlerRegistry(bot)
+    handlers.private_callback(
         pets_menu,
-        func=empty_filter,
         button="pets",
-        is_private=True,
-        pass_bot=True,
     )
-    bot.register_callback_query_handler(
+    handlers.private_callback(
         max_egg_level_menu,
-        func=empty_filter,
         button="pets/max_level",
-        is_private=True,
-        pass_bot=True,
     )
-    bot.register_callback_query_handler(
+    handlers.private_callback(
         save_max_egg_level,
-        func=empty_filter,
         button=r"pets/max_level/[1-6]",
-        is_private=True,
-        pass_bot=True,
     )
-    bot.register_callback_query_handler(
+    handlers.private_callback(
         confirm_max_egg_level,
-        func=empty_filter,
         button=r"pets/max_level/confirm/[1-6]",
-        is_private=True,
-        pass_bot=True,
     )
-    bot.register_callback_query_handler(
+    handlers.private_callback(
         hatch_batches_menu,
-        func=empty_filter,
         button="pets/batches",
-        is_private=True,
-        pass_bot=True,
     )
-    bot.register_callback_query_handler(
+    handlers.private_callback(
         change_hatch_batch_count,
-        func=empty_filter,
         button=r"pets/batches/[1-6]/(minus|plus)",
-        is_private=True,
-        pass_bot=True,
     )

@@ -37,6 +37,7 @@ from tg.group_registration import (
 )
 from tg.metrics import ApplicationMetrics
 from tg.utils import get_permissions_denied_message
+from tests.handler_context import admin_context
 
 
 def make_message(user_id=42, chat_type="private", text="hello"):
@@ -479,7 +480,9 @@ def test_bot_admin_gets_picker_without_telegram_admin_requirement(monkeypatch):
     bot = FakeRegistrationBot()
     callback = make_callback()
 
-    request_group_registration(callback, bot)
+    request_group_registration(
+        admin_context(callback, bot, AccessGroup(-100001, "Existing clan"))
+    )
 
     assert bot.sent[0][:2] == (callback.message.chat.id, GROUP_SELECTION_MESSAGE)
     button = bot.sent[0][2].keyboard[0][0]
@@ -507,7 +510,9 @@ def test_bot_admin_can_register_selected_group_without_telegram_admin_rights(
     bot = FakeRegistrationBot(user_status="member")
     message = make_shared_group_message()
 
-    register_selected_group(message, bot)
+    register_selected_group(
+        admin_context(message, bot, AccessGroup(-100001, "Existing clan"))
+    )
 
     assert groups.get_group(message.chat_shared.chat_id) == AccessGroup(
         message.chat_shared.chat_id, "Test group"
@@ -538,7 +543,9 @@ def test_bot_admin_cannot_register_group_without_membership(
     )
     message = make_shared_group_message()
 
-    register_selected_group(message, bot)
+    register_selected_group(
+        admin_context(message, bot, AccessGroup(-100001, "Existing clan"))
+    )
 
     assert groups.get_group(message.chat_shared.chat_id) is None
     assert not admins.is_clan_admin(42, message.chat_shared.chat_id)
@@ -566,7 +573,9 @@ def test_departed_bot_admin_cannot_register_from_an_unrelated_membership(
     )
     message = make_shared_group_message()
 
-    register_selected_group(message, bot)
+    register_selected_group(
+        admin_context(message, bot, AccessGroup(-100001, "Former clan"))
+    )
 
     assert groups.get_group(-100123) is None
     assert not admins.has_admin_access(42)
@@ -594,7 +603,7 @@ def test_selected_group_handler_requires_registration_state():
     handler = next(
         kwargs
         for callback, kwargs in bot.message_handlers
-        if callback is register_selected_group
+        if getattr(callback, "__wrapped__", callback) is register_selected_group
     )
     assert handler["content_types"] == ["chat_shared"]
     assert handler["chat_types"] == ["private"]
@@ -615,8 +624,11 @@ def test_registration_adds_clans_and_grants_requester_scoped_admin_rights(
     monkeypatch.setattr(registration, "get_access_group_db", lambda: groups)
     bot = FakeRegistrationBot()
 
-    register_selected_group(make_shared_group_message(group_id=-100001), bot)
-    register_selected_group(make_shared_group_message(group_id=-100002), bot)
+    first = make_shared_group_message(group_id=-100001)
+    second = make_shared_group_message(group_id=-100002)
+    current = AccessGroup(-100000, "Existing clan")
+    register_selected_group(admin_context(first, bot, current))
+    register_selected_group(admin_context(second, bot, current))
 
     assert [group.group_id for group in groups.get_groups()] == [
         -100000,
@@ -653,7 +665,9 @@ def test_panel_registration_rechecks_existing_acl_inside_transaction(
     bot = FakeRegistrationBot(user_status="member")
     message = make_shared_group_message()
 
-    register_selected_group(message, bot)
+    register_selected_group(
+        admin_context(message, bot, AccessGroup(-100001, "Existing clan"))
+    )
 
     assert groups.get_group(message.chat_shared.chat_id) is None
     assert bot.replies[-1][0:2] == (message, NOT_ADMIN_MESSAGE)
@@ -676,7 +690,9 @@ def test_non_admin_cannot_register_group(monkeypatch):
     bot = FakeRegistrationBot()
     message = make_shared_group_message()
 
-    register_selected_group(message, bot)
+    register_selected_group(
+        admin_context(message, bot, AccessGroup(-100001, "Existing clan"))
+    )
 
     assert bot.replies[0][0:2] == (message, NOT_ADMIN_MESSAGE)
 
@@ -767,7 +783,9 @@ def test_bot_must_be_group_admin_before_registration(monkeypatch):
     bot = FakeRegistrationBot(bot_status="member")
     message = make_shared_group_message()
 
-    register_selected_group(message, bot)
+    register_selected_group(
+        admin_context(message, bot, AccessGroup(-100001, "Existing clan"))
+    )
 
     assert database.get_groups() == []
     assert bot.replies[0][0:2] == (message, BOT_NOT_ADMIN_MESSAGE)

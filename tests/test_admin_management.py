@@ -16,7 +16,7 @@ from config.config import reset_config
 
 reset_config(str(Path(__file__).parents[1] / "config" / "config_template.ini"))
 
-from db.access_group import AccessGroup, AccessGroupDB
+from db.access_group import AccessGroupDB
 from db.admins import Admin, AdminsDB
 from db.database import Database
 from tg.admins import admins_list
@@ -33,6 +33,7 @@ from tg.admins.common import (
 )
 from tg.admins.del_admin import del_admin_approved, del_admin_options
 from tg.admins.rename_clan import rename_clan, request_clan_rename
+from tests.handler_context import clan_admin_context
 
 
 def make_callback(data: str = "approved") -> CallbackQuery:
@@ -157,13 +158,10 @@ def test_delete_admin_options_exclude_requester(monkeypatch):
         {"get_clan_admins": lambda _, group_id: admins},
     )()
     monkeypatch.setattr("tg.admins.del_admin.get_admins_db", lambda: fake_db)
-    monkeypatch.setattr(
-        "tg.admins.del_admin.get_active_admin_group",
-        lambda bot, user_id: AccessGroup(-100123, "Test clan"),
-    )
     bot = FakeBot()
+    callback = make_callback()
 
-    del_admin_options(make_callback(), bot)
+    del_admin_options(clan_admin_context(callback, bot))
 
     keyboard = bot.edits[0][1]["reply_markup"]
     callback_data = [
@@ -187,7 +185,8 @@ def test_admin_list_only_contains_selected_clan_admins(tmp_path, monkeypatch):
     monkeypatch.setattr("tg.admins.get_admins_db", lambda: admins)
     bot = FakeBot()
 
-    admins_list(make_callback("admins/admins_list"), bot)
+    callback = make_callback("admins/admins_list")
+    admins_list(clan_admin_context(callback, bot, -100001, "Alpha"))
 
     text = bot.edits[0][0][0]
     assert "requester" in text
@@ -219,7 +218,7 @@ def test_add_admins_finishes_when_private_notifications_fail(monkeypatch):
     )
     callback = make_callback()
 
-    add_admins_approved(callback, bot)
+    add_admins_approved(clan_admin_context(callback, bot))
 
     assert added == new_admins
     assert [attempt[0] for attempt in bot.send_attempts] == [101, 102]
@@ -251,7 +250,7 @@ def test_add_admins_result_names_rejected_users(monkeypatch):
     )()
     callback = make_callback()
 
-    add_admins_approved(callback, bot)
+    add_admins_approved(clan_admin_context(callback, bot))
 
     assert added == [new_admins[0]]
     assert bot.callback_answers == [
@@ -283,7 +282,8 @@ def test_add_admins_omits_rejection_details_when_all_users_are_rejected(
         "Member", (), {"status": "left" if user_id == 102 else "member"}
     )()
 
-    add_admins_approved(make_callback(), bot)
+    callback = make_callback()
+    add_admins_approved(clan_admin_context(callback, bot))
 
     assert bot.callback_answers == [
         ("callback-1", "Администраторы не добавлены")
@@ -298,7 +298,7 @@ def test_add_admins_can_be_cancelled_and_removes_reply_keyboard(monkeypatch):
     bot = RecordingBot()
     message = make_message("Отмена")
 
-    cancel_add_admins(message, bot)
+    cancel_add_admins(clan_admin_context(message, bot))
 
     assert bot.deleted_states == [42]
     assert bot.sent[0][1] == "Добавление администраторов отменено."
@@ -323,7 +323,7 @@ def test_selecting_admins_removes_reply_keyboard_before_confirmation(monkeypatch
         users=[SharedUser(user_id=101, username="candidate")],
     )
 
-    add_admins_confirmation(message, bot)
+    add_admins_confirmation(clan_admin_context(message, bot))
 
     assert isinstance(bot.sent[0][2]["reply_markup"], ReplyKeyboardRemove)
     assert bot.sent[1][1] == (
@@ -331,29 +331,19 @@ def test_selecting_admins_removes_reply_keyboard_before_confirmation(monkeypatch
     )
 
 
-def test_revoked_admin_cannot_continue_selecting_admins(monkeypatch):
-    monkeypatch.setattr(
-        "tg.admins.add_admin.get_admins_db",
-        lambda: type(
-            "Admins",
-            (),
-            {"is_clan_admin": lambda _, user_id, group_id: False},
-        )(),
-    )
+def test_admin_confirmation_accepts_authorized_context():
     bot = RecordingBot()
-    bot.data["admin_group_id"] = -100123
     message = make_message()
     message.users_shared = UsersShared(
         request_id=0,
         users=[SharedUser(user_id=101, username="candidate")],
     )
 
-    add_admins_confirmation(message, bot)
+    add_admins_confirmation(
+        clan_admin_context(message, bot, -100999, "Context clan")
+    )
 
-    assert bot.deleted_states == [42]
-    assert len(bot.sent) == 1
-    assert bot.sent[0][1] == "Нет прав администратора выбранного клана."
-    assert isinstance(bot.sent[0][2]["reply_markup"], ReplyKeyboardRemove)
+    assert bot.sent[1][1].startswith("Добавить администраторов?")
 
 
 def test_delete_admin_finishes_when_private_notification_fails(monkeypatch):
@@ -382,7 +372,7 @@ def test_delete_admin_finishes_when_private_notification_fails(monkeypatch):
     )
     callback = make_callback("approved/101")
 
-    del_admin_approved(callback, bot)
+    del_admin_approved(clan_admin_context(callback, bot))
 
     assert deleted == [101]
     assert bot.send_attempts == [
@@ -406,15 +396,14 @@ def test_admin_can_rename_active_clan(tmp_path, monkeypatch):
     monkeypatch.setattr(
         "tg.admins.rename_clan.get_access_group_db", lambda: groups
     )
-    monkeypatch.setattr("tg.admins.rename_clan.get_admins_db", lambda: admins)
-    monkeypatch.setattr(
-        "tg.admins.rename_clan.get_active_admin_group",
-        lambda bot, user_id: groups.get_group(-100123),
-    )
     bot = RenameClanBot()
+    callback = make_callback("admins/rename_clan")
 
-    request_clan_rename(make_callback("admins/rename_clan"), bot)
-    rename_clan(make_message("  New   <clan>  "), bot)
+    request_clan_rename(
+        clan_admin_context(callback, bot, -100123, "Old title")
+    )
+    message = make_message("  New   <clan>  ")
+    rename_clan(clan_admin_context(message, bot, -100123, "Old title"))
 
     assert bot.data["rename_clan_group_id"] == -100123
     assert groups.get_group(-100123).title == "New <clan>"

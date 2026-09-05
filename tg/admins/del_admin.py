@@ -1,17 +1,18 @@
 from telebot import TeleBot, formatting
 from telebot.handler_backends import State, StatesGroup
-from telebot.types import CallbackQuery, InlineKeyboardMarkup
+from telebot.types import InlineKeyboardMarkup
 
 from db.initializer import get_admins_db
 from logger.app_logger import logger
-from tg.admins.common import (
-    AdminAccessError,
-    get_active_admin_group,
-    remove_clan_admin_access,
-    require_admin_access,
+from tg.admins.common import remove_clan_admin_access
+from tg.handlers import (
+    ActiveClan,
+    ClanAdminContext,
+    ClanFromState,
+    HandlerRegistry,
 )
 from tg.navigation import home
-from tg.utils import Button, empty_filter, get_ids, get_user_link, get_username
+from tg.utils import Button, get_ids, get_user_link, get_username
 
 
 class DelAdminStates(StatesGroup):
@@ -19,12 +20,13 @@ class DelAdminStates(StatesGroup):
     confirmed = State()
 
 
-def del_admin_options(callback_query: CallbackQuery, bot: TeleBot):
+def del_admin_options(context: ClanAdminContext) -> None:
+    callback_query = context.update
+    bot = context.bot
     requester_id = callback_query.from_user.id
-    group = get_active_admin_group(bot, requester_id)
     current_admins = [
         admin
-        for admin in get_admins_db().get_clan_admins(group.group_id)
+        for admin in get_admins_db().get_clan_admins(context.group.group_id)
         if admin.user_id.value != requester_id
     ]
     logger.info(
@@ -52,26 +54,16 @@ def del_admin_options(callback_query: CallbackQuery, bot: TeleBot):
     bot.set_state(user_id, DelAdminStates.admin_id)
     bot.add_data(
         user_id,
-        admin_group_id=group.group_id,
-        admin_group_title=group.title,
+        admin_group_id=context.group.group_id,
+        admin_group_title=context.group.title,
     )
 
 
-def del_admin_confirmation(callback_query: CallbackQuery, bot: TeleBot):
+def del_admin_confirmation(context: ClanAdminContext) -> None:
+    callback_query = context.update
+    bot = context.bot
     requester_id = callback_query.from_user.id
-    with bot.retrieve_data(requester_id) as data:
-        group_id = data.get("admin_group_id")
-    try:
-        if not isinstance(group_id, int):
-            raise AdminAccessError("Не выбран клан")
-        require_admin_access(bot, requester_id, group_id, get_admins_db())
-    except AdminAccessError:
-        bot.delete_state(requester_id)
-        bot.answer_callback_query(
-            callback_query.id, "Нет прав администратора выбранного клана"
-        )
-        home(callback_query, bot)
-        return
+    group_id = context.group.group_id
     admin = get_admins_db().get_clan_admin(
         int(callback_query.data), group_id
     )
@@ -100,23 +92,14 @@ def del_admin_confirmation(callback_query: CallbackQuery, bot: TeleBot):
     bot.set_state(user_id, DelAdminStates.confirmed)
 
 
-def del_admin_approved(callback_query: CallbackQuery, bot: TeleBot):
+def del_admin_approved(context: ClanAdminContext) -> None:
+    callback_query = context.update
+    bot = context.bot
     admin_id = int(callback_query.data.split("/")[-1])
     requester_id = callback_query.from_user.id
     with bot.retrieve_data(requester_id) as data:
-        group_id = data.get("admin_group_id")
         group_title = data.get("admin_group_title")
-    try:
-        if not isinstance(group_id, int):
-            raise AdminAccessError("Не выбран клан")
-        require_admin_access(bot, requester_id, group_id, get_admins_db())
-    except AdminAccessError:
-        bot.delete_state(requester_id)
-        bot.answer_callback_query(
-            callback_query.id, "Нет прав администратора выбранного клана"
-        )
-        home(callback_query, bot)
-        return
+    group_id = context.group.group_id
     admin = get_admins_db().get_clan_admin(admin_id, group_id)
     if admin is None:
         logger.warning(
@@ -182,29 +165,21 @@ def del_admin_approved(callback_query: CallbackQuery, bot: TeleBot):
 
 def register_handlers(bot: TeleBot):
     logger.debug("Registering delete-admin handlers")
-    bot.register_callback_query_handler(
+    handlers = HandlerRegistry(bot)
+    handlers.clan_admin_callback(
         del_admin_options,
-        func=empty_filter,
         button="admins/del_admin",
-        is_private=True,
-        is_admin=True,
-        pass_bot=True,
+        clan=ActiveClan(),
     )
-    bot.register_callback_query_handler(
+    handlers.clan_admin_callback(
         del_admin_confirmation,
-        func=empty_filter,
         state=DelAdminStates.admin_id,
         button=r"\d+",
-        is_private=True,
-        is_admin=True,
-        pass_bot=True,
+        clan=ClanFromState(),
     )
-    bot.register_callback_query_handler(
+    handlers.clan_admin_callback(
         del_admin_approved,
-        func=empty_filter,
         state=DelAdminStates.confirmed,
         button=r"approved/\d+",
-        is_private=True,
-        is_admin=True,
-        pass_bot=True,
+        clan=ClanFromState(),
     )

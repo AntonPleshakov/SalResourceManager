@@ -1,7 +1,7 @@
 from telebot import TeleBot
 
 from tg.admins.notification.content import NotificationStates
-from tg.utils import empty_filter
+from tg.handlers import ActiveClan, ClanFromState, HandlerRegistry
 
 
 def register_handlers(bot: TeleBot) -> None:
@@ -16,56 +16,49 @@ def register_handlers(bot: TeleBot) -> None:
         send_standard_notification_confirmed,
     )
 
-    callback_defaults = {
-        "func": empty_filter,
-        "is_private": True,
-        "is_admin": True,
-        "pass_bot": True,
-    }
-    bot.register_callback_query_handler(
+    handlers = HandlerRegistry(bot)
+    handlers.clan_admin_callback(
         notifications_menu,
         button="admins/notifications",
-        **callback_defaults,
+        clan=ActiveClan(),
     )
-    bot.register_callback_query_handler(
+    handlers.clan_admin_callback(
         confirm_standard_notification,
         button="admins/notifications/standard",
-        **callback_defaults,
+        clan=ActiveClan(),
     )
-    bot.register_callback_query_handler(
+    handlers.clan_admin_callback(
         send_standard_notification_confirmed,
         state=NotificationStates.standard_confirmation,
         button="admins/notifications/send_standard",
-        **callback_defaults,
+        clan=ClanFromState(),
     )
-    bot.register_callback_query_handler(
+    handlers.clan_admin_callback(
         request_custom_notification,
         button="admins/notifications/custom",
-        **callback_defaults,
+        clan=ActiveClan(),
     )
-    bot.register_message_handler(
+    handlers.clan_admin_message(
         receive_custom_notification_text,
         content_types=["text"],
-        chat_types=["private"],
         state=NotificationStates.custom_text,
-        is_admin=True,
-        pass_bot=True,
+        clan=ClanFromState(),
     )
-    bot.register_callback_query_handler(
+    handlers.clan_admin_callback(
         select_custom_notification_audience,
         state=NotificationStates.custom_audience,
         button=r"admins/notifications/custom_audience/(all|today|monday)",
-        **callback_defaults,
+        clan=ClanFromState(),
     )
-    bot.register_callback_query_handler(
+    handlers.clan_admin_callback(
         send_custom_group_notification_confirmed,
         state=NotificationStates.custom_confirmation,
         button="admins/notifications/send_custom_group",
-        **callback_defaults,
+        clan=ClanFromState(),
     )
-    bot.register_callback_query_handler(
+    handlers.clan_admin_callback(
         send_custom_private_notification_confirmed,
         state=NotificationStates.custom_confirmation,
         button="admins/notifications/send_custom_private",
-        **callback_defaults,
+        clan=ClanFromState(),
     )

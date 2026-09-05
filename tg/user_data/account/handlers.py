@@ -1,6 +1,6 @@
 from telebot import TeleBot
 
-from tg.utils import empty_filter
+from tg.handlers import HandlerRegistry
 
 
 def register_handlers(bot: TeleBot) -> None:
@@ -21,11 +21,7 @@ def register_handlers(bot: TeleBot) -> None:
         select_account,
     )
 
-    callback_defaults = {
-        "func": empty_filter,
-        "is_private": True,
-        "pass_bot": True,
-    }
+    handlers = HandlerRegistry(bot)
     callback_handlers = (
         (
             accounts_menu,
@@ -53,15 +49,12 @@ def register_handlers(bot: TeleBot) -> None:
         (delete_account, r"accounts/delete/[0-9]+"),
     )
     for handler, button in callback_handlers:
-        bot.register_callback_query_handler(
+        handlers.private_callback(
             handler,
             button=button,
-            **callback_defaults,
         )
-    bot.register_message_handler(
+    handlers.private_message(
         save_nickname,
         content_types=["text"],
-        chat_types=["private"],
         state=GameAccountStates.nickname,
-        pass_bot=True,
     )

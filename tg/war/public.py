@@ -9,9 +9,10 @@ from resources.user_data import UserData
 from resources.war import WarPointsCalculator
 import tg.war as war
 from tg.clans import refresh_clan_accounts
-from tg.user_data.common import prompt_for_account_clan
+from tg.handlers import HandlerRegistry
 from tg.metrics import observe_score_calculation
-from tg.utils import Button, empty_filter, format_points, get_ids, get_username
+from tg.user_data.common import prompt_for_account_clan
+from tg.utils import Button, format_points, get_ids, get_username
 
 
 def _war_week_started_on(reference: datetime) -> date:
@@ -103,10 +104,7 @@ def public_war_points(callback_query: CallbackQuery, bot: TeleBot) -> None:
 
 
 def register_handlers(bot: TeleBot) -> None:
-    bot.register_callback_query_handler(
+    HandlerRegistry(bot).private_callback(
         public_war_points,
-        func=empty_filter,
         button="war",
-        is_private=True,
-        pass_bot=True,
     )

@@ -2,17 +2,16 @@ from datetime import date
 from typing import Iterable, List
 
 from telebot import TeleBot, formatting
-from telebot.types import CallbackQuery, InlineKeyboardMarkup
+from telebot.types import InlineKeyboardMarkup
 
 from common.datetime_utils import format_last_update, now
 from db.initializer import get_user_data_db
 from logger.app_logger import logger
 from resources.user_data import UserData
-from tg.admins.common import get_active_admin_group
 from tg.clans import refresh_clan_accounts
+from tg.handlers import ActiveClan, ClanAdminContext, HandlerRegistry
 from tg.utils import (
     Button,
-    empty_filter,
     format_user_identity,
     get_ids,
     get_username,
@@ -77,12 +76,13 @@ def _split_report(report: str) -> List[str]:
     return chunks
 
 
-def last_updates(callback_query: CallbackQuery, bot: TeleBot) -> None:
+def last_updates(context: ClanAdminContext) -> None:
+    callback_query = context.update
+    bot = context.bot
     user_id, chat_id, message_id = get_ids(callback_query)
-    group = get_active_admin_group(bot, user_id)
     database = get_user_data_db()
-    refresh_clan_accounts(bot, group.group_id, database)
-    users = database.get_clan_users(group.group_id)
+    refresh_clan_accounts(bot, context.group.group_id, database)
+    users = database.get_clan_users(context.group.group_id)
     report = build_last_updates_report(users)
     chunks = _split_report(report)
     keyboard = InlineKeyboardMarkup(row_width=1)
@@ -110,11 +110,8 @@ def last_updates(callback_query: CallbackQuery, bot: TeleBot) -> None:
 
 def register_handlers(bot: TeleBot) -> None:
     logger.debug("Registering last account updates handler")
-    bot.register_callback_query_handler(
+    HandlerRegistry(bot).clan_admin_callback(
         last_updates,
-        func=empty_filter,
         button="admins/last_updates",
-        is_private=True,
-        is_admin=True,
-        pass_bot=True,
+        clan=ActiveClan(),
     )

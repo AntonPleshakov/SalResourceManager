@@ -6,24 +6,12 @@ from telebot import TeleBot, formatting
 from telebot.handler_backends import State, StatesGroup
 
 import resources.user_data as user_data_resources
-from tg.utils import empty_filter, format_points
+from tg.utils import format_points
 
 
 class EditUserDataStates(StatesGroup):
     value = State()
     fill_values = State()
-
-
-PRIVATE_CALLBACK_HANDLER = {
-    "func": empty_filter,
-    "is_private": True,
-    "pass_bot": True,
-}
-PRIVATE_TEXT_HANDLER = {
-    "content_types": ["text"],
-    "chat_types": ["private"],
-    "pass_bot": True,
-}
 
 
 @dataclass(frozen=True)

@@ -7,7 +7,6 @@ import pytest
 from telebot.types import CallbackQuery, Chat, Message, User
 
 from config.config import reset_config
-from db.access_group import AccessGroup
 
 reset_config(str(Path(__file__).parents[1] / "config" / "config_template.ini"))
 
@@ -30,20 +29,7 @@ from tg.admins.notifications import (
     select_custom_notification_audience,
 )
 from tg.admins.notification import filter_custom_notification_users
-
-
-@pytest.fixture(autouse=True)
-def allow_admin_access(monkeypatch):
-    monkeypatch.setattr(
-        "tg.admins.notifications.get_admins_db",
-        lambda: SimpleNamespace(
-            is_clan_admin=lambda user_id, group_id: True
-        ),
-    )
-    monkeypatch.setattr(
-        "tg.admins.notification.views.get_active_admin_group",
-        lambda bot, user_id: AccessGroup(-100123, "Test clan"),
-    )
+from tests.handler_context import clan_admin_context
 
 
 def make_callback(data: str = "admins/notifications/standard") -> CallbackQuery:
@@ -143,11 +129,6 @@ def test_standard_notification_ignores_stale_technologies(monkeypatch):
         "tg.admins.notifications.now",
         lambda: datetime(2026, 8, 2, tzinfo=timezone.utc),
     )
-    monkeypatch.setattr(
-        "tg.admins.notifications.get_active_admin_group",
-        lambda bot, user_id: AccessGroup(-100123, "Test clan"),
-    )
-
     class FakeBot:
         def __init__(self):
             self.calls = []
@@ -241,11 +222,6 @@ def test_standard_notification_confirmation_is_compact_and_uses_snapshot(
         "tg.admins.notifications.now",
         lambda: datetime(2026, 8, 2, tzinfo=timezone.utc),
     )
-    monkeypatch.setattr(
-        "tg.admins.notifications.get_active_admin_group",
-        lambda bot, user_id: AccessGroup(-100123, "Test clan"),
-    )
-
     class FakeBot:
         def __init__(self):
             self.data = {}
@@ -262,7 +238,8 @@ def test_standard_notification_confirmation_is_compact_and_uses_snapshot(
 
     bot = FakeBot()
 
-    confirm_standard_notification(make_callback(), bot)
+    callback = make_callback()
+    confirm_standard_notification(clan_admin_context(callback, bot))
 
     text = bot.edited[0][0][0]
     markup = bot.edited[0][1]["reply_markup"]
@@ -317,14 +294,6 @@ def test_standard_notification_shows_progress_before_sending(monkeypatch):
         ),
     )
     monkeypatch.setattr(
-        "tg.admins.notifications.get_admins_db",
-        lambda: type(
-            "Admins",
-            (),
-            {"is_clan_admin": lambda _, user_id, group_id: True},
-        )(),
-    )
-    monkeypatch.setattr(
         "tg.admins.notifications.get_user_data_db",
         lambda: FakeUserDataDB(
             [UserData(user_id=1, username="outdated")]
@@ -334,9 +303,8 @@ def test_standard_notification_shows_progress_before_sending(monkeypatch):
         {"standard_notification_plan": plan, "admin_group_id": -100123}
     )
 
-    send_standard_notification_confirmed(
-        make_callback("admins/notifications/send_standard"), bot
-    )
+    callback = make_callback("admins/notifications/send_standard")
+    send_standard_notification_confirmed(clan_admin_context(callback, bot))
 
     assert bot.edited[0][0][0] == "Отправляю уведомления…"
     assert len(sent_plans) == 1
@@ -361,11 +329,6 @@ def test_custom_notifications_show_progress_before_sending(monkeypatch):
             or BroadcastResult(sent=1, failed=0)
         ),
     )
-    monkeypatch.setattr(
-        "tg.admins.notifications.get_active_admin_group",
-        lambda bot, user_id: AccessGroup(-100123, "Test clan"),
-    )
-
     group_bot = NotificationFlowBot(
         {
             "notification_text": "Текст",
@@ -374,8 +337,9 @@ def test_custom_notifications_show_progress_before_sending(monkeypatch):
             "admin_group_id": -100123,
         }
     )
+    group_callback = make_callback("admins/notifications/send_custom_group")
     send_custom_group_notification_confirmed(
-        make_callback("admins/notifications/send_custom_group"), group_bot
+        clan_admin_context(group_callback, group_bot)
     )
     private_bot = NotificationFlowBot(
         {
@@ -385,8 +349,9 @@ def test_custom_notifications_show_progress_before_sending(monkeypatch):
             "admin_group_id": -100123,
         }
     )
+    private_callback = make_callback("admins/notifications/send_custom_private")
     send_custom_private_notification_confirmed(
-        make_callback("admins/notifications/send_custom_private"), private_bot
+        clan_admin_context(private_callback, private_bot)
     )
 
     assert group_bot.edited[0][0][0] == "Отправляю уведомление в группу…"
@@ -409,37 +374,27 @@ def test_custom_notifications_show_progress_before_sending(monkeypatch):
     ]
 
 
-def test_revoked_admin_cannot_send_pinned_custom_notification(monkeypatch):
+def test_custom_notification_uses_authorized_context_group(monkeypatch):
     sent = []
     monkeypatch.setattr(
-        "tg.admins.notifications.get_admins_db",
-        lambda: SimpleNamespace(
-            is_clan_admin=lambda user_id, group_id: False
-        ),
-    )
-    monkeypatch.setattr(
         "tg.admins.notifications.send_custom_notification",
-        lambda *args: sent.append(args),
+        lambda *args: sent.append(args) or BroadcastResult(sent=1, failed=0),
     )
     bot = NotificationFlowBot(
         {
             "notification_text": "Текст",
             "admin_name": "Admin",
             "notification_audience": "all",
-            "admin_group_id": -100123,
+            "admin_group_id": -100999,
         }
     )
 
+    callback = make_callback("admins/notifications/send_custom_group")
     send_custom_group_notification_confirmed(
-        make_callback("admins/notifications/send_custom_group"), bot
+        clan_admin_context(callback, bot, -100123)
     )
 
-    assert sent == []
-    assert bot.deleted_states == [42]
-    assert bot.answers[-1][0][1] == (
-        "Нет прав администратора выбранного клана"
-    )
-    assert bot.answers[-1][1]["show_alert"] is True
+    assert sent[0][3] == -100123
 
 
 def test_custom_notification_audience_can_be_selected():
@@ -451,9 +406,8 @@ def test_custom_notification_audience_can_be_selected():
         }
     )
 
-    select_custom_notification_audience(
-        make_callback("admins/notifications/custom_audience/monday"), bot
-    )
+    callback = make_callback("admins/notifications/custom_audience/monday")
+    select_custom_notification_audience(clan_admin_context(callback, bot))
 
     assert bot.data["notification_audience"] == "monday"
     assert "не обновлявшие ресурсы с 03:00 понедельника" in (
@@ -484,7 +438,7 @@ def test_custom_notification_prompts_for_audience_after_text():
 
     bot = FakeBot()
 
-    receive_custom_notification_text(message, bot)
+    receive_custom_notification_text(clan_admin_context(message, bot))
 
     assert [
         button.callback_data

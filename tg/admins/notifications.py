@@ -1,5 +1,5 @@
 from telebot import TeleBot, formatting
-from telebot.types import CallbackQuery, InlineKeyboardMarkup, Message
+from telebot.types import InlineKeyboardMarkup
 
 from common.datetime_utils import now, week_started_on
 from db.initializer import get_admins_db, get_user_data_db
@@ -21,12 +21,8 @@ from tg.admins.notification import (
 from tg.admins.notification import delivery
 from tg.admins.notification.handlers import register_handlers
 from tg.admins.notification.views import notifications_menu
-from tg.admins.common import (
-    AdminAccessError,
-    get_active_admin_group,
-    require_admin_access,
-)
 from tg.clans import refresh_clan_accounts
+from tg.handlers import ClanAdminContext
 from tg.utils import (
     Button,
     get_ids,
@@ -86,20 +82,21 @@ def send_custom_private_notification(
 
 
 def confirm_standard_notification(
-    callback_query: CallbackQuery, bot: TeleBot
+    context: ClanAdminContext,
 ) -> None:
+    callback_query = context.update
+    bot = context.bot
     user_id, chat_id, message_id = get_ids(callback_query)
-    group = get_active_admin_group(bot, user_id)
     database = get_user_data_db()
-    refresh_clan_accounts(bot, group.group_id, database)
+    refresh_clan_accounts(bot, context.group.group_id, database)
     plan = build_standard_notification_plan(
-        database.get_clan_users(group.group_id), week_started_on(now())
+        database.get_clan_users(context.group.group_id), week_started_on(now())
     )
     bot.set_state(user_id, NotificationStates.standard_confirmation)
     bot.add_data(
         user_id,
         standard_notification_plan=plan,
-        admin_group_id=group.group_id,
+        admin_group_id=context.group.group_id,
     )
     keyboard = InlineKeyboardMarkup()
     if plan.recipients:
@@ -125,8 +122,10 @@ def confirm_standard_notification(
 
 
 def send_standard_notification_confirmed(
-    callback_query: CallbackQuery, bot: TeleBot
+    context: ClanAdminContext,
 ) -> None:
+    callback_query = context.update
+    bot = context.bot
     logger.info(
         "Standard notification confirmed by admin_id=%s username=%s",
         callback_query.from_user.id,
@@ -135,26 +134,14 @@ def send_standard_notification_confirmed(
     user_id = get_ids(callback_query)[0]
     with bot.retrieve_data(user_id) as data:
         plan = data.get("standard_notification_plan")
-        group_id = data.get("admin_group_id")
-    try:
-        if not isinstance(group_id, int):
-            raise AdminAccessError("Не выбран клан")
-        require_admin_access(bot, user_id, group_id, get_admins_db())
-    except AdminAccessError:
-        bot.delete_state(user_id)
-        bot.answer_callback_query(
-            callback_query.id,
-            "Нет прав администратора выбранного клана",
-            show_alert=True,
-        )
-        return
+    group_id = context.group.group_id
     if not isinstance(plan, StandardNotificationPlan):
         bot.answer_callback_query(
             callback_query.id,
             "Не удалось найти список получателей",
             show_alert=True,
         )
-        notifications_menu(callback_query, bot)
+        notifications_menu(context)
         return
 
     chat_id, message_id = get_ids(callback_query)[1:]
@@ -174,16 +161,17 @@ def send_standard_notification_confirmed(
         f"Доставлено: {result.sent}, ошибок: {result.failed}",
         show_alert=True,
     )
-    notifications_menu(callback_query, bot)
+    notifications_menu(context)
 
 
 def request_custom_notification(
-    callback_query: CallbackQuery, bot: TeleBot
+    context: ClanAdminContext,
 ) -> None:
+    callback_query = context.update
+    bot = context.bot
     user_id, chat_id, message_id = get_ids(callback_query)
-    group = get_active_admin_group(bot, user_id)
     bot.set_state(user_id, NotificationStates.custom_text)
-    bot.add_data(user_id, admin_group_id=group.group_id)
+    bot.add_data(user_id, admin_group_id=context.group.group_id)
     keyboard = InlineKeyboardMarkup(row_width=1)
     keyboard.add(Button("✖️ Отмена", "admins/notifications").inline())
     bot.edit_message_text(
@@ -231,20 +219,10 @@ def _custom_delivery_keyboard() -> InlineKeyboardMarkup:
     return keyboard
 
 
-def receive_custom_notification_text(message: Message, bot: TeleBot) -> None:
+def receive_custom_notification_text(context: ClanAdminContext) -> None:
+    message = context.update
+    bot = context.bot
     user_id, chat_id = get_ids(message)[:2]
-    with bot.retrieve_data(user_id) as data:
-        group_id = data.get("admin_group_id")
-    try:
-        if not isinstance(group_id, int):
-            raise AdminAccessError("Не выбран клан")
-        require_admin_access(bot, user_id, group_id, get_admins_db())
-    except AdminAccessError:
-        bot.delete_state(user_id)
-        bot.send_message(
-            chat_id, "Нет прав администратора выбранного клана."
-        )
-        return
     text = (message.text or "").strip()
     if not text:
         logger.info(
@@ -289,23 +267,11 @@ def receive_custom_notification_text(message: Message, bot: TeleBot) -> None:
 
 
 def select_custom_notification_audience(
-    callback_query: CallbackQuery, bot: TeleBot
+    context: ClanAdminContext,
 ) -> None:
+    callback_query = context.update
+    bot = context.bot
     user_id, chat_id, message_id = get_ids(callback_query)
-    with bot.retrieve_data(user_id) as data:
-        group_id = data.get("admin_group_id")
-    try:
-        if not isinstance(group_id, int):
-            raise AdminAccessError("Не выбран клан")
-        require_admin_access(bot, user_id, group_id, get_admins_db())
-    except AdminAccessError:
-        bot.delete_state(user_id)
-        bot.answer_callback_query(
-            callback_query.id,
-            "Нет прав администратора выбранного клана",
-            show_alert=True,
-        )
-        return
     try:
         audience = CustomNotificationAudience(
             callback_query.data.rsplit("/", 1)[-1]
@@ -335,13 +301,11 @@ def select_custom_notification_audience(
 
 
 def _get_custom_notification_data(
-    bot: TeleBot, user_id: int
+    bot: TeleBot,
+    user_id: int,
+    group_id: int,
 ) -> tuple[str, str, CustomNotificationAudience, int]:
     with bot.retrieve_data(user_id) as data:
-        group_id = data.get("admin_group_id")
-        if not isinstance(group_id, int):
-            raise AdminAccessError("Не выбран клан")
-        require_admin_access(bot, user_id, group_id, get_admins_db())
         return (
             data.get("notification_text", ""),
             data.get("admin_name", "Администратор"),
@@ -356,21 +320,16 @@ def _get_custom_notification_data(
 
 
 def send_custom_group_notification_confirmed(
-    callback_query: CallbackQuery, bot: TeleBot
+    context: ClanAdminContext,
 ) -> None:
+    callback_query = context.update
+    bot = context.bot
     user_id = get_ids(callback_query)[0]
-    try:
-        text, admin_name, audience, group_id = _get_custom_notification_data(
-            bot, user_id
-        )
-    except AdminAccessError:
-        bot.delete_state(user_id)
-        bot.answer_callback_query(
-            callback_query.id,
-            "Нет прав администратора выбранного клана",
-            show_alert=True,
-        )
-        return
+    text, admin_name, audience, group_id = _get_custom_notification_data(
+        bot,
+        user_id,
+        context.group.group_id,
+    )
     logger.info(
         "Custom group notification confirmed admin_id=%s username=%s length=%d",
         user_id,
@@ -409,25 +368,20 @@ def send_custom_group_notification_confirmed(
         f"Сообщений отправлено: {result.sent}, ошибок: {result.failed}",
         show_alert=True,
     )
-    notifications_menu(callback_query, bot)
+    notifications_menu(context)
 
 
 def send_custom_private_notification_confirmed(
-    callback_query: CallbackQuery, bot: TeleBot
+    context: ClanAdminContext,
 ) -> None:
+    callback_query = context.update
+    bot = context.bot
     user_id = get_ids(callback_query)[0]
-    try:
-        text, admin_name, audience, group_id = _get_custom_notification_data(
-            bot, user_id
-        )
-    except AdminAccessError:
-        bot.delete_state(user_id)
-        bot.answer_callback_query(
-            callback_query.id,
-            "Нет прав администратора выбранного клана",
-            show_alert=True,
-        )
-        return
+    text, admin_name, audience, group_id = _get_custom_notification_data(
+        bot,
+        user_id,
+        context.group.group_id,
+    )
     logger.info(
         "Custom private notification confirmed admin_id=%s username=%s length=%d",
         user_id,
@@ -448,4 +402,4 @@ def send_custom_private_notification_confirmed(
         f"Доставлено: {result.sent}, ошибок: {result.failed}",
         show_alert=True,
     )
-    notifications_menu(callback_query, bot)
+    notifications_menu(context)

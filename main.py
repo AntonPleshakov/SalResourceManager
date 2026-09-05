@@ -11,6 +11,7 @@ from logger.app_logger import logger
 from tg.access import GroupAccessMiddleware
 from tg.clans import sync_migrated_clan_titles
 from tg.filters import add_custom_filters
+from tg.handlers import HandlerRegistry
 from tg.metrics import (
     APPLICATION_METRICS,
     METRICS_LISTEN,
@@ -25,7 +26,6 @@ from tg.reminders import ReminderScheduler
 from tg.scheduling import AdminReconciliationScheduler
 from tg.utils import (
     Button,
-    empty_filter,
     get_ids,
     get_permissions_denied_message,
     get_username,
@@ -99,7 +99,9 @@ class BotExceptionHandler(ExceptionHandler):
         return True
 
 
-def permission_denied_message(message: Union[Message, CallbackQuery]):
+def permission_denied_message(
+    message: Union[Message, CallbackQuery], bot: TeleBot
+) -> None:
     user_id, chat_id = get_ids(message)[:2]
     logger.info(
         "Permission denied for user_id=%s username=%s",
@@ -153,14 +155,14 @@ if __name__ == "__main__":
     bot.setup_middleware(TelegramMetricsMiddleware())
     tg.manager.register_handlers(bot)
     tg.manager.configure_commands(bot)
-    bot.register_message_handler(
-        permission_denied_message, chat_types=["private"], is_admin=False
-    )
-    bot.register_callback_query_handler(
+    handlers = HandlerRegistry(bot)
+    handlers.private_message(
         permission_denied_message,
-        func=empty_filter,
-        is_private=True,
-        is_admin=False,
+        admin=False,
+    )
+    handlers.private_callback(
+        permission_denied_message,
+        admin=False,
     )
     instrument_registered_handlers(bot)
     bot.setup_middleware(AlwaysAnswerCallbackQueryMiddleware(bot))
