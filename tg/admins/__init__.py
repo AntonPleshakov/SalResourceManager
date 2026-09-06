@@ -1,7 +1,7 @@
 from collections.abc import Sequence
 
-from telebot import TeleBot, formatting
-from telebot.types import CallbackQuery, InlineKeyboardMarkup
+from telebot import TeleBot
+from telebot.types import CallbackQuery
 
 from db.access_group import AccessGroup
 from db.initializer import get_admins_db
@@ -21,7 +21,16 @@ from tg.handlers import (
     ClanAdminContext,
     HandlerRegistry,
 )
-from tg.utils import Button, get_ids, get_user_link, get_username
+from tg.rich import (
+    back_button,
+    button_row,
+    callback_button,
+    edit_rich_message,
+    footer,
+    heading,
+    input_rich_message,
+)
+from tg.utils import get_ids, get_user_link, get_username
 
 
 def _show_admins_main_menu(
@@ -36,7 +45,6 @@ def _show_admins_main_menu(
         get_username(callback_query),
     )
     bot.delete_state(user_id)
-    keyboard = InlineKeyboardMarkup()
     admins = get_admins_db()
     active_group = admins.get_active_group(user_id)
     group = next(
@@ -49,49 +57,103 @@ def _show_admins_main_menu(
         None,
     )
     if group is None:
+        parts = [heading("Админ-панель")]
         if groups:
-            keyboard.row(
-                Button("🏰 Выбрать клан", "admins/clans").inline()
+            parts.extend(
+                (
+                    "<p>Выберите клан для административных "
+                    "действий.</p>",
+                    button_row(
+                        (
+                            callback_button(
+                                "🏰 Выбрать клан",
+                                "admins/clans",
+                                style="primary",
+                            ),
+                        )
+                    ),
+                    button_row(
+                        (
+                            callback_button(
+                                "➕ Добавить клан", "admins/register_group"
+                            ),
+                        )
+                    ),
+                )
             )
-            keyboard.row(
-                Button("➕ Добавить клан", "admins/register_group").inline()
+        else:
+            parts.append(
+                "<p>У вас нет актуальных прав администратора клана.</p>"
             )
-        keyboard.row(Button("⬅️ Назад в меню", "home").inline())
-        bot.edit_message_text(
-            "<b>Админ-панель</b>\n\n"
-            + (
-                "Выберите клан для административных действий."
-                if groups
-                else "У вас нет актуальных прав администратора клана."
-            ),
+        parts.append(back_button("⬅️ Главное меню", "home"))
+        edit_rich_message(
+            bot,
             chat_id,
             message_id,
-            reply_markup=keyboard,
+            input_rich_message(parts),
         )
         return
 
-    keyboard.row(Button("👥 Список игроков", "admins/last_updates").inline())
-    keyboard.row(Button("📣 Уведомления", "admins/notifications").inline())
-    keyboard.row(Button("📊 Игровые данные", "admins/game_data").inline())
-    keyboard.row(
-        Button("➕ Добавить клан", "admins/register_group").inline()
-    )
+    parts = [
+        heading("Админ-панель"),
+        footer(f"Клан: {group.title}"),
+        heading("Игроки", level=3),
+        button_row(
+            (
+                callback_button("👥 Обновления", "admins/last_updates"),
+                callback_button("📊 Игровые данные", "admins/game_data"),
+            )
+        ),
+        heading("Коммуникации", level=3),
+        button_row(
+            (
+                callback_button(
+                    "📣 Уведомления",
+                    "admins/notifications",
+                    style="primary",
+                ),
+            )
+        ),
+        heading("Настройки клана", level=3),
+        button_row(
+            (
+                callback_button("➕ Добавить клан", "admins/register_group"),
+                callback_button("✏️ Переименовать", "admins/rename_clan"),
+            )
+        ),
+    ]
     if len(groups) > 1:
-        keyboard.row(Button("🔄 Сменить клан", "admins/clans").inline())
-    keyboard.row(
-        Button("✏️ Переименовать клан", "admins/rename_clan").inline()
+        parts.append(
+            button_row((callback_button("🔄 Сменить клан", "admins/clans"),))
+        )
+    parts.extend(
+        (
+            heading("Доступ", level=3),
+            button_row(
+                (
+                    callback_button(
+                        "👥 Администраторы", "admins/admins_list"
+                    ),
+                    callback_button("➕ Добавить", "admins/add_admins"),
+                )
+            ),
+            button_row(
+                (
+                    callback_button(
+                        "🗑 Отозвать права",
+                        "admins/del_admin",
+                        style="danger",
+                    ),
+                )
+            ),
+            back_button("⬅️ Главное меню", "home"),
+        )
     )
-    keyboard.row(Button("👥 Список администраторов", "admins/admins_list").inline())
-    keyboard.row(Button("➕ Добавить администраторов", "admins/add_admins").inline())
-    keyboard.row(Button("🗑 Удалить администратора", "admins/del_admin").inline())
-    keyboard.row(Button("⬅️ Назад в меню", "home").inline())
-    bot.edit_message_text(
-        "<b>Админ-панель</b>\n"
-        f"Клан: <b>{formatting.escape_html(group.title)}</b>\n\n"
-        "Выберите действие.",
+    edit_rich_message(
+        bot,
         chat_id,
         message_id,
-        reply_markup=keyboard,
+        input_rich_message(parts),
     )
 
 
@@ -106,7 +168,6 @@ def admins_main_menu(context: AdminContext) -> None:
 def admins_list(context: ClanAdminContext) -> None:
     callback_query = context.update
     bot = context.bot
-    user_id = callback_query.from_user.id
     admins_db = get_admins_db()
     admins = admins_db.get_clan_admins(context.group.group_id)
     logger.debug(
@@ -115,13 +176,23 @@ def admins_list(context: ClanAdminContext) -> None:
         get_username(callback_query),
         len(admins),
     )
-    text = "Список администраторов:\n" + "\n".join(
-        get_user_link(admin.user_id.value, admin.username.value) for admin in admins
+    items = "".join(
+        f"<li>{get_user_link(admin.user_id.value, admin.username.value)}</li>"
+        for admin in admins
     )
-    keyboard = InlineKeyboardMarkup(row_width=1)
-    keyboard.add(Button("⬅️ Назад в админ-панель", "admins").inline())
     chat_id, message_id = get_ids(callback_query)[1:]
-    bot.edit_message_text(text, chat_id, message_id, reply_markup=keyboard)
+    edit_rich_message(
+        bot,
+        chat_id,
+        message_id,
+        input_rich_message(
+            (
+                heading("Администраторы"),
+                f"<ul>{items}</ul>",
+                back_button("⬅️ Админ-панель", "admins"),
+            )
+        ),
+    )
 
 
 def register_handlers(bot: TeleBot):

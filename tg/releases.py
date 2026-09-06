@@ -14,23 +14,37 @@ from tg.rich import (
     button_row,
     callback_button,
     deliver_rich_message,
+    details,
+    footer,
+    heading,
     input_rich_message,
 )
 from tg.utils import get_ids, get_username
 
 
 def format_release_notes(releases: Sequence[Release]) -> str:
-    sections = []
-    for release in reversed(releases):
+    sections = [heading("🆕 Что нового")]
+    for index, release in enumerate(reversed(releases)):
         changes = "".join(
             f"<li>{escape(change)}</li>" for change in release.changes
         )
+        released_on = format_last_update(release.released_on)
+        if index == 0:
+            sections.extend(
+                (
+                    heading(f"Версия {release.version}", level=3),
+                    footer(released_on),
+                    f"<ul>{changes}</ul>",
+                )
+            )
+            continue
         sections.append(
-            f"<h2>Версия {escape(release.version)}</h2>"
-            f"<p><i>{escape(format_last_update(release.released_on))}</i></p>"
-            f"<ul>{changes}</ul>"
+            details(
+                f"Версия {release.version} · {released_on}",
+                f"<ul>{changes}</ul>",
+            )
         )
-    return "<h2>🆕 Что нового</h2>" + "".join(sections)
+    return "".join(sections)
 
 
 def _show_notes(

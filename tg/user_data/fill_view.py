@@ -37,10 +37,11 @@ def fill_prompt(
     notice_line = f"{notice}\n\n" if notice else ""
     return (
         f"{notice_line}"
-        f"<b>{field.title} · {state.index + 1} из {len(state.fields)}</b>\n\n"
+        f"<b>{field.title}</b>\n"
+        f"<i>Шаг {state.index + 1} из {len(state.fields)}</i>\n\n"
         f"{account_line(state.account_tag)}"
         f"{error_line}"
-        f"Сейчас сохранено: <b>{current_value}</b>\n\n"
+        f"Сохранено сейчас: <b>{current_value}</b>\n\n"
         "Отправьте новое значение.\n"
         f"{value_input_hint(field)}\n\n"
         "Чтобы ничего не менять, нажмите «Пропустить»."
@@ -51,7 +52,7 @@ def fill_keyboard(state: FillState) -> InlineKeyboardMarkup:
     keyboard = InlineKeyboardMarkup()
     keyboard.row(
         Button("⏭ Пропустить", "user_data/fill/skip").inline(),
-        Button("✅ Закончить", state.config.finish_callback).inline(),
+        Button("✅ Завершить", state.config.finish_callback).inline(),
     )
     return keyboard
 

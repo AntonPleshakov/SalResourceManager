@@ -12,9 +12,11 @@ import tg.war as war
 from tg.handlers import HandlerRegistry
 from tg.metrics import observe_score_calculation
 from tg.rich import (
-    button_row,
-    callback_button,
+    back_button,
+    details,
     edit_rich_message,
+    heading,
+    highlight_metric,
     input_rich_message,
 )
 from tg.user_data.common import prompt_for_account_clan
@@ -48,17 +50,17 @@ def _war_points_text(clan_id: int) -> str:
     with observe_score_calculation("public"):
         report = WarPointsCalculator().calculate(accounted_users, war.WAR_STAGES)
     logger.info("War points calculated")
-    day_rows = []
+    day_blocks = []
     for day, points in report.points_by_day.items():
-        activities = ", ".join(
-            activity.title for activity in war.WAR_STAGES[day]
+        activities = "".join(
+            f"<li>{escape(activity.title)}</li>"
+            for activity in war.WAR_STAGES[day]
         )
-        day_rows.append(
-            "<tr>"
-            f'<td align="center"><b>{day}</b></td>'
-            f"<td>{escape(activities)}</td>"
-            f'<td align="right"><b>{format_points(points)}</b></td>'
-            "</tr>"
+        day_blocks.append(
+            details(
+                f"День {day} — {format_points(points)}",
+                f"<ul>{activities}</ul>",
+            )
         )
     activity_rows = "".join(
         "<tr>"
@@ -69,12 +71,12 @@ def _war_points_text(clan_id: int) -> str:
     )
     return "".join(
         (
-            "<h2>Максимальные очки войны</h2>",
-            "<p><i>Максимум по каждому дню</i></p>",
-            '<table bordered striped compact><caption>По дням</caption>',
-            "<tr><th>День</th><th>Активности</th><th>Очки</th></tr>",
-            *day_rows,
-            "</table>",
+            heading("Максимальные очки войны"),
+            highlight_metric("Итог за войну", format_points(report.total)),
+            heading("По дням", level=3),
+            "<p><i>Ресурсы для каждого дня сначала оцениваются "
+            "отдельно.</i></p>",
+            *day_blocks,
             '<table bordered compact><caption>Итого по активностям</caption>',
             "<tr><th>Активность</th><th>Очки</th></tr>",
             activity_rows,
@@ -87,12 +89,17 @@ def _war_points_text(clan_id: int) -> str:
             "<tr><td>Не учтено</td>"
             f'<td align="right"><b>{stale_users_count}</b></td></tr>',
             "</table>",
-            "<details><summary>Какие аккаунты не учитываются</summary>"
-            "<p>Аккаунты, у которых ни один ресурс не обновлён с 03:00 "
-            "понедельника.</p></details>",
-            "<details><summary>Как считается результат</summary>"
-            "<p>Максимум каждого дня считается отдельно. В итогах "
-            "расходуемые ресурсы учитываются один раз.</p></details>",
+            details(
+                "Какие аккаунты не учитываются",
+                "<p>Аккаунты, у которых ни один ресурс не обновлён с "
+                "03:00 понедельника.</p>",
+            ),
+            details(
+                "Как считается результат",
+                "<p>Дневные оценки показывают максимум для каждого дня "
+                "по отдельности. Итог за войну учитывает расходуемые "
+                "ресурсы только один раз.</p>",
+            ),
         )
     )
 
@@ -122,14 +129,7 @@ def public_war_points(callback_query: CallbackQuery, bot: TeleBot) -> None:
         input_rich_message(
             (
                 _war_points_text(account.clan_id),
-                button_row(
-                    (
-                        callback_button(
-                            "⬅️ Назад к очкам войны", "war_menu"
-                        ),
-                    ),
-                    align="left",
-                ),
+                back_button("⬅️ Очки войны", "war_menu"),
             )
         ),
     )

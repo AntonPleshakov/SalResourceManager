@@ -23,10 +23,11 @@ def test_last_updates_report_uses_latest_field_and_readable_age(monkeypatch):
 
     report = build_last_updates_report([current, yesterday, never])
 
-    assert "<b>Последнее обновление аккаунтов (всего: 3)</b>" in report
-    assert "tester (Лидер)</a> — 2 дня назад (12.08.2026)" in report
-    assert "second</a> — вчера (13.08.2026)" in report
-    assert "new</a> — никогда" in report
+    assert "<h2>Последнее обновление аккаунтов</h2>" in report
+    assert "<aside>Всего аккаунтов<br><b>3</b></aside>" in report
+    assert "tester (Лидер)</a><br><i>2 дня назад (12.08.2026)</i>" in report
+    assert "second</a><br><i>вчера (13.08.2026)</i>" in report
+    assert "new</a><br><i>никогда</i>" in report
     assert "tg://user?id=42" in report
     assert report.index("second</a>") < report.index("tester (")
     assert report.index("tester (") < report.index("new</a>")

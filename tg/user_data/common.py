@@ -11,7 +11,7 @@ from telebot.types import (
     Message,
 )
 
-from common.datetime_utils import format_last_update
+from common.datetime_utils import format_last_update, now, week_started_on
 from logger.app_logger import logger
 from resources.user_data import (
     RESOURCE_FIELDS,
@@ -28,13 +28,17 @@ from tg.clans import (
     refresh_user_accounts,
 )
 from tg.rich import (
+    account_context,
+    back_button,
     button_row,
     callback_button,
     deliver_rich_message,
     edit_rich_message,
+    heading,
     input_rich_message,
+    notice as rich_notice,
 )
-from tg.utils import Button, format_points, get_ids, get_username
+from tg.utils import format_points, get_ids, get_username
 
 
 @dataclass(frozen=True)
@@ -86,6 +90,40 @@ def get_current_accounts(
     return database.get_accounts(user_id)
 
 
+def build_clan_selection_message(
+    groups,
+    callback_prefix: str,
+    *,
+    title: str,
+    cancel_callback: str | None = None,
+    empty_message: str = (
+        "Не найден зарегистрированный клан, в котором вы состоите."
+    ),
+) -> InputRichMessage:
+    parts = [heading(title)]
+    if groups:
+        parts.append(
+            "<p>Аккаунт будет учитываться только в данных выбранного "
+            "клана.</p>"
+        )
+        for group in groups:
+            parts.append(
+                button_row(
+                    (
+                        callback_button(
+                            f"🏰 {group.title}",
+                            f"{callback_prefix}/{group.group_id}",
+                        ),
+                    )
+                )
+            )
+    else:
+        parts.append(f"<p>{escape(empty_message)}</p>")
+    if cancel_callback:
+        parts.append(back_button("✖️ Отмена", cancel_callback))
+    return input_rich_message(parts)
+
+
 def prompt_for_account_clan(
     message: Union[Message, CallbackQuery],
     bot: TeleBot,
@@ -111,31 +149,28 @@ def prompt_for_account_clan(
     target_groups = [
         group for group in groups if group.group_id != current_clan_id
     ]
-    keyboard = InlineKeyboardMarkup(row_width=1)
     callback_prefix = (
         "accounts/create"
         if account_id is None
         else f"accounts/move/{account_id}/clan"
     )
-    for group in target_groups:
-        keyboard.add(
-            Button(
-                f"🏰 {group.title}", f"{callback_prefix}/{group.group_id}"
-            ).inline()
-        )
-    if account_id is not None:
-        keyboard.add(Button("⬅️ Назад к аккаунтам", "accounts").inline())
-    text = (
-        "<b>Выберите клан игрового аккаунта</b>\n\n"
-        "Аккаунт будет учитываться только в данных выбранного клана."
-        if target_groups
-        else (
+    title = (
+        "Выберите другой клан"
+        if current_clan_id is not None
+        else "Выберите клан аккаунта"
+    )
+    rich_message = build_clan_selection_message(
+        target_groups,
+        callback_prefix,
+        title=title,
+        cancel_callback="accounts" if account_id is not None else None,
+        empty_message=(
             "Нет других доступных кланов для этого аккаунта."
             if current_clan_id is not None
-            else "Не удалось найти зарегистрированный клан, в котором вы состоите."
-        )
+            else "Не найден зарегистрированный клан, в котором вы состоите."
+        ),
     )
-    _deliver_account_clan_prompt(message, bot, text, keyboard)
+    deliver_rich_message(message, bot, rich_message)
 
 
 def ensure_active_user(
@@ -183,6 +218,16 @@ def get_active_user_or_prompt(
     return ensure_active_user(message, bot).user
 
 
+def _field_update_details(user: UserData, field: ResourceField) -> str:
+    updated_on = user.get_updated_on(field.name)
+    if updated_on is None:
+        return "<br><b>⚠️ Не обновлялось</b>"
+    updated_label = escape(format_last_update(updated_on))
+    if updated_on < week_started_on(now()):
+        return f"<br><b>⚠️ Обновлено: {updated_label}</b>"
+    return f"<br><i>Обновлено: {updated_label}</i>"
+
+
 def build_section_menu(
     user: UserData,
     title: str,
@@ -192,12 +237,11 @@ def build_section_menu(
 ) -> MenuContent:
     parts = []
     if notice:
-        parts.append(f"<blockquote>{notice}</blockquote>")
+        parts.append(rich_notice(notice))
     parts.extend(
         (
-            f"<h2>{escape(title)}</h2>",
-            "<p>Игровой аккаунт: "
-            f"<b>{escape(str(user.tag.value))}</b></p>",
+            heading(title),
+            account_context(str(user.tag.value)),
         )
     )
     for field in fields:
@@ -206,9 +250,7 @@ def build_section_menu(
             value = format_points(Decimal(value))
         details = ""
         if field in TRACKED_FIELDS:
-            updated_on = user.get_updated_on(field.name)
-            updated_label = format_last_update(updated_on)
-            details = f"<br><i>Обновлено: {escape(updated_label)}</i>"
+            details = _field_update_details(user, field)
         parts.append(
             "<p>"
             f"{escape(field.title)}: <b>{escape(str(value))}</b>"
@@ -219,7 +261,9 @@ def build_section_menu(
     parts.append(
         button_row(
             (
-                callback_button("🔄 Аккаунт", f"accounts/{section}"),
+                callback_button(
+                    "🔄 Сменить аккаунт", f"accounts/{section}"
+                ),
                 callback_button(
                     "📝 Заполнить всё",
                     f"user_data/fill/{section}",
@@ -228,12 +272,7 @@ def build_section_menu(
             )
         )
     )
-    parts.append(
-        button_row(
-            (callback_button("⬅️ Назад в меню", "home"),),
-            align="left",
-        )
-    )
+    parts.append(back_button("⬅️ Главное меню", "home"))
     return MenuContent(rich_message=input_rich_message(parts))
 
 

@@ -1,6 +1,8 @@
 from contextlib import nullcontext
 from datetime import date, datetime, timezone
+from html import unescape
 from pathlib import Path
+import re
 from types import SimpleNamespace
 
 import pytest
@@ -30,6 +32,23 @@ from tg.admins.notifications import (
 )
 from tg.admins.notification import filter_custom_notification_users
 from tests.handler_context import clan_admin_context
+
+
+def rich_html(edit):
+    args, kwargs = edit
+    rich_message = kwargs.get("rich_message")
+    return rich_message.html if rich_message is not None else args[0]
+
+
+def rich_callback_data(html):
+    return re.findall(r'<tg-button[^>]+data="([^"]+)"', html)
+
+
+def rich_button_texts(html):
+    return [
+        unescape(text)
+        for text in re.findall(r"<tg-button\s[^>]*>(.*?)</tg-button>", html)
+    ]
 
 
 def make_callback(data: str = "admins/notifications/standard") -> CallbackQuery:
@@ -64,12 +83,16 @@ class NotificationFlowBot:
         self.answers = []
         self.deleted_states = []
         self.states = []
+        self.sent = []
 
     def retrieve_data(self, user_id):
         return nullcontext(self.data)
 
     def edit_message_text(self, *args, **kwargs):
         self.edited.append((args, kwargs))
+
+    def send_rich_message(self, chat_id, rich_message):
+        self.sent.append((chat_id, rich_message.html))
 
     def answer_callback_query(self, *args, **kwargs):
         self.answers.append((args, kwargs))
@@ -241,15 +264,15 @@ def test_standard_notification_confirmation_is_compact_and_uses_snapshot(
     callback = make_callback()
     confirm_standard_notification(clan_admin_context(callback, bot))
 
-    text = bot.edited[0][0][0]
-    markup = bot.edited[0][1]["reply_markup"]
+    text = rich_html(bot.edited[0])
     assert "не обновляли ни один ресурс с 03:00 понедельника" in text
-    assert "Получателей: <b>1</b>" in text
-    assert "Уже обновили хотя бы один ресурс: <b>1</b>" in text
+    assert "Будет отправлено</td><td align=\"right\"><b>1</b>" in text
+    assert "Уже обновили данные</td><td align=\"right\"><b>1</b>" in text
     assert STANDARD_NOTIFICATION_TEXT not in text
-    assert [
-        button.text for row in markup.keyboard for button in row
-    ] == ["📣 Отправить", "✖️ Отмена"]
+    assert rich_button_texts(text) == [
+        "📣 Отправить напоминание",
+        "✖️ Отмена",
+    ]
     plan = bot.data["standard_notification_plan"]
     assert len(plan.recipients) == 1
     assert plan.skipped == 1
@@ -309,7 +332,7 @@ def test_standard_notification_shows_progress_before_sending(monkeypatch):
     assert bot.edited[0][0][0] == "Отправляю уведомления…"
     assert len(sent_plans) == 1
     assert [recipient.user_id for recipient in sent_plans[0].recipients] == [1]
-    assert bot.edited[-1][0][0] == "Уведомления пользователям"
+    assert "<h2>Уведомления пользователям</h2>" in rich_html(bot.edited[-1])
 
 
 def test_custom_notifications_show_progress_before_sending(monkeypatch):
@@ -410,14 +433,9 @@ def test_custom_notification_audience_can_be_selected():
     select_custom_notification_audience(clan_admin_context(callback, bot))
 
     assert bot.data["notification_audience"] == "monday"
-    assert "не обновлявшие ресурсы с 03:00 понедельника" in (
-        bot.edited[0][0][0]
-    )
-    assert [
-        button.callback_data
-        for row in bot.edited[0][1]["reply_markup"].keyboard
-        for button in row
-    ] == [
+    text = rich_html(bot.edited[0])
+    assert "не обновлявшие ресурсы с 03:00 понедельника" in text
+    assert rich_callback_data(text) == [
         "admins/notifications/send_custom_group",
         "admins/notifications/send_custom_private",
         "admins/notifications",
@@ -431,20 +449,12 @@ def test_custom_notification_prompts_for_audience_after_text():
     class FakeBot(NotificationFlowBot):
         def __init__(self):
             super().__init__({"admin_group_id": -100123})
-            self.sent = []
-
-        def send_message(self, *args, **kwargs):
-            self.sent.append((args, kwargs))
 
     bot = FakeBot()
 
     receive_custom_notification_text(clan_admin_context(message, bot))
 
-    assert [
-        button.callback_data
-        for row in bot.sent[0][1]["reply_markup"].keyboard
-        for button in row
-    ] == [
+    assert rich_callback_data(bot.sent[0][1]) == [
         "admins/notifications/custom_audience/all",
         "admins/notifications/custom_audience/today",
         "admins/notifications/custom_audience/monday",

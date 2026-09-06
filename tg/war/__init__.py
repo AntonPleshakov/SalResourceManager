@@ -8,9 +8,11 @@ from resources.war import WAR_STAGES, WarActivity, WarPointsCalculator
 from resources.war_rules.forge import explain_forge_occurrences
 from tg.handlers import HandlerRegistry
 from tg.rich import (
+    back_button,
     button_row,
     callback_button,
     edit_rich_message,
+    heading,
     input_rich_message,
 )
 from tg.utils import get_ids, get_username
@@ -41,7 +43,7 @@ def war_menu(callback_query: CallbackQuery, bot: TeleBot) -> None:
         message_id,
         input_rich_message(
             (
-                "<h2>Очки войны</h2>",
+                heading("Очки войны"),
                 "<p>Выберите вариант расчёта.</p>",
                 button_row(
                     (
@@ -53,10 +55,7 @@ def war_menu(callback_query: CallbackQuery, bot: TeleBot) -> None:
                         callback_button("👥 Общие", "war"),
                     )
                 ),
-                button_row(
-                    (callback_button("⬅️ Назад в меню", "home"),),
-                    align="left",
-                ),
+                back_button("⬅️ Главное меню", "home"),
             )
         ),
     )

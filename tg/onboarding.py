@@ -9,6 +9,7 @@ from tg.rich import (
     button_row,
     callback_button,
     deliver_rich_message,
+    heading,
     input_rich_message,
 )
 from tg.user_data.common import ensure_active_user
@@ -23,11 +24,19 @@ def show_created_account_welcome(
 ) -> None:
     user_id = get_ids(message)[0]
     account_name = escape(str(user.tag.value))
-    action_buttons = []
+    action_rows = []
 
     if not group_tag_found:
-        action_buttons.append(
-            callback_button("✏️ Переименовать аккаунт", "accounts/rename")
+        action_rows.append(
+            button_row(
+                (
+                    callback_button(
+                        "✏️ Переименовать аккаунт",
+                        "accounts/rename",
+                        style="primary",
+                    ),
+                )
+            )
         )
         account_text = (
             "Не удалось получить ваш тег из группы, поэтому аккаунт временно "
@@ -39,21 +48,32 @@ def show_created_account_welcome(
             "По вашему тегу в группе создан игровой аккаунт "
             f"<b>{account_name}</b>."
         )
+        action_rows.append(
+            button_row(
+                (
+                    callback_button(
+                        "📦 Заполнить ресурсы",
+                        "resources",
+                        style="primary",
+                    ),
+                )
+            )
+        )
 
-    action_buttons.append(
-        callback_button("🏠 Открыть меню", "home", style="primary")
+    action_rows.append(
+        button_row((callback_button("🏠 Открыть меню", "home"),))
     )
     deliver_rich_message(
         message,
         bot,
         input_rich_message(
             (
-                "<h2>👋 Добро пожаловать!</h2>",
+                heading("👋 Добро пожаловать!"),
                 "<p>Бот помогает хранить ресурсы игровых аккаунтов, "
                 "напоминает об обновлении данных и рассчитывает очки "
                 "войны.</p>",
                 f"<p>{account_text}</p>",
-                button_row(action_buttons),
+                *action_rows,
             )
         ),
     )

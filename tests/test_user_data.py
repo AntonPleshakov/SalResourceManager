@@ -2,6 +2,7 @@ from contextlib import nullcontext
 from datetime import date
 from decimal import Decimal
 from pathlib import Path
+import re
 from types import SimpleNamespace
 
 from telebot.types import CallbackQuery, Chat, Message, User
@@ -57,6 +58,16 @@ def make_callback(data: str) -> CallbackQuery:
     chat = Chat(42, "private")
     message = Message(1, user, 0, chat, "text", {"text": "reminder"}, None)
     return CallbackQuery("callback-1", user, data, "", None, message)
+
+
+def rich_html(edit):
+    args, kwargs = edit
+    rich_message = kwargs.get("rich_message")
+    return rich_message.html if rich_message is not None else args[0]
+
+
+def rich_callback_data(html):
+    return re.findall(r'<tg-button[^>]+data="([^"]+)"', html)
 
 
 def test_user_data_round_trip():
@@ -183,8 +194,9 @@ def test_first_game_account_requires_clan_selection(tmp_path, monkeypatch):
     assert result.clan_selection_required is True
     assert result.user is None
     assert database.get_accounts(42) == []
-    button = bot.edited[0][1]["reply_markup"].keyboard[0][0]
-    assert button.callback_data == "accounts/create/-100123"
+    assert rich_callback_data(rich_html(bot.edited[0])) == [
+        "accounts/create/-100123"
+    ]
     connection.close()
 
 
@@ -216,7 +228,7 @@ def test_first_game_account_is_not_created_without_available_clan(
     assert result.clan_selection_required is True
     assert result.user is None
     assert database.get_accounts(42) == []
-    assert "Не удалось найти" in bot.edited[0][0][0]
+    assert "Не найден зарегистрированный клан" in rich_html(bot.edited[0])
     connection.close()
 
 
@@ -832,7 +844,7 @@ def test_single_value_edit_stores_compact_state_and_shows_current_value(
             "prompt_message_id": 1,
         }
     }
-    assert "Текущее значение: <b>2.50к</b>" in bot.edited[0][0]
+    assert "Сохранено сейчас: <b>2.50к</b>" in bot.edited[0][0]
     assert bot.edited[0][3].keyboard[0][0].callback_data == "resources"
 
 
@@ -911,7 +923,7 @@ def test_single_value_edit_saves_to_selected_account(monkeypatch):
     assert bot.deleted_states == [42]
     assert bot.edited[0][1:3] == (42, 15)
     assert (
-        "✅ Молотки: <b>1.50к</b> — значение зарегистрировано."
+        "✅ Молотки: <b>1.50к</b> — сохранено."
         in bot.edited[0][0]
     )
     assert "<h2>Ресурсы</h2>" in bot.edited[0][0]
@@ -955,7 +967,7 @@ def test_single_value_edit_reuses_prompt_for_invalid_input():
     assert bot.deleted == [(42, 99)]
     assert len(bot.edited) == 1
     assert bot.edited[0][1:3] == (42, 15)
-    assert "Значение для «Молотки» не подходит" in bot.edited[0][0]
+    assert "Не удалось сохранить «Молотки»" in bot.edited[0][0]
     assert "Введите число в тысячах" in bot.edited[0][0]
 
 
@@ -1019,7 +1031,7 @@ def test_fill_all_rejects_invalid_value_before_advancing_to_next_field(
     assert bot.deleted == [(42, 1)]
     assert bot.data["fill_state"]["index"] == 0
     assert "Значение не подходит" in bot.edited[0][0]
-    assert "Сейчас сохранено: <b>10</b>" in bot.edited[0][0]
+    assert "Сохранено сейчас: <b>10</b>" in bot.edited[0][0]
     assert "от 1 до 35" in bot.edited[0][0]
 
 
@@ -1064,9 +1076,10 @@ def test_reminder_fill_starts_with_only_requested_fields(monkeypatch):
         "extra_mount_chance",
     )
     assert "Молотки" in bot.edited[0][0]
-    assert "<b>Молотки · 1 из 2</b>" in bot.edited[0][0]
+    assert "<b>Молотки</b>" in bot.edited[0][0]
+    assert "<i>Шаг 1 из 2</i>" in bot.edited[0][0]
     assert "данные из напоминания" not in bot.edited[0][0]
-    assert "Сейчас сохранено: <b>2.50к</b>" in bot.edited[0][0]
+    assert "Сохранено сейчас: <b>2.50к</b>" in bot.edited[0][0]
     assert [
         button.callback_data
         for row in bot.edited[0][3].keyboard
@@ -1168,13 +1181,13 @@ def test_reminder_fill_saves_only_requested_fields(monkeypatch):
         ("technologies", "extra_mount_chance"),
     ]
     assert bot.deleted == [(42, 1), (42, 1)]
-    assert "Сейчас сохранено: <b>5</b>" in bot.edited[0][0]
+    assert "Сохранено сейчас: <b>5</b>" in bot.edited[0][0]
     assert bot.edited[0][0].startswith(
-        "✅ Молотки: <b>1.50к</b> — значение зарегистрировано."
+        "✅ Молотки: <b>1.50к</b> — сохранено."
     )
     assert "Заполнение завершено" in bot.edited[-1][0]
     assert bot.edited[-1][0].startswith(
-        "✅ Шанс на доп. маунта: <b>10</b> — значение зарегистрировано."
+        "✅ Шанс на доп. маунта: <b>10</b> — сохранено."
     )
     assert bot.edited[-1][3].keyboard[0][0].callback_data == "home"
 
@@ -1233,7 +1246,7 @@ def test_fill_all_can_skip_values_without_changing_them(monkeypatch):
 
     assert current_user.hammers.value == 2_500
     assert current_user.extra_mount_chance.value == 5
-    assert "Сейчас сохранено: <b>5</b>" in bot.edited[0][0]
+    assert "Сохранено сейчас: <b>5</b>" in bot.edited[0][0]
     assert "Заполнение завершено" in bot.edited[-1][0]
     assert bot.deleted_states == [42]
 

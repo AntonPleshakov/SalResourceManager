@@ -5,7 +5,12 @@ from telebot.types import CallbackQuery, InlineKeyboardMarkup, Message
 from logger.app_logger import logger
 import tg.user_data as user_data
 from tg.clans import get_user_clans
-from tg.user_data.common import get_current_accounts, prompt_for_account_clan
+from tg.rich import edit_rich_message
+from tg.user_data.common import (
+    build_clan_selection_message,
+    get_current_accounts,
+    prompt_for_account_clan,
+)
 from tg.user_data.account.handlers import register_handlers
 from tg.user_data.account.deletion import (
     confirm_delete,
@@ -89,29 +94,20 @@ def request_add(callback_query: CallbackQuery, bot: TeleBot) -> None:
         user_id,
         user_data.get_access_group_db().get_groups(),
     )
-    keyboard = InlineKeyboardMarkup(row_width=1)
     destination = _requested_destination(callback_query)
-    for group in groups:
-        keyboard.add(
-            Button(
-                f"🏰 {group.title}",
-                f"accounts/add/{destination}/clan/{group.group_id}",
-            ).inline()
-        )
     cancel_callback = (
         f"accounts/{destination}" if destination in DESTINATIONS else "accounts"
     )
-    keyboard.add(Button("✖️ Отмена", cancel_callback).inline())
-    text = (
-        "<b>Новый игровой аккаунт</b>\n\nВыберите клан аккаунта."
-        if groups
-        else "Не удалось найти зарегистрированный клан, в котором вы состоите."
-    )
-    bot.edit_message_text(
-        text,
+    edit_rich_message(
+        bot,
         chat_id,
         message_id,
-        reply_markup=keyboard,
+        build_clan_selection_message(
+            groups,
+            f"accounts/add/{destination}/clan",
+            title="Новый игровой аккаунт",
+            cancel_callback=cancel_callback,
+        ),
     )
 
 

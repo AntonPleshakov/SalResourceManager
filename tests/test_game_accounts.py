@@ -163,7 +163,7 @@ def test_new_account_clan_picker_only_shows_memberships(tmp_path, monkeypatch):
 
     request_add(make_callback("accounts/add/accounts"), bot)
 
-    assert callback_data(bot.edited[-1][3]) == [
+    assert callback_data(bot.edited[-1][0]) == [
         "accounts/add/accounts/clan/-100123",
         "accounts",
     ]
@@ -184,7 +184,7 @@ def test_active_account_can_move_only_to_a_current_membership(tmp_path, monkeypa
     bot = FakeBot()
 
     request_move(make_callback("accounts/move"), bot)
-    assert callback_data(bot.edited[-1][3]) == [
+    assert callback_data(bot.edited[-1][0]) == [
         f"accounts/move/{account.account_id}/clan/-100123",
         "accounts",
     ]
@@ -235,7 +235,7 @@ def test_clan_actions_separate_moving_and_leaving(
 
     request_move(make_callback("accounts/move"), bot)
 
-    assert callback_data(bot.edited[-1][3]) == [
+    assert callback_data(bot.edited[-1][0]) == [
         f"accounts/move/{account.account_id}/clan/-100456",
         "accounts",
     ]
@@ -287,7 +287,9 @@ def test_accounts_menu_uses_explicit_clan_actions(tmp_path, monkeypatch):
 
     accounts_menu(make_callback("accounts"), bot)
 
-    assert "🔄 Detached · клан не выбран" in callback_texts(bot.edited[-1][0])
+    assert "Detached" in bot.edited[-1][0]
+    assert "клан не выбран" in bot.edited[-1][0]
+    assert "Выбрать аккаунт" in callback_texts(bot.edited[-1][0])
     assert "🏰 Сменить клан" not in callback_texts(bot.edited[-1][0])
     assert "🚪 Выйти из клана" in callback_texts(bot.edited[-1][0])
 
@@ -369,7 +371,7 @@ def test_account_selector_returns_to_resource_screen_after_switch(
     accounts_menu(make_callback("accounts/resources"), bot)
 
     menu_buttons = callback_data(bot.edited[-1][0])
-    assert "Активный аккаунт</td><td><b>Alt</b>" in bot.edited[-1][0]
+    assert "Аккаунт: <b>Alt</b>" in bot.edited[-1][0]
     assert menu_buttons[0] == f"accounts/select/resources/{first.account_id}"
     assert f"accounts/select/resources/{second.account_id}" not in menu_buttons
     assert "accounts/add/resources" in menu_buttons
@@ -382,7 +384,7 @@ def test_account_selector_returns_to_resource_screen_after_switch(
     )
 
     assert database.get_active_account(42).account_id == first.account_id
-    assert "Игровой аккаунт: <b>Main</b>" in bot.edited[-1][0]
+    assert "Аккаунт: <b>Main</b>" in bot.edited[-1][0]
     assert 'data="user_data/edit/hammers"' in bot.edited[-1][0]
     connection.close()
 
@@ -452,7 +454,7 @@ def test_stale_data_account_selection_detaches_and_prompts_for_clan(
         for account in database.get_accounts(42)
         if account.account_id == stale.account_id
     ).clan_id is None
-    assert "Выберите клан игрового аккаунта" in bot.edited[-1][0]
+    assert "Выберите клан аккаунта" in bot.edited[-1][0]
     assert "<h2>Ресурсы</h2>" not in bot.edited[-1][0]
     connection.close()
 
@@ -584,7 +586,7 @@ def test_delete_selector_only_lists_inactive_accounts(tmp_path, monkeypatch):
 
     request_delete(make_callback("accounts/delete"), bot)
 
-    menu_buttons = callback_data(bot.edited[-1][3])
+    menu_buttons = callback_data(bot.edited[-1][0])
     assert menu_buttons == [
         f"accounts/delete/confirm/{first.account_id}",
         f"accounts/delete/confirm/{second.account_id}",
@@ -596,8 +598,8 @@ def test_delete_selector_only_lists_inactive_accounts(tmp_path, monkeypatch):
         make_callback(f"accounts/delete/confirm/{first.account_id}"), bot
     )
 
-    assert "Удалить аккаунт <b>Main</b>?" in bot.edited[-1][0]
-    assert callback_data(bot.edited[-1][3]) == [
+    assert "Удалить аккаунт «Main»?" in bot.edited[-1][0]
+    assert callback_data(bot.edited[-1][0]) == [
         f"accounts/delete/{first.account_id}",
         "accounts/delete",
     ]

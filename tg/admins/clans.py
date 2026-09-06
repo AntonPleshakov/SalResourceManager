@@ -1,5 +1,4 @@
 from telebot import TeleBot
-from telebot.types import InlineKeyboardMarkup
 
 from db.initializer import get_admins_db
 from logger.app_logger import logger
@@ -10,7 +9,15 @@ from tg.handlers import (
     ClanFromCallback,
     HandlerRegistry,
 )
-from tg.utils import Button, get_ids
+from tg.rich import (
+    back_button,
+    button_row,
+    callback_button,
+    edit_rich_message,
+    heading,
+    input_rich_message,
+)
+from tg.utils import get_ids
 
 
 def clans_menu(context: AdminContext) -> None:
@@ -18,18 +25,27 @@ def clans_menu(context: AdminContext) -> None:
     bot = context.bot
     user_id, chat_id, message_id = get_ids(callback_query)
     groups = list(context.clans)
-    keyboard = InlineKeyboardMarkup(row_width=1)
+    parts = [
+        heading("Управляемый клан"),
+        "<p>Выберите клан для административных действий.</p>",
+    ]
     for group in groups:
-        keyboard.add(
-            Button(group.title, f"admins/clans/{group.group_id}").inline()
+        parts.append(
+            button_row(
+                (
+                    callback_button(
+                        f"🏰 {group.title}",
+                        f"admins/clans/{group.group_id}",
+                    ),
+                )
+            )
         )
-    keyboard.add(Button("⬅️ Назад в админ-панель", "admins").inline())
-    bot.edit_message_text(
-        "<b>Управляемый клан</b>\n\n"
-        "Выберите клан для административных действий.",
+    parts.append(back_button("⬅️ Админ-панель", "admins"))
+    edit_rich_message(
+        bot,
         chat_id,
         message_id,
-        reply_markup=keyboard,
+        input_rich_message(parts),
     )
 
 

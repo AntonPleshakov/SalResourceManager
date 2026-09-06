@@ -65,7 +65,7 @@ def test_new_user_sees_account_created_from_group_tag(monkeypatch):
     text, _, _, markup = bot.edited[0]
     assert "Добро пожаловать" in text
     assert "По вашему тегу в группе создан игровой аккаунт <b>Лидер</b>" in text
-    assert callback_data(text) == ["home"]
+    assert callback_data(text) == ["resources", "home"]
     assert markup is None
 
 

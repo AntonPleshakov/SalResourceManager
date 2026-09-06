@@ -149,8 +149,8 @@ def test_menu_command_cancels_active_state_and_opens_home(monkeypatch):
     assert bot.sent[0][1] == "Текущее действие отменено."
     assert isinstance(bot.sent[0][2], ReplyKeyboardRemove)
     assert "<h2>Главное меню</h2>" in bot.sent[1][1]
-    assert "Игровой аккаунт</td><td><b>Лидер</b>" in bot.sent[1][1]
-    assert "Клан</td><td><b>Test clan</b>" in bot.sent[1][1]
+    assert "Аккаунт: <b>Лидер</b>" in bot.sent[1][1]
+    assert "Клан: <b>Test clan</b>" in bot.sent[1][1]
 
 
 def test_start_command_checks_unseen_releases(monkeypatch):
@@ -189,7 +189,7 @@ def test_cancel_with_active_state_cancels_and_opens_home(monkeypatch):
     assert bot.deleted_states == [42]
     assert isinstance(bot.sent[0][2], ReplyKeyboardRemove)
     assert "<h2>Главное меню</h2>" in bot.sent[1][1]
-    assert "Игровой аккаунт</td><td><b>Лидер</b>" in bot.sent[1][1]
+    assert "Аккаунт: <b>Лидер</b>" in bot.sent[1][1]
 
 
 def test_home_shows_account_count_only_for_multiple_accounts(monkeypatch):
@@ -224,9 +224,9 @@ def test_home_shows_account_count_only_for_multiple_accounts(monkeypatch):
 
     navigation.home(make_message("/menu"), bot)
 
-    assert "Игровой аккаунт</td><td><b>Main &amp; Hero</b>" in bot.sent[0][1]
-    assert "Клан</td><td><b>Test clan</b>" in bot.sent[0][1]
-    assert "Всего аккаунтов</td><td align=\"right\"><b>2</b>" in bot.sent[0][1]
+    assert "Аккаунт: <b>Main &amp; Hero</b>" in bot.sent[0][1]
+    assert "Клан: <b>Test clan</b>" in bot.sent[0][1]
+    assert "Всего аккаунтов: 2" in bot.sent[0][1]
 
 
 def test_home_menu_explains_scope_of_enabled_reminders(monkeypatch):

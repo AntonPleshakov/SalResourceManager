@@ -118,11 +118,10 @@ def test_pets_menu_shows_current_settings_and_edit_actions(monkeypatch):
     pets_menu(make_callback("pets"), bot)
 
     text, _, _, markup = bot.edited[0]
-    assert "<h2>Питомцы</h2>" in text
-    assert "Яиц в одном пакете</td><td align=\"right\"><b>4</b>" in text
-    assert "🟣 Mythic / Мифическое" in text
-    assert "🔴 Ultimate / Максимальное" in text
-    assert "Пакетов в день</td><td align=\"right\"><b>2</b>" in text
+    assert "<h2>Настройки питомцев</h2>" in text
+    assert "Яиц в одном пакете: <b>4</b>" in text
+    assert "Максимальный уровень: <b>Мифическое</b>" in text
+    assert "Пакетов в день: <b>2</b>" in text
     assert callback_data(text) == [
         "user_data/edit/eggs_per_hatch_batch",
         "pets/max_level",
@@ -133,7 +132,7 @@ def test_pets_menu_shows_current_settings_and_edit_actions(monkeypatch):
     assert markup is None
 
 
-def test_max_egg_level_is_selected_by_bilingual_colored_names(monkeypatch):
+def test_max_egg_level_is_selected_by_compact_colored_names(monkeypatch):
     configure(monkeypatch)
     bot = FakeBot()
 
@@ -142,12 +141,12 @@ def test_max_egg_level_is_selected_by_bilingual_colored_names(monkeypatch):
     text = bot.edited[0][0]
     labels = button_texts(text)
     assert labels[:6] == [
-        "🟣 Mythic / Мифическое ✓",
-        "🔴 Ultimate / Максимальное",
-        "🟡 Legendary / Легендарное",
-        "🟢 Epic / Эпическое",
-        "🔵 Rare / Редкое",
-        "⚪ Common / Обычное",
+        "🟣 Мифическое ✓",
+        "🔴 Максимальное",
+        "🟡 Легендарное",
+        "🟢 Эпическое",
+        "🔵 Редкое",
+        "⚪ Обычное",
     ]
 
 
@@ -170,8 +169,8 @@ def test_lowering_max_level_warns_before_clearing_daily_batches(monkeypatch):
     assert database.user.hatch_batches_mythic.value == 2
     text, _, _, markup = bot.edited[-1]
     assert "Будут обнулены" in text
-    assert "Mythic / Мифическое: <b>2 пакета</b>" in text
-    assert "Ultimate / Максимальное: <b>3 пакета</b>" in text
+    assert "Мифическое <i>(Mythic)</i>: <b>2 пакета</b>" in text
+    assert "Максимальное <i>(Ultimate)</i>: <b>3 пакета</b>" in text
     assert callback_data(text) == [
         "pets/max_level/confirm/4",
         "pets/max_level",
@@ -198,7 +197,7 @@ def test_confirming_lower_max_level_clears_unavailable_daily_batches(
     assert database.user.max_egg_level.value == 4
     assert database.user.hatch_batches_ultimate.value == 0
     assert database.user.hatch_batches_mythic.value == 0
-    assert "Legendary / Легендарное" in bot.edited[-1][0]
+    assert "Максимальный уровень: <b>Легендарное</b>" in bot.edited[-1][0]
 
 
 def test_lowering_max_level_without_batch_data_saves_immediately(monkeypatch):
@@ -216,7 +215,7 @@ def test_lowering_max_level_without_batch_data_saves_immediately(monkeypatch):
     save_max_egg_level(make_callback("pets/max_level/4"), bot)
 
     assert database.user.max_egg_level.value == 4
-    assert "Legendary / Легендарное" in bot.edited[-1][0]
+    assert "Максимальный уровень: <b>Легендарное</b>" in bot.edited[-1][0]
     assert "Будут обнулены" not in bot.edited[-1][0]
 
 

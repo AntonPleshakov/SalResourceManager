@@ -1,5 +1,6 @@
 from datetime import date, datetime, timezone
 from pathlib import Path
+import re
 
 from prometheus_client import CollectorRegistry
 from telebot.types import CallbackQuery, Chat, Message, User
@@ -187,12 +188,20 @@ def make_callback(data="admins/game_data"):
 
 
 def callback_data(markup):
+    if isinstance(markup, str):
+        return re.findall(r'<tg-button[^>]+data="([^"]+)"', markup)
     return [
         button.callback_data
         for row in markup.keyboard
         for button in row
         if button.callback_data is not None
     ]
+
+
+def rich_html(edit):
+    args, kwargs = edit
+    rich_message = kwargs.get("rich_message")
+    return rich_message.html if rich_message is not None else args[0]
 
 
 def test_report_authorizes_with_the_saved_user_token(monkeypatch):
@@ -457,22 +466,14 @@ def test_admin_menu_contains_game_data_report(monkeypatch):
         admin_context(callback, bot, AccessGroup(-100123, "Test clan"))
     )
 
-    markup = bot.edits[0][1]["reply_markup"]
-    assert "admins/game_data" in callback_data(markup)
-    assert bot.edits[0][0][0] == (
-        "<b>Админ-панель</b>\nКлан: <b>Test clan</b>\n\nВыберите действие."
-    )
-    assert [button.text for row in markup.keyboard for button in row] == [
-        "👥 Список игроков",
-        "📣 Уведомления",
-        "📊 Игровые данные",
-        "➕ Добавить клан",
-        "✏️ Переименовать клан",
-        "👥 Список администраторов",
-        "➕ Добавить администраторов",
-        "🗑 Удалить администратора",
-        "⬅️ Назад в меню",
-    ]
+    html = rich_html(bot.edits[0])
+    assert "admins/game_data" in callback_data(html)
+    assert "<h2>Админ-панель</h2>" in html
+    assert "<footer>Клан: Test clan</footer>" in html
+    assert "<h3>Игроки</h3>" in html
+    assert "<h3>Коммуникации</h3>" in html
+    assert "<h3>Настройки клана</h3>" in html
+    assert "<h3>Доступ</h3>" in html
 
 
 def test_admin_can_switch_active_clan(tmp_path, monkeypatch):
@@ -490,13 +491,13 @@ def test_admin_can_switch_active_clan(tmp_path, monkeypatch):
     callback = make_callback("admins")
     clans = (AccessGroup(-100001, "Alpha"), AccessGroup(-100002, "Beta"))
     admins_main_menu(admin_context(callback, bot, *clans))
-    assert "admins/clans" in callback_data(bot.edits[-1][1]["reply_markup"])
+    assert "admins/clans" in callback_data(rich_html(bot.edits[-1]))
 
     select_callback = make_callback("admins/clans/-100002")
     select_clan(clan_admin_context(select_callback, bot, -100002, "Beta"))
 
     assert admins.get_active_group(42) == AccessGroup(-100002, "Beta")
-    assert "Клан: <b>Beta</b>" in bot.edits[-1][0][0]
+    assert "<footer>Клан: Beta</footer>" in rich_html(bot.edits[-1])
     connection.close()
 
 
@@ -520,10 +521,11 @@ def test_admin_menu_requires_selection_after_active_access_is_revoked(
         admin_context(callback, bot, AccessGroup(-100001, "Alpha"))
     )
 
-    buttons = callback_data(bot.edits[-1][1]["reply_markup"])
+    html = rich_html(bot.edits[-1])
+    buttons = callback_data(html)
     assert "admins/clans" in buttons
     assert "admins/game_data" not in buttons
-    assert "Выберите клан для административных действий" in bot.edits[-1][0][0]
+    assert "Выберите клан для административных действий" in html
     connection.close()
 
 
@@ -542,9 +544,10 @@ def test_admin_menu_without_current_clans_hides_admin_actions(
 
     admins_main_menu(admin_context(callback, bot))
 
-    buttons = callback_data(bot.edits[-1][1]["reply_markup"])
+    html = rich_html(bot.edits[-1])
+    buttons = callback_data(html)
     assert buttons == ["home"]
-    assert "нет актуальных прав администратора" in bot.edits[-1][0][0]
+    assert "нет актуальных прав администратора" in html
     connection.close()
 
 

@@ -1,8 +1,14 @@
-from telebot.types import InlineKeyboardMarkup
-
 from logger.app_logger import logger
 from tg.handlers import ClanAdminContext
-from tg.utils import Button, get_ids, get_username
+from tg.rich import (
+    back_button,
+    button_row,
+    callback_button,
+    edit_rich_message,
+    heading,
+    input_rich_message,
+)
+from tg.utils import get_ids, get_username
 
 
 def notifications_menu(context: ClanAdminContext) -> None:
@@ -15,17 +21,33 @@ def notifications_menu(context: ClanAdminContext) -> None:
         get_username(callback_query),
     )
     bot.delete_state(user_id)
-    keyboard = InlineKeyboardMarkup()
-    keyboard.row(
-        Button(
-            "🔔 Обновить данные", "admins/notifications/standard"
-        ).inline(),
-        Button("✍️ Свой текст", "admins/notifications/custom").inline(),
-    )
-    keyboard.row(Button("⬅️ Назад в админ-панель", "admins").inline())
-    bot.edit_message_text(
-        "Уведомления пользователям",
+    edit_rich_message(
+        bot,
         chat_id,
         message_id,
-        reply_markup=keyboard,
+        input_rich_message(
+            (
+                heading("Уведомления пользователям"),
+                "<p>Выберите готовое напоминание или напишите своё "
+                "сообщение.</p>",
+                button_row(
+                    (
+                        callback_button(
+                            "🔔 Напомнить обновить данные",
+                            "admins/notifications/standard",
+                            style="primary",
+                        ),
+                    )
+                ),
+                button_row(
+                    (
+                        callback_button(
+                            "✍️ Написать сообщение",
+                            "admins/notifications/custom",
+                        ),
+                    )
+                ),
+                back_button("⬅️ Админ-панель", "admins"),
+            )
+        ),
     )

@@ -186,9 +186,9 @@ def _complete_fill(
     notice_line = f"{notice}\n\n" if notice else ""
     bot.edit_message_text(
         f"{notice_line}"
-        f"<b>Заполнение завершено</b>\n\n"
+        f"✅ <b>Заполнение завершено</b>\n\n"
         f"{account_line(state.account_tag)}"
-        "Все введённые значения зарегистрированы. "
+        "Все введённые значения сохранены. "
         "Пропущенные показатели не изменены.",
         chat_id,
         state.prompt_message_id,
@@ -317,7 +317,7 @@ def save_fill_value(message: Message, bot: TeleBot) -> None:
         message,
         bot,
         FillContext(state=context.state, current_user=current_user),
-        f"✅ {field.title}: <b>{displayed_value}</b> — значение зарегистрировано.",
+        f"✅ {field.title}: <b>{displayed_value}</b> — сохранено.",
     )
 
 

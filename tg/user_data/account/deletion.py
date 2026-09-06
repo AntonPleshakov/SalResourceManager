@@ -1,9 +1,19 @@
-from telebot import TeleBot, formatting
-from telebot.types import CallbackQuery, InlineKeyboardMarkup
+from telebot import TeleBot
+from telebot.types import CallbackQuery
 
 import tg.user_data as user_data
 from tg.user_data.common import get_current_accounts
-from tg.utils import Button, get_ids
+from tg.rich import (
+    back_button,
+    button_row,
+    callback_button,
+    confirmation_buttons,
+    edit_rich_message,
+    heading,
+    input_rich_message,
+    notice,
+)
+from tg.utils import get_ids
 
 
 def request_delete(callback_query: CallbackQuery, bot: TeleBot) -> None:
@@ -17,21 +27,28 @@ def request_delete(callback_query: CallbackQuery, bot: TeleBot) -> None:
 
         accounts_menu(callback_query, bot)
         return
-    keyboard = InlineKeyboardMarkup(row_width=1)
+    parts = [
+        heading("Удаление аккаунта"),
+        "<p>Выберите неактивный аккаунт. Активный аккаунт удалить "
+        "нельзя.</p>",
+    ]
     for account in candidates:
-        keyboard.add(
-            Button(
-                f"🗑 {account.tag}",
-                f"accounts/delete/confirm/{account.account_id}",
-            ).inline()
+        parts.append(
+            button_row(
+                (
+                    callback_button(
+                        f"🗑 {account.tag}",
+                        f"accounts/delete/confirm/{account.account_id}",
+                    ),
+                )
+            )
         )
-    keyboard.add(Button("✖️ Отмена", "accounts").inline())
-    bot.edit_message_text(
-        "<b>Удаление аккаунта</b>\n\n"
-        "Выберите неактивный аккаунт, который нужно удалить.",
+    parts.append(back_button("✖️ Отмена", "accounts"))
+    edit_rich_message(
+        bot,
         chat_id,
         message_id,
-        reply_markup=keyboard,
+        input_rich_message(parts),
     )
 
 
@@ -53,20 +70,26 @@ def confirm_delete(callback_query: CallbackQuery, bot: TeleBot) -> None:
         text = str(error) or "Игровой аккаунт не найден"
         bot.answer_callback_query(callback_query.id, text, show_alert=True)
         return
-    keyboard = InlineKeyboardMarkup(row_width=1)
-    keyboard.add(
-        Button(
-            "🗑 Да, удалить вместе с данными",
-            f"accounts/delete/{account.account_id}",
-        ).inline()
-    )
-    keyboard.add(Button("✖️ Отмена", "accounts/delete").inline())
-    bot.edit_message_text(
-        f"Удалить аккаунт <b>{formatting.escape_html(account.tag)}</b>?\n\n"
-        "Все сохранённые для него ресурсы и настройки будут удалены безвозвратно.",
+    edit_rich_message(
+        bot,
         chat_id,
         message_id,
-        reply_markup=keyboard,
+        input_rich_message(
+            (
+                heading(f"Удалить аккаунт «{account.tag}»?"),
+                notice(
+                    "Все сохранённые ресурсы и настройки аккаунта будут "
+                    "удалены безвозвратно."
+                ),
+                confirmation_buttons(
+                    "🗑 Удалить аккаунт и данные",
+                    f"accounts/delete/{account.account_id}",
+                    "✖️ Отмена",
+                    "accounts/delete",
+                    destructive=True,
+                ),
+            )
+        ),
     )
 
 

@@ -22,6 +22,16 @@ from tg.admins.notification import delivery
 from tg.admins.notification.handlers import register_handlers
 from tg.admins.notification.views import notifications_menu
 from tg.handlers import ClanAdminContext
+from tg.rich import (
+    back_button,
+    button_row,
+    callback_button,
+    edit_rich_message,
+    footer,
+    heading,
+    input_rich_message,
+    notice,
+)
 from tg.utils import (
     Button,
     get_ids,
@@ -94,26 +104,37 @@ def confirm_standard_notification(
         standard_notification_plan=plan,
         admin_group_id=context.group.group_id,
     )
-    keyboard = InlineKeyboardMarkup()
+    parts = [
+        heading("Напомнить обновить данные?"),
+        "<p>Уведомление получат пользователи, которые не обновляли ни "
+        "один ресурс с 03:00 понедельника.</p>",
+        '<table compact><caption>Получатели</caption>',
+        "<tr><td>Будет отправлено</td>"
+        f'<td align="right"><b>{len(plan.recipients)}</b></td></tr>',
+        "<tr><td>Уже обновили данные</td>"
+        f'<td align="right"><b>{plan.skipped}</b></td></tr>',
+        "</table>",
+    ]
     if plan.recipients:
-        keyboard.row(
-            Button(
-                "📣 Отправить",
-                "admins/notifications/send_standard",
-            ).inline(),
-            Button("✖️ Отмена", "admins/notifications").inline(),
+        parts.append(
+            button_row(
+                (
+                    callback_button(
+                        "📣 Отправить напоминание",
+                        "admins/notifications/send_standard",
+                        style="primary",
+                    ),
+                )
+            )
         )
     else:
-        keyboard.row(Button("⬅️ Назад", "admins/notifications").inline())
-    bot.edit_message_text(
-        "<b>Попросить обновить данные?</b>\n\n"
-        "Уведомление получат пользователи, которые не обновляли ни один "
-        "ресурс с 03:00 понедельника.\n\n"
-        f"Получателей: <b>{len(plan.recipients)}</b>\n"
-        f"Уже обновили хотя бы один ресурс: <b>{plan.skipped}</b>",
+        parts.append(notice("Все пользователи уже обновили данные."))
+    parts.append(back_button("✖️ Отмена", "admins/notifications"))
+    edit_rich_message(
+        bot,
         chat_id,
         message_id,
-        reply_markup=keyboard,
+        input_rich_message(parts),
     )
 
 
@@ -178,40 +199,61 @@ def request_custom_notification(
     )
 
 
-def _custom_audience_keyboard() -> InlineKeyboardMarkup:
-    keyboard = InlineKeyboardMarkup(row_width=1)
-    keyboard.add(
-        Button(
-            "👥 Всем",
-            "admins/notifications/custom_audience/all",
-        ).inline(),
-        Button(
-            "📅 Не обновлявшим сегодня",
-            "admins/notifications/custom_audience/today",
-        ).inline(),
-        Button(
-            "🗓 Не обновлявшим с понедельника",
-            "admins/notifications/custom_audience/monday",
-        ).inline(),
-        Button("✖️ Отмена", "admins/notifications").inline(),
+def _custom_audience_buttons() -> str:
+    return "".join(
+        (
+            button_row(
+                (
+                    callback_button(
+                        "👥 Всем",
+                        "admins/notifications/custom_audience/all",
+                    ),
+                )
+            ),
+            button_row(
+                (
+                    callback_button(
+                        "📅 Не обновлявшим сегодня",
+                        "admins/notifications/custom_audience/today",
+                    ),
+                )
+            ),
+            button_row(
+                (
+                    callback_button(
+                        "🗓 Не обновлявшим с понедельника",
+                        "admins/notifications/custom_audience/monday",
+                    ),
+                )
+            ),
+            back_button("✖️ Отмена", "admins/notifications"),
+        )
     )
-    return keyboard
 
 
-def _custom_delivery_keyboard() -> InlineKeyboardMarkup:
-    keyboard = InlineKeyboardMarkup()
-    keyboard.row(
-        Button(
-            "👥 В группу",
-            "admins/notifications/send_custom_group",
-        ).inline(),
-        Button(
-            "✉️ Лично",
-            "admins/notifications/send_custom_private",
-        ).inline(),
+def _custom_delivery_buttons() -> str:
+    return "".join(
+        (
+            button_row(
+                (
+                    callback_button(
+                        "👥 Отправить в группу",
+                        "admins/notifications/send_custom_group",
+                        style="primary",
+                    ),
+                )
+            ),
+            button_row(
+                (
+                    callback_button(
+                        "✉️ Отправить лично",
+                        "admins/notifications/send_custom_private",
+                    ),
+                )
+            ),
+            back_button("✖️ Отмена", "admins/notifications"),
+        )
     )
-    keyboard.row(Button("✖️ Отмена", "admins/notifications").inline())
-    return keyboard
 
 
 def receive_custom_notification_text(context: ClanAdminContext) -> None:
@@ -249,15 +291,16 @@ def receive_custom_notification_text(context: ClanAdminContext) -> None:
     admin_name = get_username(message)
     bot.set_state(user_id, NotificationStates.custom_audience)
     bot.add_data(user_id, notification_text=text, admin_name=admin_name)
-    preview = (
-        "<b>Предпросмотр:</b>\n\n"
-        f"{formatting.escape_html(text)}\n\n"
-        "Кому отправить уведомление?"
-    )
-    bot.send_message(
+    bot.send_rich_message(
         chat_id,
-        preview,
-        reply_markup=_custom_audience_keyboard(),
+        input_rich_message(
+            (
+                heading("Предпросмотр уведомления"),
+                notice(formatting.escape_html(text)),
+                heading("Получатели", level=3),
+                _custom_audience_buttons(),
+            )
+        ),
     )
 
 
@@ -283,15 +326,22 @@ def select_custom_notification_audience(
     bot.add_data(user_id, notification_audience=audience.value)
     with bot.retrieve_data(user_id) as data:
         text = data.get("notification_text", "")
-    bot.edit_message_text(
-        "<b>Предпросмотр:</b>\n\n"
-        f"{formatting.escape_html(text)}\n\n"
-        "Получатели: "
-        f"<b>{custom_notification_audience_title(audience)}</b>.\n\n"
-        "Выберите способ отправки.",
+    edit_rich_message(
+        bot,
         chat_id,
         message_id,
-        reply_markup=_custom_delivery_keyboard(),
+        input_rich_message(
+            (
+                heading("Предпросмотр уведомления"),
+                notice(formatting.escape_html(text)),
+                footer(
+                    "Получатели: "
+                    f"{custom_notification_audience_title(audience)}"
+                ),
+                heading("Способ отправки", level=3),
+                _custom_delivery_buttons(),
+            )
+        ),
     )
 
 

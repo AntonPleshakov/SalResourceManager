@@ -12,9 +12,14 @@ import tg.war as war
 from tg.handlers import HandlerRegistry
 from tg.metrics import observe_score_calculation
 from tg.rich import (
+    account_context,
+    back_button,
     button_row,
     callback_button,
+    details as rich_details,
     edit_rich_message,
+    heading,
+    highlight_metric,
     input_rich_message,
 )
 from tg.utils import format_points, get_ids, get_username
@@ -24,20 +29,20 @@ def _personal_war_points_text(user: UserData) -> str:
     logger.info("Calculating personal war points user_id=%s", user.user_id.value)
     with observe_score_calculation("personal_summary"):
         report = WarPointsCalculator().calculate([user], war.WAR_STAGES)
-    day_rows = []
+    day_blocks = []
     for day, points in report.points_by_day.items():
-        activities = "<br>".join(
-            f"{escape(activity.title)}: <b>{format_points(activity_points)}</b>"
+        activities = "".join(
+            f"<li>{escape(activity.title)}: "
+            f"<b>{format_points(activity_points)}</b></li>"
             for activity, activity_points in report.points_by_activity_by_day[
                 day
             ].items()
         )
-        day_rows.append(
-            "<tr>"
-            f'<td align="center"><b>{day}</b></td>'
-            f"<td>{activities}</td>"
-            f'<td align="right"><b>{format_points(points)}</b></td>'
-            "</tr>"
+        day_blocks.append(
+            rich_details(
+                f"День {day} — {format_points(points)}",
+                f"<ul>{activities}</ul>",
+            )
         )
     activity_rows = "".join(
         "<tr>"
@@ -48,25 +53,27 @@ def _personal_war_points_text(user: UserData) -> str:
     )
     return "".join(
         (
-            "<h2>Калькулятор очков войны</h2>",
-            "<p>Игровой аккаунт: "
-            f"<b>{escape(str(user.tag.value))}</b><br>"
-            "<i>Максимум по каждому дню</i></p>",
-            '<table bordered striped compact><caption>По дням</caption>',
-            "<tr><th>День</th><th>Активности</th><th>Очки</th></tr>",
-            *day_rows,
-            "</table>",
+            heading("Калькулятор очков войны"),
+            account_context(str(user.tag.value)),
+            highlight_metric("Итог за войну", format_points(report.total)),
+            heading("По дням", level=3),
+            "<p><i>Ресурсы для каждого дня сначала оцениваются "
+            "отдельно.</i></p>",
+            *day_blocks,
             '<table bordered compact><caption>Итого по активностям</caption>',
             "<tr><th>Активность</th><th>Очки</th></tr>",
             activity_rows,
             "<tr><th>Всего</th>"
             f'<th align="right">{format_points(report.total)}</th></tr>',
             "</table>",
-            "<details><summary>Как считается результат</summary>",
-            "<p>Максимум каждого дня считается отдельно. В итогах "
-            "расходуемые ресурсы учитываются один раз.</p>",
-            "<p>Расчёт сделан по вашим сохранённым ресурсам и "
-            "технологиям.</p></details>",
+            rich_details(
+                "Как считается результат",
+                "<p>Дневные оценки показывают максимум для каждого дня "
+                "по отдельности. Итог за войну учитывает расходуемые "
+                "ресурсы только один раз.</p>"
+                "<p>Расчёт сделан по сохранённым ресурсам и "
+                "технологиям.</p>",
+            ),
         )
     )
 
@@ -117,14 +124,12 @@ def _personal_war_activity_details_text(
         for index, points in enumerate(occurrence_points, start=1)
     )
     parts = [
-        f"<h2>{escape(activity.title)}</h2>",
-        "<p>Игровой аккаунт: "
-        f"<b>{escape(str(user.tag.value))}</b><br>"
-        f"Дни войны: {escape(_activity_days(war.WAR_STAGES, activity))}</p>",
+        heading(activity.title),
+        account_context(str(user.tag.value)),
+        f"<p>Дни войны: {escape(_activity_days(war.WAR_STAGES, activity))}</p>",
+        highlight_metric("Всего за войну", format_points(total_points)),
         '<table bordered compact><caption>Очки</caption>',
         occurrence_rows,
-        "<tr><th>Всего за войну</th>"
-        f'<th align="right">{format_points(total_points)}</th></tr>',
         "</table>",
     ]
     if activity == WarActivity.FORGE:
@@ -199,7 +204,7 @@ def personal_war_points(callback_query: CallbackQuery, bot: TeleBot) -> None:
             chat_id,
             message_id,
             [
-                "<h2>Калькулятор очков войны</h2>",
+                heading("Калькулятор очков войны"),
                 "<p>Сначала добавьте или выберите игровой аккаунт, затем "
                 "заполните его ресурсы, технологии и настройки питомцев.</p>",
                 button_row(
@@ -220,15 +225,7 @@ def personal_war_points(callback_query: CallbackQuery, bot: TeleBot) -> None:
                 button_row(
                     (callback_button("🐾 Настроить питомцев", "pets"),)
                 ),
-                button_row(
-                    (
-                        callback_button(
-                            "⬅️ Назад к очкам войны",
-                            "war_menu",
-                        ),
-                    ),
-                    align="left",
-                ),
+                back_button("⬅️ Очки войны", "war_menu"),
             ],
         )
         return
@@ -254,14 +251,7 @@ def personal_war_points(callback_query: CallbackQuery, bot: TeleBot) -> None:
             )
         ),
         button_row((callback_button("🐾 Настроить питомцев", "pets"),)),
-        button_row(
-            (
-                callback_button(
-                    "⬅️ Назад к очкам войны", "war_menu"
-                ),
-            ),
-            align="left",
-        ),
+        back_button("⬅️ Очки войны", "war_menu"),
     ]
     _edit_rich_message(bot, chat_id, message_id, parts)
 
@@ -279,9 +269,8 @@ def personal_war_details_menu(
     with observe_score_calculation("personal_details"):
         report = WarPointsCalculator().calculate([user], war.WAR_STAGES)
     parts = [
-        "<h2>Подробный расчёт</h2>",
-        "<p>Игровой аккаунт: "
-        f"<b>{escape(str(user.tag.value))}</b></p>",
+        heading("Подробный расчёт"),
+        account_context(str(user.tag.value)),
         "<p>Выберите активность, чтобы увидеть использованные ресурсы "
         "и формулу.</p>",
     ]
@@ -297,17 +286,7 @@ def personal_war_details_menu(
                 )
             )
         )
-    parts.append(
-        button_row(
-            (
-                callback_button(
-                    "⬅️ Назад к отчёту по дням",
-                    "war_calculator",
-                ),
-            ),
-            align="left",
-        )
-    )
+    parts.append(back_button("⬅️ Отчёт по дням", "war_calculator"))
     _edit_rich_message(bot, chat_id, message_id, parts)
 
 

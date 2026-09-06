@@ -2,22 +2,26 @@ from datetime import date
 from typing import Iterable, List
 
 from telebot import TeleBot, formatting
-from telebot.types import InlineKeyboardMarkup
-
-from common.datetime_utils import format_last_update, now
+from common.datetime_utils import format_last_update
 from db.initializer import get_user_data_db
 from logger.app_logger import logger
 from resources.user_data import UserData
 from tg.handlers import ActiveClan, ClanAdminContext, HandlerRegistry
+from tg.rich import (
+    back_button,
+    edit_rich_message,
+    heading,
+    highlight_metric,
+    input_rich_message,
+)
 from tg.utils import (
-    Button,
     format_user_identity,
     get_ids,
     get_username,
 )
 
 
-MAX_TELEGRAM_MESSAGE_LENGTH = 4_096
+MAX_RICH_MESSAGE_LENGTH = 30_000
 
 
 def _format_last_update(updated_on: date | None) -> str:
@@ -43,28 +47,30 @@ def build_last_updates_report(
         reverse=True,
     )
     user_blocks = [
-        f"• {_user_link(user)} — "
-        f"{_format_last_update(user.get_last_updated_on())}"
+        f"<p>{_user_link(user)}<br>"
+        f"<i>{_format_last_update(user.get_last_updated_on())}</i></p>"
         for user in sorted_users
     ]
-    header = (
-        f"<b>Последнее обновление аккаунтов "
-        f"(всего: {len(sorted_users)})</b>"
+    header = "".join(
+        (
+            heading("Последнее обновление аккаунтов"),
+            highlight_metric("Всего аккаунтов", str(len(sorted_users))),
+        )
     )
     if not user_blocks:
-        return f"{header}\n\nАккаунтов пока нет."
+        return f"{header}<p>Аккаунтов пока нет.</p>"
     return f"{header}\n\n" + "\n\n".join(user_blocks)
 
 
 def _split_report(report: str) -> List[str]:
-    if len(report) <= MAX_TELEGRAM_MESSAGE_LENGTH:
+    if len(report) <= MAX_RICH_MESSAGE_LENGTH:
         return [report]
 
     chunks: List[str] = []
     current = ""
     for block in report.split("\n\n"):
         candidate = f"{current}\n\n{block}" if current else block
-        if len(candidate) <= MAX_TELEGRAM_MESSAGE_LENGTH:
+        if len(candidate) <= MAX_RICH_MESSAGE_LENGTH:
             current = candidate
             continue
         if current:
@@ -83,8 +89,7 @@ def last_updates(context: ClanAdminContext) -> None:
     users = database.get_clan_users(context.group.group_id)
     report = build_last_updates_report(users)
     chunks = _split_report(report)
-    keyboard = InlineKeyboardMarkup(row_width=1)
-    keyboard.add(Button("⬅️ Назад в админ-панель", "admins").inline())
+    back = back_button("⬅️ Админ-панель", "admins")
 
     logger.info(
         "Last account updates requested by user_id=%s username=%s users=%d",
@@ -92,17 +97,21 @@ def last_updates(context: ClanAdminContext) -> None:
         get_username(callback_query),
         len(users),
     )
-    bot.edit_message_text(
-        chunks[0],
+    first_message = input_rich_message(
+        (chunks[0], back if len(chunks) == 1 else "")
+    )
+    edit_rich_message(
+        bot,
         chat_id,
         message_id,
-        reply_markup=keyboard if len(chunks) == 1 else None,
+        first_message,
     )
     for index, chunk in enumerate(chunks[1:], start=1):
-        bot.send_message(
+        bot.send_rich_message(
             chat_id,
-            chunk,
-            reply_markup=keyboard if index == len(chunks) - 1 else None,
+            input_rich_message(
+                (chunk, back if index == len(chunks) - 1 else "")
+            ),
         )
 
 

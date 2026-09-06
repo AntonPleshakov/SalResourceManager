@@ -1,5 +1,6 @@
 from contextlib import nullcontext
 from pathlib import Path
+import re
 
 import pytest
 from telebot.types import (
@@ -34,6 +35,16 @@ from tg.admins.common import (
 from tg.admins.del_admin import del_admin_approved, del_admin_options
 from tg.admins.rename_clan import rename_clan, request_clan_rename
 from tests.handler_context import clan_admin_context
+
+
+def rich_html(edit):
+    args, kwargs = edit
+    rich_message = kwargs.get("rich_message")
+    return rich_message.html if rich_message is not None else args[0]
+
+
+def rich_callback_data(html):
+    return re.findall(r'<tg-button[^>]+data="([^"]+)"', html)
 
 
 def make_callback(data: str = "approved") -> CallbackQuery:
@@ -163,13 +174,11 @@ def test_delete_admin_options_exclude_requester(monkeypatch):
 
     del_admin_options(clan_admin_context(callback, bot))
 
-    keyboard = bot.edits[0][1]["reply_markup"]
-    callback_data = [
-        button.callback_data
-        for row in keyboard.keyboard
-        for button in row
+    assert rich_callback_data(rich_html(bot.edits[0])) == [
+        "1",
+        "101",
+        "admins",
     ]
-    assert callback_data == ["1", "101", "admins"]
     assert bot.data["admin_group_title"] == "Test clan"
 
 
@@ -188,7 +197,7 @@ def test_admin_list_only_contains_selected_clan_admins(tmp_path, monkeypatch):
     callback = make_callback("admins/admins_list")
     admins_list(clan_admin_context(callback, bot, -100001, "Alpha"))
 
-    text = bot.edits[0][0][0]
+    text = rich_html(bot.edits[0])
     assert "requester" in text
     assert "alpha-admin" in text
     assert "beta-admin" not in text

@@ -1,4 +1,3 @@
-from html import escape
 from typing import Union
 
 from telebot import TeleBot
@@ -9,10 +8,15 @@ from logger.app_logger import logger
 from tg.onboarding import show_new_user_welcome
 from tg.releases import mark_current_release_seen, show_unseen_releases
 from tg.rich import (
+    account_context,
     button_row,
     callback_button,
     deliver_rich_message,
+    details,
+    footer,
+    heading,
     input_rich_message,
+    notice as rich_notice,
 )
 from tg.utils import get_ids, get_username
 
@@ -27,7 +31,9 @@ def _show_onboarding(
 
 
 def show_home_menu(
-    message: Union[Message, CallbackQuery], bot: TeleBot
+    message: Union[Message, CallbackQuery],
+    bot: TeleBot,
+    notice: str = "",
 ) -> None:
     user_id = get_ids(message)[0]
     database = get_user_data_db()
@@ -42,29 +48,16 @@ def show_home_menu(
         user_id,
         get_username(message),
     )
-    parts = ["<h2>Главное меню</h2>"]
+    parts = []
+    if notice:
+        parts.append(rich_notice(notice))
+    parts.append(heading("Главное меню"))
     if active_account is not None:
-        account_rows = [
-            "<tr><td>Игровой аккаунт</td>"
-            f"<td><b>{escape(active_account.tag)}</b></td></tr>"
-        ]
-        if active_account.clan_title:
-            account_rows.append(
-                "<tr><td>Клан</td>"
-                f"<td><b>{escape(active_account.clan_title)}</b></td></tr>"
-            )
-        if len(accounts) > 1:
-            account_rows.append(
-                "<tr><td>Всего аккаунтов</td>"
-                f'<td align="right"><b>{len(accounts)}</b></td></tr>'
-            )
-        parts.extend(
-            (
-                '<table compact><caption>Текущий выбор</caption>',
-                *account_rows,
-                "</table>",
-            )
+        parts.append(
+            account_context(active_account.tag, active_account.clan_title)
         )
+        if len(accounts) > 1:
+            parts.append(footer(f"Всего аккаунтов: {len(accounts)}"))
     parts.extend(
         (
             "<p>Выберите раздел.</p>",
@@ -82,9 +75,7 @@ def show_home_menu(
             button_row(
                 (
                     callback_button("🐾 Питомцы", "pets"),
-                    callback_button(
-                        "⚔️ Очки войны", "war_menu", style="primary"
-                    ),
+                    callback_button("⚔️ Очки войны", "war_menu"),
                 )
             ),
             button_row(
@@ -105,11 +96,14 @@ def show_home_menu(
             button_row((callback_button("🛠 Админ-панель", "admins"),))
         )
     parts.append(
-        "<details><summary>О напоминаниях</summary>"
-        "<p>Настройка влияет только на автоматическое уведомление по "
-        "понедельникам и не отключает сообщения администраторов.</p>"
-        "<p>Не выключайте уведомления от бота в Telegram, чтобы не "
-        "пропустить сообщения администраторов.</p></details>"
+        details(
+            "О напоминаниях",
+            "<p>Настройка влияет только на автоматическое уведомление "
+            "по понедельникам и не отключает сообщения "
+            "администраторов.</p>"
+            "<p>Не выключайте уведомления от бота в Telegram, чтобы не "
+            "пропустить сообщения администраторов.</p>",
+        )
     )
     deliver_rich_message(message, bot, input_rich_message(parts))
 
@@ -143,4 +137,8 @@ def toggle_reminders(callback_query: CallbackQuery, bot: TeleBot) -> None:
         user_id,
         get_username(callback_query),
     )
-    show_home_menu(callback_query, bot)
+    show_home_menu(
+        callback_query,
+        bot,
+        "✅ Напоминания включены." if enabled else "✅ Напоминания выключены.",
+    )

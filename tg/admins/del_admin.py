@@ -1,6 +1,5 @@
 from telebot import TeleBot, formatting
 from telebot.handler_backends import State, StatesGroup
-from telebot.types import InlineKeyboardMarkup
 
 from db.initializer import get_admins_db
 from logger.app_logger import logger
@@ -12,7 +11,17 @@ from tg.handlers import (
     HandlerRegistry,
 )
 from tg.navigation import home
-from tg.utils import Button, get_ids, get_user_link, get_username
+from tg.rich import (
+    back_button,
+    button_row,
+    callback_button,
+    confirmation_buttons,
+    edit_rich_message,
+    heading,
+    input_rich_message,
+    notice,
+)
+from tg.utils import get_ids, get_user_link, get_username
 
 
 class DelAdminStates(StatesGroup):
@@ -35,21 +44,31 @@ def del_admin_options(context: ClanAdminContext) -> None:
         get_username(callback_query),
         len(current_admins),
     )
-    keyboard = InlineKeyboardMarkup(row_width=1)
+    parts = [
+        heading("Отозвать права администратора"),
+        "<p>Выберите администратора. Собственные права отозвать здесь "
+        "нельзя.</p>",
+    ]
     for admin in current_admins:
-        keyboard.add(
-            Button(
-                f"🗑 {admin.username.value}",
-                str(admin.user_id.value),
-            ).inline()
+        parts.append(
+            button_row(
+                (
+                    callback_button(
+                        f"🗑 {admin.username.value}",
+                        str(admin.user_id.value),
+                    ),
+                )
+            )
         )
-    keyboard.add(Button("⬅️ Назад в админ-панель", "admins").inline())
+    if not current_admins:
+        parts.append(notice("Других администраторов в клане нет."))
+    parts.append(back_button("⬅️ Админ-панель", "admins"))
     user_id, chat_id, message_id = get_ids(callback_query)
-    bot.edit_message_text(
-        "Выберите пользователя, которого нужно лишить прав администратора.",
+    edit_rich_message(
+        bot,
         chat_id,
         message_id,
-        reply_markup=keyboard,
+        input_rich_message(parts),
     )
     bot.set_state(user_id, DelAdminStates.admin_id)
     bot.add_data(
@@ -77,17 +96,27 @@ def del_admin_confirmation(context: ClanAdminContext) -> None:
         bot.answer_callback_query(callback_query.id, "Администратор не найден")
         home(callback_query, bot)
         return
-    keyboard = InlineKeyboardMarkup()
-    keyboard.row(
-        Button("🗑 Да", f"approved/{admin.user_id.value}").inline(),
-        Button("✖️ Нет", "admins").inline(),
-    )
     user_id, chat_id, message_id = get_ids(callback_query)
-    bot.edit_message_text(
-        f"Лишить прав {get_user_link(admin.user_id.value, admin.username.value)}?",
+    edit_rich_message(
+        bot,
         chat_id,
         message_id,
-        reply_markup=keyboard,
+        input_rich_message(
+            (
+                heading("Отозвать права администратора?"),
+                f"<p>{get_user_link(admin.user_id.value, admin.username.value)}</p>",
+                notice(
+                    "Пользователь потеряет доступ к управлению этим кланом."
+                ),
+                confirmation_buttons(
+                    "🗑 Отозвать права",
+                    f"approved/{admin.user_id.value}",
+                    "✖️ Отмена",
+                    "admins",
+                    destructive=True,
+                ),
+            )
+        ),
     )
     bot.set_state(user_id, DelAdminStates.confirmed)
 

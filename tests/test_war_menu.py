@@ -169,15 +169,17 @@ def test_personal_war_calculator_uses_requesting_users_data(monkeypatch):
     text, _, _, markup = bot.edited[0]
     assert "Калькулятор очков войны" in text
     first_day_points = expected.points_by_day[1]
-    first_day_details = "<br>".join(
-        f"{activity.title}: <b>{format_points(points)}</b>"
+    first_day_details = "".join(
+        f"<li>{activity.title}: <b>{format_points(points)}</b></li>"
         for activity, points in expected.points_by_activity_by_day[1].items()
     )
-    assert f'<td align="center"><b>1</b></td>' in text
+    assert f"День 1 — {format_points(first_day_points)}" in text
     assert first_day_details in text
-    assert f'<td align="right"><b>{format_points(first_day_points)}</b></td>' in text
     assert "<caption>Итого по активностям</caption>" in text
-    assert f'<th align="right">{format_points(expected.total)}</th>' in text
+    assert (
+        f"<aside>Итог за войну<br><b>{format_points(expected.total)}</b></aside>"
+        in text
+    )
     buttons = rich_callback_data(text)
     assert "war_calculator/details" in buttons
     assert "resources" in buttons
@@ -312,7 +314,8 @@ def test_maximum_war_points_excludes_accounts_not_updated_since_monday(
     )
     text = bot.edited[0][0]
     assert (
-        f'<th align="right">{format_points(expected.total)}</th>' in text
+        f"<aside>Итог за войну<br><b>{format_points(expected.total)}</b></aside>"
+        in text
     )
     assert "<tr><td>Учтено</td><td align=\"right\"><b>2</b>" in text
     assert (

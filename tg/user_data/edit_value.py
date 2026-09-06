@@ -53,9 +53,10 @@ def _show_value_prompt(
         current_user.get_value(state.field_name),
     )
     bot.edit_message_text(
+        f"<b>{state.field.title}</b>\n\n"
         f"{account_line(current_user.tag.value)}"
-        f"Текущее значение: <b>{current_value}</b>\n\n"
-        f"Введите новое значение для «{state.field.title}».\n"
+        f"Сохранено сейчас: <b>{current_value}</b>\n\n"
+        "Отправьте новое значение.\n"
         f"{value_input_hint(state.field)}",
         chat_id,
         message_id,
@@ -91,8 +92,8 @@ def _reply_value_error(
     keyboard = InlineKeyboardMarkup(row_width=1)
     keyboard.add(Button("✖️ Отмена", state.section).inline())
     bot.edit_message_text(
-        f"⚠️ Значение для «{state.field.title}» не подходит: "
-        f"{escaped_error}\n\n"
+        f"⚠️ <b>Не удалось сохранить «{state.field.title}»</b>\n\n"
+        f"{escaped_error}.\n\n"
         f"Отправьте новое значение.{hint}",
         get_ids(message)[1],
         state.prompt_message_id,
@@ -239,7 +240,7 @@ def save_value(message: Message, bot: TeleBot) -> None:
         bot,
         state,
         current_user,
-        f"✅ {state.field.title}: <b>{displayed_value}</b> — значение зарегистрировано.",
+        f"✅ {state.field.title}: <b>{displayed_value}</b> — сохранено.",
     )
 
 
