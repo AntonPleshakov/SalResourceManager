@@ -40,18 +40,24 @@ def _war_points_text(clan_id: int, clan_title: str) -> str:
     accounted_users = [
         user for user in users if _resources_updated_since(user, cutoff)
     ]
-    stale_users_count = len(users) - len(accounted_users)
+    stale_users = [
+        user for user in users if not _resources_updated_since(user, cutoff)
+    ]
     clan_flasks = sum(user.flasks.value for user in users)
     logger.info(
         "Calculating war points users=%d accounted_users=%d "
         "stale_users=%d days=%d",
         len(users),
         len(accounted_users),
-        stale_users_count,
+        len(stale_users),
         len(war.WAR_STAGES),
     )
     with observe_score_calculation("public"):
         report = WarPointsCalculator().calculate(accounted_users, war.WAR_STAGES)
+        stale_report = WarPointsCalculator().calculate(
+            stale_users,
+            war.WAR_STAGES,
+        )
     logger.info("War points calculated")
     day_blocks = []
     for day, points in report.points_by_day.items():
@@ -61,14 +67,26 @@ def _war_points_text(clan_id: int, clan_title: str) -> str:
         )
         day_blocks.append(
             details(
-                f"День {day} — {format_points(points)}",
+                f"День {day} — {format_points(points)}"
+                + (
+                    f" ({format_points(stale_report.points_by_day[day])})"
+                    if stale_users
+                    else ""
+                ),
                 f"<ul>{activities}</ul>",
             )
         )
     activity_rows = "".join(
         "<tr>"
         f"<td>{escape(activity.title)}</td>"
-        f'<td align="right"><b>{format_points(points)}</b></td>'
+        f'<td align="right"><b>{format_points(points)}</b>'
+        + (
+            " <i>("
+            f"{format_points(stale_report.points_by_activity[activity])})</i>"
+            if stale_users
+            else ""
+        )
+        + "</td>"
         "</tr>"
         for activity, points in report.points_by_activity.items()
     )
@@ -76,6 +94,14 @@ def _war_points_text(clan_id: int, clan_title: str) -> str:
             heading("Максимальные очки войны"),
             f"<footer>Клан: {escape(clan_title)}</footer>",
             highlight_metric("Итог за войну", format_points(report.total)),
+            *(
+                (
+                    "<p>(По устаревшим данным — "
+                    f"<b>{format_points(stale_report.total)}</b> очков)</p>",
+                )
+                if stale_users
+                else ()
+            ),
             flasks_summary("Всего колб в клане", clan_flasks),
     ]
     if not accounted_users:
@@ -90,23 +116,37 @@ def _war_points_text(clan_id: int, clan_title: str) -> str:
             heading("По дням", level=3),
             "<p><b>Дневные оценки независимы и не суммируются.</b> "
             "Ресурсы для каждого дня сначала оцениваются отдельно.</p>",
+            *(
+                (
+                    "<p><i>В скобках указаны возможные очки по "
+                    "устаревшим данным.</i></p>",
+                )
+                if stale_users
+                else ()
+            ),
             *day_blocks,
             '<table bordered compact><caption>Итого по активностям</caption>',
             "<tr><th>Активность</th><th>Очки</th></tr>",
             activity_rows,
             "<tr><th>Всего</th>"
-            f'<th align="right">{format_points(report.total)}</th></tr>',
+            f'<th align="right">{format_points(report.total)}'
+            + (
+                f" <i>({format_points(stale_report.total)})</i>"
+                if stale_users
+                else ""
+            )
+            + "</th></tr>",
             "</table>",
             '<table compact><caption>Данные аккаунтов</caption>',
             "<tr><td>Учтено</td>"
             f'<td align="right"><b>{len(accounted_users)}</b></td></tr>',
-            "<tr><td>Не учтено</td>"
-            f'<td align="right"><b>{stale_users_count}</b></td></tr>',
+            "<tr><td>С устаревшими данными</td>"
+            f'<td align="right"><b>{len(stale_users)}</b></td></tr>',
             "</table>",
             details(
-                "Какие аккаунты не учитываются",
-                "<p>Аккаунты, у которых ни один ресурс не обновлён с "
-                "03:00 понедельника.</p>",
+                "Какие данные считаются устаревшими",
+                "<p>Устаревшими считаются данные аккаунтов, у которых ни "
+                "один ресурс не обновлён с 03:00 понедельника.</p>",
             ),
             details(
                 "Как считается результат",

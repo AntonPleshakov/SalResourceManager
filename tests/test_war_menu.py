@@ -282,7 +282,7 @@ def test_war_week_starts_at_three_on_monday():
     )
 
 
-def test_maximum_war_points_excludes_accounts_not_updated_since_monday(
+def test_maximum_war_points_reports_stale_accounts_separately(
     monkeypatch,
 ):
     current = UserData(user_id=42, username="current", hammers=300, flasks=100)
@@ -318,14 +318,40 @@ def test_maximum_war_points_excludes_accounts_not_updated_since_monday(
         [current, boundary],
         WAR_STAGES,
     )
+    expected_stale = WarPointsCalculator().calculate(
+        [stale, flasks_only],
+        WAR_STAGES,
+    )
     text = bot.edited[0][0]
     assert (
         f"<aside>Итог за войну<br><b>{format_points(expected.total)}</b></aside>"
         in text
     )
+    assert (
+        "(По устаревшим данным — "
+        f"<b>{format_points(expected_stale.total)}</b> очков)" in text
+    )
+    assert (
+        f"День 1 — {format_points(expected.points_by_day[1])} "
+        f"({format_points(expected_stale.points_by_day[1])})" in text
+    )
+    activity = next(iter(expected.points_by_activity))
+    assert (
+        f'<td>{activity.title}</td><td align="right">'
+        f"<b>{format_points(expected.points_by_activity[activity])}</b> "
+        "<i>("
+        f"{format_points(expected_stale.points_by_activity[activity])})</i>"
+        in text
+    )
+    assert "В скобках указаны возможные очки по устаревшим данным" in text
+    assert (
+        f'<th align="right">{format_points(expected.total)} '
+        f"<i>({format_points(expected_stale.total)})</i></th>" in text
+    )
     assert "<tr><td>Учтено</td><td align=\"right\"><b>2</b>" in text
     assert (
-        "<tr><td>Не учтено</td><td align=\"right\"><b>2</b>"
+        "<tr><td>С устаревшими данными</td>"
+        '<td align="right"><b>2</b>'
         in text
     )
     assert "Всего колб в клане" in text
