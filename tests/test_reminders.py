@@ -71,6 +71,7 @@ def test_weekly_reminder_mentions_received_resources():
     assert "за войну и личный турнир" in text
     assert "<li>Билетики навыков</li>" in text
     assert "<li>Молотки</li>" in text
+    assert "<li>Колбы</li>" in text
     assert "Шанс на доп. маунта" not in text
 
 

@@ -25,13 +25,19 @@ class GameAccount:
     clan_title: str = ""
 
 
-RESOURCE_FIELDS: Tuple[ResourceField, ...] = (
+WAR_RESOURCE_FIELDS: Tuple[ResourceField, ...] = (
     ResourceField("mount_keys", "Ключи маунтов"),
     ResourceField("skills", "Билетики навыков"),
     ResourceField("shells", "Скорлупа"),
     ResourceField("hammers", "Молотки"),
     ResourceField("pets", "Питомцы и яйца"),
     ResourceField("unmerged_mounts", "Необъединённые маунты"),
+)
+NON_SCORING_RESOURCE_FIELDS: Tuple[ResourceField, ...] = (
+    ResourceField("flasks", "Колбы"),
+)
+RESOURCE_FIELDS: Tuple[ResourceField, ...] = (
+    WAR_RESOURCE_FIELDS + NON_SCORING_RESOURCE_FIELDS
 )
 
 TECHNOLOGY_FIELDS: Tuple[ResourceField, ...] = (
@@ -51,16 +57,19 @@ PET_SETTINGS_FIELDS: Tuple[ResourceField, ...] = (
     ResourceField("hatch_batches_ultimate", "Пакеты Ultimate в день"),
     ResourceField("hatch_batches_mythic", "Пакеты Mythic в день"),
 )
-TRACKED_FIELDS: Tuple[ResourceField, ...] = RESOURCE_FIELDS + TECHNOLOGY_FIELDS
+TRACKED_FIELDS: Tuple[ResourceField, ...] = (
+    WAR_RESOURCE_FIELDS + TECHNOLOGY_FIELDS + NON_SCORING_RESOURCE_FIELDS
+)
 UPDATED_AT_FIELDS: Dict[str, str] = {
     field.name: f"{field.name}_updated_on" for field in TRACKED_FIELDS
 }
 
 EDITABLE_FIELDS: Dict[str, ResourceField] = {
-    field.name: field for field in TRACKED_FIELDS + PET_SETTINGS_FIELDS
+    field.name: field
+    for field in RESOURCE_FIELDS + TECHNOLOGY_FIELDS + PET_SETTINGS_FIELDS
 }
 THOUSAND_INPUT_FIELDS = frozenset(
-    {"mount_keys", "skills", "shells", "hammers"}
+    {"mount_keys", "skills", "shells", "flasks", "hammers"}
 )
 
 
@@ -154,6 +163,7 @@ class UserData(Parameters):
         mount_keys: int = 0,
         skills: int = 0,
         shells: int = 0,
+        flasks: int = 0,
         hammers: int = 0,
         pets: int = 0,
         unmerged_mounts: int = 0,
@@ -181,6 +191,7 @@ class UserData(Parameters):
         extra_egg_chance_updated_on: str = "",
         mount_summon_cost_updated_on: str = "",
         extra_mount_chance_updated_on: str = "",
+        flasks_updated_on: str = "",
     ):
         super().__init__()
         _initialize_user_data(self, locals())
@@ -231,6 +242,13 @@ class UserData(Parameters):
         return any(
             updated_on >= cutoff
             for field in RESOURCE_FIELDS
+            if (updated_on := self.get_updated_on(field.name)) is not None
+        )
+
+    def has_war_resource_updates_since(self, cutoff: date) -> bool:
+        return any(
+            updated_on >= cutoff
+            for field in WAR_RESOURCE_FIELDS
             if (updated_on := self.get_updated_on(field.name)) is not None
         )
 

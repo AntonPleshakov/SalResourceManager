@@ -232,6 +232,7 @@ def test_standard_notification_confirmation_is_compact_and_uses_snapshot(
         "mount_keys",
         "skills",
         "shells",
+        "flasks",
         "hammers",
         "pets",
         "unmerged_mounts",

@@ -79,6 +79,7 @@ def test_user_data_round_trip():
         mount_keys=1,
         skills=2,
         shells=3,
+        flasks=7,
         hammers=4,
         pets=5,
         unmerged_mounts=6,
@@ -98,6 +99,7 @@ def test_user_data_round_trip():
         "mount_keys",
         "skills",
         "shells",
+        "flasks",
         "hammers",
         "pets",
         "unmerged_mounts",
@@ -115,6 +117,7 @@ def test_user_data_round_trip():
         "hatch_batches_ultimate",
         "hatch_batches_mythic",
     }
+    assert "flasks" in user_data_resources.UPDATED_AT_FIELDS
 
 
 def test_resource_and_technology_menus_use_embedded_rich_buttons():
@@ -134,6 +137,8 @@ def test_resource_and_technology_menus_use_embedded_rich_buttons():
     assert "<h2>Ресурсы</h2>" in resources.rich_message.html
     assert "Лидер &lt;&amp; &quot;one&quot;" in resources.rich_message.html
     assert "Молотки: <b>2.50к</b>" in resources.rich_message.html
+    assert "Колбы: <b>0</b>" in resources.rich_message.html
+    assert 'data="user_data/edit/flasks"' in resources.rich_message.html
     assert 'data="user_data/edit/hammers"' in resources.rich_message.html
     assert 'data="user_data/fill/resources"' in resources.rich_message.html
     assert "<h2>Технологии</h2>" in technologies.rich_message.html
@@ -749,6 +754,7 @@ def test_parse_thousand_based_resource_value():
     assert parse_editable_field_value("mount_keys", "0.001") == 1
     assert parse_editable_field_value("mount_keys", "1") == 1
     assert parse_editable_field_value("mount_keys", "1к") == 1_000
+    assert parse_editable_field_value("flasks", "2.5к") == 2_500
     assert parse_editable_field_value("hammers", "120") == 120
     assert parse_editable_field_value("pets", "1 500") == 1_500
 

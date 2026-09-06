@@ -1,0 +1,5 @@
+ALTER TABLE user_data
+ADD COLUMN flasks INTEGER NOT NULL DEFAULT 0;
+
+ALTER TABLE user_data
+ADD COLUMN flasks_updated_on TEXT NOT NULL DEFAULT '';

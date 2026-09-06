@@ -23,6 +23,7 @@ from tg.rich import (
     input_rich_message,
 )
 from tg.utils import format_points, get_ids, get_username
+from tg.war.supplementary import flasks_summary
 
 
 def _personal_war_points_text(user: UserData) -> str:
@@ -56,6 +57,7 @@ def _personal_war_points_text(user: UserData) -> str:
             heading("Калькулятор очков войны"),
             account_context(str(user.tag.value)),
             highlight_metric("Итог за войну", format_points(report.total)),
+            flasks_summary("Колбы аккаунта", user.flasks.value),
             heading("По дням", level=3),
             "<p><b>Дневные оценки независимы и не суммируются.</b> "
             "Ресурсы для каждого дня сначала оцениваются отдельно.</p>",

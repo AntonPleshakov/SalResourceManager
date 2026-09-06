@@ -22,6 +22,7 @@ from tg.rich import (
 )
 from tg.user_data.common import prompt_for_account_clan
 from tg.utils import format_points, get_ids, get_username
+from tg.war.supplementary import flasks_summary
 
 
 def _war_week_started_on(reference: datetime) -> date:
@@ -29,7 +30,7 @@ def _war_week_started_on(reference: datetime) -> date:
 
 
 def _resources_updated_since(user: UserData, cutoff: date) -> bool:
-    return user.has_resource_updates_since(cutoff)
+    return user.has_war_resource_updates_since(cutoff)
 
 
 def _war_points_text(clan_id: int, clan_title: str) -> str:
@@ -40,6 +41,7 @@ def _war_points_text(clan_id: int, clan_title: str) -> str:
         user for user in users if _resources_updated_since(user, cutoff)
     ]
     stale_users_count = len(users) - len(accounted_users)
+    clan_flasks = sum(user.flasks.value for user in users)
     logger.info(
         "Calculating war points users=%d accounted_users=%d "
         "stale_users=%d days=%d",
@@ -74,6 +76,7 @@ def _war_points_text(clan_id: int, clan_title: str) -> str:
             heading("Максимальные очки войны"),
             f"<footer>Клан: {escape(clan_title)}</footer>",
             highlight_metric("Итог за войну", format_points(report.total)),
+            flasks_summary("Всего колб в клане", clan_flasks),
     ]
     if not accounted_users:
         parts.append(

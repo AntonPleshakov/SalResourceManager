@@ -151,6 +151,7 @@ def test_personal_war_calculator_uses_requesting_users_data(monkeypatch):
         mount_keys=2500,
         skills=1000,
         shells=400,
+        flasks=1_250,
         hammers=300,
         pets=2,
         unmerged_mounts=3,
@@ -176,6 +177,8 @@ def test_personal_war_calculator_uses_requesting_users_data(monkeypatch):
     assert f"День 1 — {format_points(first_day_points)}" in text
     assert first_day_details in text
     assert "<caption>Итого по активностям</caption>" in text
+    assert "Колбы аккаунта" in text
+    assert "1.25к" in text
     assert (
         f"<aside>Итог за войну<br><b>{format_points(expected.total)}</b></aside>"
         in text
@@ -279,17 +282,17 @@ def test_war_week_starts_at_three_on_monday():
 def test_maximum_war_points_excludes_accounts_not_updated_since_monday(
     monkeypatch,
 ):
-    current = UserData(user_id=42, username="current", hammers=300)
-    boundary = UserData(user_id=43, username="boundary", hammers=200)
-    stale = UserData(user_id=44, username="stale", hammers=500)
-    technology_only = UserData(
-        user_id=45, username="technology", hammers=700
+    current = UserData(user_id=42, username="current", hammers=300, flasks=100)
+    boundary = UserData(user_id=43, username="boundary", hammers=200, flasks=200)
+    stale = UserData(user_id=44, username="stale", hammers=500, flasks=300)
+    flasks_only = UserData(
+        user_id=45, username="flasks", hammers=700, flasks=1_400
     )
     current.mark_updated("hammers", date(2026, 8, 14))
     boundary.mark_updated("hammers", date(2026, 8, 10))
     stale.mark_updated("hammers", date(2026, 8, 9))
-    technology_only.mark_updated("forge_level", date(2026, 8, 14))
-    users = [current, boundary, stale, technology_only]
+    flasks_only.mark_updated("flasks", date(2026, 8, 14))
+    users = [current, boundary, stale, flasks_only]
     monkeypatch.setattr(
         "tg.war.get_user_data_db",
         lambda: SimpleNamespace(
@@ -322,6 +325,8 @@ def test_maximum_war_points_excludes_accounts_not_updated_since_monday(
         "<tr><td>Не учтено</td><td align=\"right\"><b>2</b>"
         in text
     )
+    assert "Всего колб в клане" in text
+    assert "2.00к" in text
     assert "ни один ресурс не обновлён с 03:00 понедельника" in text
 
 

@@ -107,6 +107,7 @@ def test_initial_migrations_have_one_global_continuous_history():
         "0010_add_clans",
         "0011_allow_unassigned_accounts",
         "0012_add_clan_google_sheets",
+        "0013_add_flasks",
     ]
     assert all(
         "IF NOT EXISTS" not in migration.path.read_text(encoding="utf-8").upper()
@@ -131,9 +132,9 @@ def test_runner_applies_only_pending_migrations(tmp_path):
 
     assert [migration.version for migration in first_applied] == [1, 2]
     assert [migration.version for migration in second_applied] == [
-        3, 4, 5, 6, 7, 8, 9, 10, 11, 12
+        3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13
     ]
-    assert final_version == 12
+    assert final_version == 13
 
 
 def test_war_stages_table_is_removed_from_final_schema(tmp_path):
@@ -202,6 +203,7 @@ def test_game_account_migration_preserves_every_value_for_every_user(tmp_path):
         "0010_add_clans",
         "0011_allow_unassigned_accounts",
         "0012_add_clan_google_sheets",
+        "0013_add_flasks",
     ]
     expected_rows = [
         (
@@ -250,6 +252,8 @@ def test_game_account_migration_builds_expected_schema_and_constraints(tmp_path)
     assert [column[1] for column in columns] == [
         "account_id",
         *MIGRATED_DATA_COLUMNS,
+        "flasks",
+        "flasks_updated_on",
     ]
     assert columns[0][5] == 1
     assert all(column[3] == 1 for column in columns[1:])
@@ -292,10 +296,12 @@ def test_game_account_migration_is_idempotent_after_success(tmp_path):
         ).fetchall()
         version = connection.execute("PRAGMA user_version").fetchone()[0]
 
-    assert [migration.version for migration in first_applied] == [8, 9, 10, 11, 12]
+    assert [migration.version for migration in first_applied] == [
+        8, 9, 10, 11, 12, 13
+    ]
     assert second_applied == ()
     assert snapshot_after == snapshot_before
-    assert version == 12
+    assert version == 13
 
 
 def test_game_account_migration_rolls_back_drop_table_on_late_failure(tmp_path):
@@ -384,7 +390,7 @@ def test_runner_rejects_a_gap_in_migration_versions(tmp_path):
 
 def test_runner_rejects_a_database_from_a_newer_application(tmp_path):
     with sqlite3.connect(tmp_path / "database.db") as connection:
-        connection.execute("PRAGMA user_version = 13")
+        connection.execute("PRAGMA user_version = 14")
 
         with pytest.raises(MigrationError, match="newer than supported"):
             apply_migrations(connection)
