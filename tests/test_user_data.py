@@ -5,6 +5,7 @@ from pathlib import Path
 import re
 from types import SimpleNamespace
 
+import pytest
 from telebot.types import CallbackQuery, Chat, Message, User
 
 from config.config import reset_config
@@ -83,6 +84,7 @@ def test_user_data_round_trip():
         hammers=4,
         pets=5,
         unmerged_mounts=6,
+        free_equipment_chance=7,
         skill_summon_cost=8,
         extra_egg_chance=9,
         mount_summon_cost=10,
@@ -104,6 +106,7 @@ def test_user_data_round_trip():
         "pets",
         "unmerged_mounts",
         "forge_level",
+        "free_equipment_chance",
         "skill_summon_cost",
         "extra_egg_chance",
         "mount_summon_cost",
@@ -143,6 +146,10 @@ def test_resource_and_technology_menus_use_embedded_rich_buttons():
     assert 'data="user_data/fill/resources"' in resources.rich_message.html
     assert "<h2>Технологии</h2>" in technologies.rich_message.html
     assert 'data="user_data/edit/forge_level"' in technologies.rich_message.html
+    assert (
+        'data="user_data/edit/free_equipment_chance"'
+        in technologies.rich_message.html
+    )
     assert 'data="user_data/fill/technologies"' in technologies.rich_message.html
 
 
@@ -357,6 +364,22 @@ def test_database_rejects_excessive_skill_summon_cost_reduction(tmp_path):
     connection.close()
 
 
+def test_database_rejects_excessive_free_equipment_chance(tmp_path):
+    connection = Database(tmp_path / "database.db")
+    database = UserDataDB(connection)
+
+    with pytest.raises(
+        ValueError,
+        match="Шанс бесплатно создать снаряжение должен быть от 0 до 25%",
+    ):
+        database.set_value(42, "tester", "free_equipment_chance", 26)
+
+    assert database.set_value(
+        42, "tester", "free_equipment_chance", 25
+    ).free_equipment_chance.value == 25
+    connection.close()
+
+
 def test_database_rejects_excessive_mount_summon_cost_reduction(tmp_path):
     connection = Database(tmp_path / "database.db")
     database = UserDataDB(connection)
@@ -429,6 +452,22 @@ def test_war_points_calculator_applies_fixed_forging_rule():
         1: {WarActivity.FORGING: 6}
     }
     assert report.total == 6
+
+
+def test_forging_applies_free_equipment_chance():
+    user = UserData(
+        user_id=42,
+        forge_level=1,
+        hammers=3,
+        free_equipment_chance=25,
+    )
+
+    report = WarPointsCalculator().calculate(
+        [user], {1: (WarActivity.FORGING,)}
+    )
+
+    assert report.points_by_day == {1: 8}
+    assert report.total == 8
 
 
 def test_war_points_calculator_reports_each_activity_separately():
@@ -780,6 +819,9 @@ def test_value_input_hints_show_actual_limits():
         "Введите целое число от 1 до 35."
     )
     assert _value_input_hint(EDITABLE_FIELDS["skill_summon_cost"]) == (
+        "Введите целое число от 0 до 25 (%)."
+    )
+    assert _value_input_hint(EDITABLE_FIELDS["free_equipment_chance"]) == (
         "Введите целое число от 0 до 25 (%)."
     )
     assert _value_input_hint(EDITABLE_FIELDS["extra_mount_chance"]) == (

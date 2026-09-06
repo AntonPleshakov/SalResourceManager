@@ -216,6 +216,7 @@ def test_personal_war_activity_details_explain_resources_and_formula(monkeypatch
         username="tester",
         forge_level=10,
         hammers=300,
+        free_equipment_chance=25,
     )
     monkeypatch.setattr("tg.war.get_user_data_db", lambda: FakeUserDataDB(user))
     bot = FakeBot()
@@ -230,7 +231,9 @@ def test_personal_war_activity_details_explain_resources_and_formula(monkeypatch
     assert "Дни войны: 1, 3, 5" in text
     assert "Молотки: 300" in text
     assert "Уровень кузницы: 10" in text
-    assert "Средние очки за один молоток" in text
+    assert "Шанс бесплатно создать снаряжение: 25%" in text
+    assert "Ожидаемые создания снаряжения: 300 ÷ (100 − 25)% = 400" in text
+    assert "Средние очки за одно снаряжение" in text
     assert "очков" in text
     assert rich_callback_data(text) == [
         "war_calculator/details",

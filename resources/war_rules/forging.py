@@ -59,27 +59,38 @@ def weapon_points(weapon_index: int) -> int:
     return 5
 
 
-def _expected_points_per_hammer(forge_level: int) -> Decimal:
+def _expected_points_per_creation(forge_level: int) -> Decimal:
     chances = forge_weapon_chances(forge_level)
     return sum(
         Decimal(str(chance)) * weapon_points(weapon_index) / Decimal("100")
         for weapon_index, chance in enumerate(chances)
     )
 
+
 def explain_forging_points(user: UserData) -> ActivityDetails:
-    expected_points = _expected_points_per_hammer(user.forge_level.value)
-    points = Decimal(user.hammers.value) * expected_points
+    hammers = Decimal(user.hammers.value)
+    free_chance = Decimal(user.free_equipment_chance.value)
+    paid_creation_chance = (Decimal("100") - free_chance) / Decimal("100")
+    expected_creations = hammers / paid_creation_chance
+    expected_points = _expected_points_per_creation(user.forge_level.value)
+    points = expected_creations * expected_points
     return ActivityDetails(
         consumable_points=points,
         repeatable_points=Decimal("0"),
         inputs=(
             f"Молотки: {format_calculation_number(user.hammers.value)}",
             f"Уровень кузницы: {user.forge_level.value}",
+            f"Шанс бесплатно создать снаряжение: "
+            f"{format_calculation_number(free_chance)}%",
         ),
         calculations=(
-            "Средние очки за один молоток с учётом шансов оружия: "
+            f"Ожидаемые создания снаряжения: "
+            f"{format_calculation_number(hammers)} ÷ "
+            f"(100 − {format_calculation_number(free_chance)})% = "
+            f"{format_calculation_number(expected_creations)}",
+            "Средние очки за одно снаряжение с учётом шансов: "
             f"{format_calculation_number(expected_points)}",
-            f"{format_calculation_number(user.hammers.value)} × "
+            f"{format_calculation_number(expected_creations)} × "
             f"{format_calculation_number(expected_points)} = "
             f"{format_calculation_number(points)} очков",
         ),

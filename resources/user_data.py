@@ -46,6 +46,10 @@ TECHNOLOGY_FIELDS: Tuple[ResourceField, ...] = (
     ResourceField("extra_egg_chance", "Доп. шанс на яйцо"),
     ResourceField("mount_summon_cost", "Снижение стоимости призыва маунта (%)"),
     ResourceField("extra_mount_chance", "Шанс на доп. маунта"),
+    ResourceField(
+        "free_equipment_chance",
+        "Шанс бесплатно создать снаряжение (%)",
+    ),
 )
 PET_SETTINGS_FIELDS: Tuple[ResourceField, ...] = (
     ResourceField("eggs_per_hatch_batch", "Яиц в одном пакете"),
@@ -80,6 +84,10 @@ def validate_editable_field_value(field_name: str, value: int) -> int:
         raise ValueError("Нужно ввести целое неотрицательное число")
     if field_name == "forge_level" and not 1 <= value <= 35:
         raise ValueError("Уровень кузницы должен быть от 1 до 35")
+    if field_name == "free_equipment_chance" and not 0 <= value <= 25:
+        raise ValueError(
+            "Шанс бесплатно создать снаряжение должен быть от 0 до 25%"
+        )
     if field_name == "skill_summon_cost" and not 0 <= value <= 25:
         raise ValueError(
             "Снижение стоимости призыва навыков должно быть от 0 до 25%"
@@ -168,6 +176,7 @@ class UserData(Parameters):
         pets: int = 0,
         unmerged_mounts: int = 0,
         forge_level: int = 1,
+        free_equipment_chance: int = 0,
         skill_summon_cost: int = 0,
         extra_egg_chance: int = 0,
         mount_summon_cost: int = 0,
@@ -187,6 +196,7 @@ class UserData(Parameters):
         pets_updated_on: str = "",
         unmerged_mounts_updated_on: str = "",
         forge_level_updated_on: str = "",
+        free_equipment_chance_updated_on: str = "",
         skill_summon_cost_updated_on: str = "",
         extra_egg_chance_updated_on: str = "",
         mount_summon_cost_updated_on: str = "",
