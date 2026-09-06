@@ -28,10 +28,8 @@ GOOGLE_OAUTH_SCOPES = (
     "https://www.googleapis.com/auth/drive",
 )
 USER_DATA_PAGE_NAME = "User data"
-_TRACKED_FIELD_BY_UPDATE_FIELD = {
-    update_field: tracked_field
-    for tracked_field, update_field in UPDATED_AT_FIELDS.items()
-}
+_ID_FIELDS = frozenset({"account_id", "user_id"})
+_UPDATE_FIELDS = frozenset(UPDATED_AT_FIELDS.values())
 _DRIVE_API_BASE_URL = "https://www.googleapis.com/drive/v3/files"
 _GOOGLE_SPREADSHEET_MIME_TYPE = "application/vnd.google-apps.spreadsheet"
 
@@ -43,7 +41,13 @@ class GoogleAccessProposal:
 
 
 class GameDataReport:
-    HEADER = [UserData().params_views()]
+    HEADER = [
+        [
+            parameter.view
+            for name, parameter in UserData().params().items()
+            if name not in _ID_FIELDS | _UPDATE_FIELDS
+        ]
+    ]
     _creation_locks: dict[int, Lock] = {}
     _creation_locks_guard = Lock()
 
@@ -228,13 +232,17 @@ class GameDataReport:
 
     @staticmethod
     def _to_report_row(user: UserData) -> list[str]:
-        row = user.to_row()
-        for index, parameter_name in enumerate(user.params()):
-            tracked_field = _TRACKED_FIELD_BY_UPDATE_FIELD.get(parameter_name)
-            if tracked_field is None:
+        row = []
+        for parameter_name, parameter in user.params().items():
+            if parameter_name in _ID_FIELDS | _UPDATE_FIELDS:
                 continue
-            updated_on = user.get_updated_on(tracked_field)
-            row[index] = format_last_update(updated_on)
+            value = parameter.value_repr()
+            if parameter_name in UPDATED_AT_FIELDS:
+                updated_on = format_last_update(
+                    user.get_updated_on(parameter_name)
+                )
+                value = f"{value}\n{updated_on}"
+            row.append(value)
         return row
 
     @classmethod

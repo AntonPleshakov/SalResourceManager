@@ -13,7 +13,7 @@ from pygsheets.exceptions import WorksheetNotFound
 
 reset_config(str(Path(__file__).parents[1] / "config" / "config_template.ini"))
 
-from resources.user_data import UPDATED_AT_FIELDS, UserData
+from resources.user_data import UserData
 from reports.game_data import (
     GameDataReport,
     GoogleAccessProposal,
@@ -248,14 +248,13 @@ def test_report_replaces_google_worksheet_with_sqlite_snapshot(monkeypatch):
     assert spreadsheet.requested_worksheet == USER_DATA_PAGE_NAME
     assert worksheet.cleared
     assert worksheet.start == "A1"
-    expected_row = users[0].to_row()
-    parameter_names = list(users[0].params())
-    for update_field in UPDATED_AT_FIELDS.values():
-        expected_row[parameter_names.index(update_field)] = "никогда"
-    expected_row[parameter_names.index("pets_updated_on")] = (
-        "сегодня (02.08.2026)"
-    )
+    expected_row = GameDataReport._to_report_row(users[0])
     assert worksheet.values == GameDataReport.HEADER + [expected_row]
+    headers = GameDataReport.HEADER[0]
+    assert "Игровой аккаунт ID" not in headers
+    assert "Telegram ID" not in headers
+    assert not any("обновлено" in header for header in headers)
+    assert "7\nсегодня (02.08.2026)" in expected_row
     assert worksheet.extend
     assert worksheet.shown_dimensions == [(1, worksheet.cols, "COLUMNS")]
     assert worksheet.frozen_rows == 1
