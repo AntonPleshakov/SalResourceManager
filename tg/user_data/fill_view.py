@@ -8,7 +8,7 @@ from tg.user_data.common import value_input_hint
 from tg.user_data.editing_common import (
     FillState,
     account_line,
-    format_field_value,
+    format_field_input_value,
 )
 from tg.utils import Button, get_ids
 
@@ -29,7 +29,7 @@ def fill_prompt(
 ) -> str:
     state = context.state
     field = state.current_field
-    current_value = format_field_value(
+    current_value = format_field_input_value(
         field,
         context.current_user.get_value(field.name),
     )
@@ -42,7 +42,7 @@ def fill_prompt(
         f"{account_line(state.account_tag)}"
         f"{error_line}"
         f"Сохранено сейчас: <b>{current_value}</b>\n\n"
-        "Отправьте новое значение.\n"
+        "Отправьте новое значение — оно сохранится сразу.\n"
         f"{value_input_hint(field)}\n\n"
         "Чтобы ничего не менять, нажмите «Пропустить»."
     )
@@ -50,9 +50,17 @@ def fill_prompt(
 
 def fill_keyboard(state: FillState) -> InlineKeyboardMarkup:
     keyboard = InlineKeyboardMarkup()
+    step_buttons = []
+    if state.index > 0:
+        step_buttons.append(
+            Button("⬅️ Назад", "user_data/fill/back").inline()
+        )
+    step_buttons.append(
+        Button("⏭ Пропустить", "user_data/fill/skip").inline()
+    )
+    keyboard.row(*step_buttons)
     keyboard.row(
-        Button("⏭ Пропустить", "user_data/fill/skip").inline(),
-        Button("✅ Завершить", state.config.finish_callback).inline(),
+        Button("✅ Закончить сейчас", "user_data/fill/finish").inline()
     )
     return keyboard
 

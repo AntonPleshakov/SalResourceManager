@@ -163,11 +163,25 @@ def _cleared_batch_counts(user, level: EggLevel):
 
 
 def _apply_max_egg_level(
-    callback_query: CallbackQuery, bot: TeleBot, level: EggLevel
+    callback_query: CallbackQuery,
+    bot: TeleBot,
+    level: EggLevel,
+    expected_account_id: int | None = None,
 ) -> None:
     user_id = get_ids(callback_query)[0]
     user = get_active_user_or_prompt(callback_query, bot)
     if user is None:
+        return
+    if (
+        expected_account_id is not None
+        and user.account_id.value != expected_account_id
+    ):
+        bot.answer_callback_query(
+            callback_query.id,
+            "Аккаунт изменился. Повторите действие для текущего аккаунта.",
+            show_alert=True,
+        )
+        pets_menu(callback_query, bot)
         return
 
     values = {"max_egg_level": level.value}
@@ -225,7 +239,8 @@ def save_max_egg_level(callback_query: CallbackQuery, bot: TeleBot) -> None:
                     rich_notice("Это действие нельзя отменить."),
                     confirmation_buttons(
                         "⚠️ Понизить и обнулить",
-                        f"pets/max_level/confirm/{level.value}",
+                        "pets/max_level/confirm/"
+                        f"{user.account_id.value}/{level.value}",
                         "✖️ Отмена",
                         "pets/max_level",
                         destructive=True,
@@ -242,7 +257,21 @@ def confirm_max_egg_level(callback_query: CallbackQuery, bot: TeleBot) -> None:
     level = _selected_egg_level(callback_query, bot)
     if level is None:
         return
-    _apply_max_egg_level(callback_query, bot, level)
+    try:
+        expected_account_id = int(callback_query.data.split("/")[-2])
+    except (IndexError, ValueError):
+        bot.answer_callback_query(
+            callback_query.id,
+            "Не удалось определить аккаунт",
+            show_alert=True,
+        )
+        return
+    _apply_max_egg_level(
+        callback_query,
+        bot,
+        level,
+        expected_account_id,
+    )
 
 
 def hatch_batches_menu(callback_query: CallbackQuery, bot: TeleBot) -> None:
@@ -265,20 +294,25 @@ def hatch_batches_menu(callback_query: CallbackQuery, bot: TeleBot) -> None:
         if level > max_level:
             continue
         count = getattr(user, level.batch_field_name).value
-        parts.append(
-            button_row(
-                (
-                    callback_button(
-                        "−", f"pets/batches/{level.value}/minus"
-                    ),
-                    callback_button(
-                        f"{level.color_icon} {level.russian_name}: {count}",
-                        "pets/batches",
-                    ),
-                    callback_button(
-                        "+", f"pets/batches/{level.value}/plus"
-                    ),
-                )
+        parts.extend(
+            (
+                heading(
+                    f"{level.color_icon} {level.russian_name}", level=3
+                ),
+                button_row(
+                    (
+                        callback_button(
+                            "−", f"pets/batches/{level.value}/minus"
+                        ),
+                        callback_button(
+                            str(count),
+                            "pets/batches",
+                        ),
+                        callback_button(
+                            "+", f"pets/batches/{level.value}/plus"
+                        ),
+                    )
+                ),
             )
         )
     parts.extend(
@@ -350,7 +384,7 @@ def register_handlers(bot: TeleBot) -> None:
     )
     handlers.private_callback(
         confirm_max_egg_level,
-        button=r"pets/max_level/confirm/[1-6]",
+        button=r"pets/max_level/confirm/[0-9]+/[1-6]",
     )
     handlers.private_callback(
         hatch_batches_menu,

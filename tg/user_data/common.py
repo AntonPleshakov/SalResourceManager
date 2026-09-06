@@ -33,8 +33,10 @@ from tg.rich import (
     button_row,
     callback_button,
     deliver_rich_message,
+    details,
     edit_rich_message,
     heading,
+    highlight_metric,
     input_rich_message,
     notice as rich_notice,
 )
@@ -95,6 +97,7 @@ def build_clan_selection_message(
     callback_prefix: str,
     *,
     title: str,
+    callback_suffix: str = "",
     cancel_callback: str | None = None,
     empty_message: str = (
         "Не найден зарегистрированный клан, в котором вы состоите."
@@ -112,7 +115,8 @@ def build_clan_selection_message(
                     (
                         callback_button(
                             f"🏰 {group.title}",
-                            f"{callback_prefix}/{group.group_id}",
+                            f"{callback_prefix}/{group.group_id}"
+                            f"{callback_suffix}",
                         ),
                     )
                 )
@@ -128,6 +132,7 @@ def prompt_for_account_clan(
     message: Union[Message, CallbackQuery],
     bot: TeleBot,
     account_id: int | None,
+    destination: str = "accounts",
 ) -> None:
     user_id = get_ids(message)[0]
     database = user_data.get_user_data_db()
@@ -163,7 +168,16 @@ def prompt_for_account_clan(
         target_groups,
         callback_prefix,
         title=title,
-        cancel_callback="accounts" if account_id is not None else None,
+        callback_suffix=(
+            f"/{destination}"
+            if account_id is not None and destination != "accounts"
+            else ""
+        ),
+        cancel_callback=(
+            f"accounts/{destination}"
+            if account_id is not None and destination != "accounts"
+            else "accounts" if account_id is not None else None
+        ),
         empty_message=(
             "Нет других доступных кланов для этого аккаунта."
             if current_clan_id is not None
@@ -171,6 +185,33 @@ def prompt_for_account_clan(
         ),
     )
     deliver_rich_message(message, bot, rich_message)
+
+
+def _requested_data_destination(
+    message: Union[Message, CallbackQuery],
+) -> str:
+    if not isinstance(message, CallbackQuery):
+        return "accounts"
+    data = message.data
+    candidate = data.split("/")[-1]
+    if candidate in {"resources", "technologies", "pets", "war_calculator"}:
+        return candidate
+    if data.startswith("user_data/edit/"):
+        field_name = candidate
+        if field_name == "eggs_per_hatch_batch":
+            return "pets"
+        if field_name in {field.name for field in RESOURCE_FIELDS}:
+            return "resources"
+        return "technologies"
+    if data.startswith("user_data/fill/technologies"):
+        return "technologies"
+    if data.startswith("user_data/fill/"):
+        return "resources"
+    if data.startswith("pets"):
+        return "pets"
+    if data.startswith("war_calculator"):
+        return "war_calculator"
+    return "accounts"
 
 
 def ensure_active_user(
@@ -203,6 +244,7 @@ def ensure_active_user(
         message,
         bot,
         None if account is None else account.account_id,
+        _requested_data_destination(message),
     )
     return ActiveUserResult(
         None,
@@ -228,6 +270,18 @@ def _field_update_details(user: UserData, field: ResourceField) -> str:
     return f"<br><i>Обновлено: {updated_label}</i>"
 
 
+def _section_freshness(user: UserData, fields: Sequence[ResourceField]) -> str:
+    tracked_fields = tuple(field for field in fields if field in TRACKED_FIELDS)
+    if not tracked_fields:
+        return ""
+    cutoff = week_started_on(now())
+    current = user.fields_updated_count_since(tracked_fields, cutoff)
+    return highlight_metric(
+        "Актуально с понедельника",
+        f"{current} из {len(tracked_fields)}",
+    )
+
+
 def build_section_menu(
     user: UserData,
     title: str,
@@ -242,19 +296,20 @@ def build_section_menu(
         (
             heading(title),
             account_context(str(user.tag.value)),
+            _section_freshness(user, fields),
         )
     )
     for field in fields:
         value = user.get_value(field.name)
         if field in RESOURCE_FIELDS and Decimal(value) >= Decimal("1000"):
             value = format_points(Decimal(value))
-        details = ""
+        field_details = ""
         if field in TRACKED_FIELDS:
-            details = _field_update_details(user, field)
+            field_details = _field_update_details(user, field)
         parts.append(
             "<p>"
             f"{escape(field.title)}: <b>{escape(str(value))}</b>"
-            f"{details}<br>"
+            f"{field_details}<br>"
             f"{callback_button('✏️ Изменить', f'user_data/edit/{field.name}')}"
             "</p>"
         )
@@ -272,6 +327,23 @@ def build_section_menu(
             )
         )
     )
+    if section == "resources":
+        parts.append(
+            details(
+                "Как определяется актуальность",
+                "<p>Счётчик показывает, сколько ресурсов обновлено с "
+                "03:00 понедельника. Для общего расчёта аккаунт включается, "
+                "если за это время обновлён хотя бы один ресурс.</p>",
+            )
+        )
+    elif section == "technologies":
+        parts.append(
+            details(
+                "Когда обновлять технологии",
+                "<p>Технологии не определяют свежесть ресурсов. Обновляйте "
+                "их после изменения уровней или бонусов.</p>",
+            )
+        )
     parts.append(back_button("⬅️ Главное меню", "home"))
     return MenuContent(rich_message=input_rich_message(parts))
 
@@ -355,5 +427,8 @@ def value_input_hint(field: ResourceField) -> str:
     if field.name == "extra_mount_chance":
         return "Введите целое число от 0 до 50 (%)."
     if field.name in THOUSAND_INPUT_FIELDS:
-        return "Введите число в тысячах: 0.12 или 0,12 = 120."
+        return (
+            "Введите точное количество, например 120. Тысячи можно "
+            "записать как 1.5, 1,5 или 1.5к = 1 500."
+        )
     return "Введите целое неотрицательное число."

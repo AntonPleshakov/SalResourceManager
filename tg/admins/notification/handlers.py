@@ -7,6 +7,7 @@ from tg.handlers import ActiveClan, ClanFromState, HandlerRegistry
 def register_handlers(bot: TeleBot) -> None:
     from tg.admins.notifications import (
         confirm_standard_notification,
+        edit_custom_notification_audience,
         notifications_menu,
         receive_custom_notification_text,
         request_custom_notification,
@@ -48,6 +49,12 @@ def register_handlers(bot: TeleBot) -> None:
         select_custom_notification_audience,
         state=NotificationStates.custom_audience,
         button=r"admins/notifications/custom_audience/(all|today|monday)",
+        clan=ClanFromState(),
+    )
+    handlers.clan_admin_callback(
+        edit_custom_notification_audience,
+        state=NotificationStates.custom_confirmation,
+        button="admins/notifications/custom_audience",
         clan=ClanFromState(),
     )
     handlers.clan_admin_callback(

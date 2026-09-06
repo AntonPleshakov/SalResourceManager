@@ -5,7 +5,13 @@ from telebot.types import CallbackQuery, InlineKeyboardMarkup, Message
 from logger.app_logger import logger
 import tg.user_data as user_data
 from tg.clans import get_user_clans
-from tg.rich import edit_rich_message
+from tg.rich import (
+    confirmation_buttons,
+    edit_rich_message,
+    heading,
+    input_rich_message,
+    notice as rich_notice,
+)
 from tg.user_data.common import (
     build_clan_selection_message,
     get_current_accounts,
@@ -142,7 +148,6 @@ def request_rename(callback_query: CallbackQuery, bot: TeleBot) -> None:
 
 
 def request_move(callback_query: CallbackQuery, bot: TeleBot) -> None:
-    user_id = callback_query.from_user.id
     accounts = get_current_accounts(callback_query, bot)
     if accounts is None:
         return
@@ -150,7 +155,15 @@ def request_move(callback_query: CallbackQuery, bot: TeleBot) -> None:
     if account is None:
         accounts_menu(callback_query, bot)
         return
-    prompt_for_account_clan(callback_query, bot, account.account_id)
+    destination = callback_query.data.rsplit("/", maxsplit=1)[-1]
+    if destination not in DESTINATIONS | {"accounts"}:
+        destination = "accounts"
+    prompt_for_account_clan(
+        callback_query,
+        bot,
+        account.account_id,
+        destination,
+    )
 
 
 def move_account(callback_query: CallbackQuery, bot: TeleBot) -> None:
@@ -159,6 +172,7 @@ def move_account(callback_query: CallbackQuery, bot: TeleBot) -> None:
         parts = callback_query.data.split("/")
         account_id = int(parts[2])
         clan_id = int(parts[4])
+        destination = parts[5] if len(parts) > 5 else "accounts"
     except (IndexError, ValueError):
         bot.answer_callback_query(
             callback_query.id, "Не удалось выбрать клан", show_alert=True
@@ -191,18 +205,26 @@ def move_account(callback_query: CallbackQuery, bot: TeleBot) -> None:
     except ValueError as error:
         bot.answer_callback_query(callback_query.id, str(error), show_alert=True)
         return
-    accounts_menu(
+    notice = (
+        "✅ Клан аккаунта "
+        f"«{formatting.escape_html(account.tag)}» изменён."
+    )
+    _open_destination(
         callback_query,
         bot,
-        "✅ Клан аккаунта "
-        f"«{formatting.escape_html(account.tag)}» изменён.",
+        destination if destination in DESTINATIONS else "accounts",
+        notice,
     )
 
 
 def leave_clan(callback_query: CallbackQuery, bot: TeleBot) -> None:
     user_id = callback_query.from_user.id
     try:
-        account_id = int(callback_query.data.split("/")[2])
+        parts = callback_query.data.split("/")
+        account_id = int(parts[2])
+        destination = parts[-1]
+        if destination not in DESTINATIONS | {"accounts"}:
+            destination = "accounts"
     except (IndexError, ValueError) as error:
         bot.answer_callback_query(callback_query.id, str(error), show_alert=True)
         return
@@ -221,14 +243,44 @@ def leave_clan(callback_query: CallbackQuery, bot: TeleBot) -> None:
             show_alert=True,
         )
         return
+    is_confirmed = len(parts) >= 6 and parts[-2] == "confirm"
+    if not is_confirmed:
+        edit_rich_message(
+            bot,
+            callback_query.message.chat.id,
+            callback_query.message.id,
+            input_rich_message(
+                (
+                    heading(f"Отвязать аккаунт «{current.tag}» от клана?"),
+                    rich_notice(
+                        "Ресурсы и настройки сохранятся, но аккаунт перестанет "
+                        "участвовать в отчётах и расчётах клана."
+                    ),
+                    confirmation_buttons(
+                        "🔗 Отвязать от клана",
+                        f"accounts/move/{account_id}/leave/confirm/"
+                        f"{destination}",
+                        "✖️ Отмена",
+                        (
+                            f"accounts/{destination}"
+                            if destination != "accounts"
+                            else "accounts"
+                        ),
+                        destructive=True,
+                    ),
+                )
+            ),
+        )
+        return
     try:
         account = database.detach_account_from_clan(user_id, account_id)
     except ValueError as error:
         bot.answer_callback_query(callback_query.id, str(error), show_alert=True)
         return
-    accounts_menu(
+    _open_destination(
         callback_query,
         bot,
+        destination,
         "✅ Аккаунт "
         f"«{formatting.escape_html(account.tag)}» больше не привязан к клану. "
         "Данные аккаунта сохранены.",
@@ -358,11 +410,21 @@ def select_account(callback_query: CallbackQuery, bot: TeleBot) -> None:
         if selected is None:
             raise ValueError("Игровой аккаунт не найден")
         if destination in DESTINATIONS and selected.clan_id is None:
-            prompt_for_account_clan(callback_query, bot, account_id)
+            prompt_for_account_clan(
+                callback_query,
+                bot,
+                account_id,
+                destination,
+            )
             return
         active = next((account for account in accounts if account.is_active), None)
         if active is not None and active.account_id == account_id:
-            bot.answer_callback_query(callback_query.id, "Аккаунт уже выбран")
+            if destination in DESTINATIONS:
+                _open_destination(callback_query, bot, destination)
+            else:
+                bot.answer_callback_query(
+                    callback_query.id, "Аккаунт уже выбран"
+                )
             return
         account = database.select_account(user_id, account_id)
     except (ValueError, TypeError) as error:

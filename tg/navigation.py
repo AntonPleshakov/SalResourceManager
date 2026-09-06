@@ -3,6 +3,7 @@ from typing import Union
 from telebot import TeleBot
 from telebot.types import CallbackQuery, Message
 
+from common.datetime_utils import now, week_started_on
 from db.initializer import get_admins_db, get_user_data_db
 from logger.app_logger import logger
 from tg.onboarding import show_new_user_welcome
@@ -43,6 +44,29 @@ def show_home_menu(
         None,
     )
     reminders_enabled = database.reminders_enabled(user_id)
+    get_assigned_user = getattr(database, "get_assigned_user", None)
+    active_user = (
+        get_assigned_user(user_id, active_account.account_id)
+        if active_account is not None and callable(get_assigned_user)
+        else None
+    )
+    resources_are_current = (
+        active_user is not None
+        and active_user.has_resource_updates_since(week_started_on(now()))
+    )
+    account_needs_clan = (
+        active_account is not None and active_account.clan_id is None
+    )
+    resources_button_text = (
+        "🏰 Выбрать клан"
+        if account_needs_clan
+        else "📦 Ресурсы"
+        if resources_are_current
+        else "📝 Обновить ресурсы"
+    )
+    resources_callback = (
+        "accounts/resources" if account_needs_clan else "resources"
+    )
     logger.debug(
         "Opening home menu for user_id=%s username=%s",
         user_id,
@@ -68,7 +92,15 @@ def show_home_menu(
             ),
             button_row(
                 (
-                    callback_button("📦 Ресурсы", "resources"),
+                    callback_button(
+                        resources_button_text,
+                        resources_callback,
+                        style=(
+                            None
+                            if resources_are_current and not account_needs_clan
+                            else "primary"
+                        ),
+                    ),
                     callback_button("🔬 Технологии", "technologies"),
                 )
             ),

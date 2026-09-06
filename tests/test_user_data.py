@@ -43,6 +43,7 @@ from tg.user_data import (
 from tg.user_data.accounts import _get_group_tag
 from tg.user_data.common import ensure_active_user
 from tg.user_data.fill import skip_fill_value
+from tg.user_data.editing_common import FillState
 from tg.user_data.resources import build_resources_menu
 from tg.user_data.technologies import build_technologies_menu
 
@@ -746,7 +747,9 @@ def test_parse_thousand_based_resource_value():
     assert parse_editable_field_value("shells", "0,125") == 125
     assert parse_editable_field_value("skills", "1.55") == 1_550
     assert parse_editable_field_value("mount_keys", "0.001") == 1
-    assert parse_editable_field_value("mount_keys", "1") == 1_000
+    assert parse_editable_field_value("mount_keys", "1") == 1
+    assert parse_editable_field_value("mount_keys", "1к") == 1_000
+    assert parse_editable_field_value("hammers", "120") == 120
     assert parse_editable_field_value("pets", "1 500") == 1_500
 
 
@@ -757,7 +760,8 @@ def test_parse_thousand_based_resource_value_ignores_extra_precision():
 
 
 def test_parse_thousand_based_resource_value_rejects_invalid_input():
-    for value in ("", "-1", "1.", "1 500", "text"):
+    assert parse_editable_field_value("skills", "1 500") == 1_500
+    for value in ("", "-1", "1.", "text"):
         try:
             parse_editable_field_value("skills", value)
         except ValueError:
@@ -776,7 +780,8 @@ def test_value_input_hints_show_actual_limits():
         "Введите целое число от 0 до 50 (%)."
     )
     assert _value_input_hint(EDITABLE_FIELDS["hammers"]) == (
-        "Введите число в тысячах: 0.12 или 0,12 = 120."
+        "Введите точное количество, например 120. Тысячи можно записать "
+        "как 1.5, 1,5 или 1.5к = 1 500."
     )
 
 
@@ -792,7 +797,8 @@ def test_input_parser_errors_are_in_russian():
         parse_editable_field_value("hammers", "не число")
     except ValueError as error:
         assert str(error) == (
-            "Нужно ввести неотрицательное число с запятой или точкой"
+            "Введите точное количество или число в тысячах с точкой, "
+            "запятой либо суффиксом «к»"
         )
     else:
         raise AssertionError("Invalid resource input must be rejected")
@@ -844,8 +850,43 @@ def test_single_value_edit_stores_compact_state_and_shows_current_value(
             "prompt_message_id": 1,
         }
     }
-    assert "Сохранено сейчас: <b>2.50к</b>" in bot.edited[0][0]
+    assert "Сохранено сейчас: <b>2.50к · 2 500</b>" in bot.edited[0][0]
     assert bot.edited[0][3].keyboard[0][0].callback_data == "resources"
+
+
+def test_edit_and_fill_stop_after_account_prompt(monkeypatch):
+    monkeypatch.setattr(
+        "tg.user_data.edit_value.get_active_user_or_prompt",
+        lambda *_: None,
+    )
+    monkeypatch.setattr(
+        "tg.user_data.fill.get_active_user_or_prompt",
+        lambda *_: None,
+    )
+    bot = SimpleNamespace()
+
+    request_value(make_callback("user_data/edit/hammers"), bot)
+    fill_tracked_fields(make_callback("user_data/fill/tracked/3"), bot)
+
+
+def test_fill_progress_counts_each_field_once_after_going_back():
+    user = UserData(account_id=7, user_id=42, tag="Лидер")
+    state = FillState.start(
+        "reminder",
+        (
+            user_data_resources.EDITABLE_FIELDS["hammers"],
+            user_data_resources.EDITABLE_FIELDS["extra_mount_chance"],
+        ),
+        user,
+        1,
+    )
+
+    revisited = state.next_step(skipped=True).previous_step()
+    corrected = revisited.next_step(saved=True)
+
+    assert corrected.index == 1
+    assert corrected.saved_count == 1
+    assert corrected.saved_field_names == ("hammers",)
 
 
 def test_single_value_edit_saves_to_selected_account(monkeypatch):
@@ -968,7 +1009,7 @@ def test_single_value_edit_reuses_prompt_for_invalid_input():
     assert len(bot.edited) == 1
     assert bot.edited[0][1:3] == (42, 15)
     assert "Не удалось сохранить «Молотки»" in bot.edited[0][0]
-    assert "Введите число в тысячах" in bot.edited[0][0]
+    assert "Введите точное количество" in bot.edited[0][0]
 
 
 def test_fill_all_rejects_invalid_value_before_advancing_to_next_field(
@@ -1079,16 +1120,16 @@ def test_reminder_fill_starts_with_only_requested_fields(monkeypatch):
     assert "<b>Молотки</b>" in bot.edited[0][0]
     assert "<i>Шаг 1 из 2</i>" in bot.edited[0][0]
     assert "данные из напоминания" not in bot.edited[0][0]
-    assert "Сохранено сейчас: <b>2.50к</b>" in bot.edited[0][0]
+    assert "Сохранено сейчас: <b>2.50к · 2 500</b>" in bot.edited[0][0]
     assert [
         button.callback_data
         for row in bot.edited[0][3].keyboard
         for button in row
     ] == [
         "user_data/fill/skip",
-        "home",
+        "user_data/fill/finish",
     ]
-    assert len(bot.edited[0][3].keyboard[0]) == 2
+    assert len(bot.edited[0][3].keyboard[0]) == 1
 
 
 def test_reminder_fill_saves_only_requested_fields(monkeypatch):
@@ -1248,6 +1289,7 @@ def test_fill_all_can_skip_values_without_changing_them(monkeypatch):
     assert current_user.extra_mount_chance.value == 5
     assert "Сохранено сейчас: <b>5</b>" in bot.edited[0][0]
     assert "Заполнение завершено" in bot.edited[-1][0]
+    assert "Сохранено: <b>0</b>. Пропущено: <b>2</b>." in bot.edited[-1][0]
     assert bot.deleted_states == [42]
 
 

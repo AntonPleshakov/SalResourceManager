@@ -18,6 +18,7 @@ from tg.rich import (
     heading,
     highlight_metric,
     input_rich_message,
+    notice,
 )
 from tg.user_data.common import prompt_for_account_clan
 from tg.utils import format_points, get_ids, get_username
@@ -31,7 +32,7 @@ def _resources_updated_since(user: UserData, cutoff: date) -> bool:
     return user.has_resource_updates_since(cutoff)
 
 
-def _war_points_text(clan_id: int) -> str:
+def _war_points_text(clan_id: int, clan_title: str) -> str:
     database = war.get_user_data_db()
     users = database.get_clan_users(clan_id)
     cutoff = _war_week_started_on(now())
@@ -69,13 +70,23 @@ def _war_points_text(clan_id: int) -> str:
         "</tr>"
         for activity, points in report.points_by_activity.items()
     )
-    return "".join(
-        (
+    parts = [
             heading("Максимальные очки войны"),
+            f"<footer>Клан: {escape(clan_title)}</footer>",
             highlight_metric("Итог за войну", format_points(report.total)),
+    ]
+    if not accounted_users:
+        parts.append(
+            notice(
+                "Нет актуальных данных: ни у одного аккаунта не обновлены "
+                "ресурсы с 03:00 понедельника."
+            )
+        )
+    parts.extend(
+        (
             heading("По дням", level=3),
-            "<p><i>Ресурсы для каждого дня сначала оцениваются "
-            "отдельно.</i></p>",
+            "<p><b>Дневные оценки независимы и не суммируются.</b> "
+            "Ресурсы для каждого дня сначала оцениваются отдельно.</p>",
             *day_blocks,
             '<table bordered compact><caption>Итого по активностям</caption>',
             "<tr><th>Активность</th><th>Очки</th></tr>",
@@ -102,6 +113,7 @@ def _war_points_text(clan_id: int) -> str:
             ),
         )
     )
+    return "".join(parts)
 
 
 def public_war_points(callback_query: CallbackQuery, bot: TeleBot) -> None:
@@ -128,7 +140,10 @@ def public_war_points(callback_query: CallbackQuery, bot: TeleBot) -> None:
         message_id,
         input_rich_message(
             (
-                _war_points_text(account.clan_id),
+                _war_points_text(
+                    account.clan_id,
+                    getattr(account, "clan_title", "") or str(account.clan_id),
+                ),
                 back_button("⬅️ Очки войны", "war_menu"),
             )
         ),

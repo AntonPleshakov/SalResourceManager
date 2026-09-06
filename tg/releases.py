@@ -122,7 +122,7 @@ def show_release_notes(callback_query: CallbackQuery, bot: TeleBot) -> None:
         callback_query.from_user.id,
         get_username(callback_query),
     )
-    _show_notes(callback_query, bot, RELEASES[-1:])
+    _show_notes(callback_query, bot, RELEASES)
 
 
 def register_handlers(bot: TeleBot) -> None:

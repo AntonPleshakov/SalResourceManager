@@ -184,11 +184,13 @@ def _complete_fill(
         ).inline()
     )
     notice_line = f"{notice}\n\n" if notice else ""
+    skipped_count = len(state.fields) - state.saved_count
     bot.edit_message_text(
         f"{notice_line}"
         f"✅ <b>Заполнение завершено</b>\n\n"
         f"{account_line(state.account_tag)}"
-        "Все введённые значения сохранены. "
+        f"Сохранено: <b>{state.saved_count}</b>. "
+        f"Пропущено: <b>{skipped_count}</b>.\n"
         "Пропущенные показатели не изменены.",
         chat_id,
         state.prompt_message_id,
@@ -201,12 +203,19 @@ def _advance_fill(
     bot: TeleBot,
     context: FillContext,
     notice: str = "",
+    *,
+    saved: bool = False,
+    skipped: bool = False,
 ) -> None:
+    updated_state = context.state.next_step(
+        saved=saved,
+        skipped=skipped,
+    )
     if context.state.is_last_step:
-        _complete_fill(update, bot, context.state, notice)
+        _complete_fill(update, bot, updated_state, notice)
         return
 
-    next_state = context.state.next_step()
+    next_state = updated_state
     user_id = get_ids(update)[0]
     logger.debug(
         "User data section fill progress user_id=%s username=%s "
@@ -251,6 +260,8 @@ def _start_fill(
         callback_query,
         bot,
     )
+    if current_user is None:
+        return
     state = FillState.start(section, fields, current_user, message_id)
     logger.info(
         "User data fill started user_id=%s username=%s section=%s fields=%s",
@@ -318,10 +329,31 @@ def save_fill_value(message: Message, bot: TeleBot) -> None:
         bot,
         FillContext(state=context.state, current_user=current_user),
         f"✅ {field.title}: <b>{displayed_value}</b> — сохранено.",
+        saved=True,
     )
 
 
 def skip_fill_value(callback_query: CallbackQuery, bot: TeleBot) -> None:
     context = _load_fill_context(callback_query, bot)
     if context is not None:
-        _advance_fill(callback_query, bot, context)
+        _advance_fill(callback_query, bot, context, skipped=True)
+
+
+def previous_fill_value(callback_query: CallbackQuery, bot: TeleBot) -> None:
+    context = _load_fill_context(callback_query, bot)
+    if context is None or context.state.index == 0:
+        return
+    previous_state = context.state.previous_step()
+    save_state(bot, get_ids(callback_query)[0], FILL_STATE_KEY, previous_state)
+    _show_fill_step(
+        callback_query,
+        bot,
+        FillContext(previous_state, context.current_user),
+    )
+
+
+def finish_fill(callback_query: CallbackQuery, bot: TeleBot) -> None:
+    context = _load_fill_context(callback_query, bot)
+    if context is None:
+        return
+    _complete_fill(callback_query, bot, context.state)

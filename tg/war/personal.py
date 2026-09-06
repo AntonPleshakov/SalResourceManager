@@ -57,8 +57,8 @@ def _personal_war_points_text(user: UserData) -> str:
             account_context(str(user.tag.value)),
             highlight_metric("Итог за войну", format_points(report.total)),
             heading("По дням", level=3),
-            "<p><i>Ресурсы для каждого дня сначала оцениваются "
-            "отдельно.</i></p>",
+            "<p><b>Дневные оценки независимы и не суммируются.</b> "
+            "Ресурсы для каждого дня сначала оцениваются отдельно.</p>",
             *day_blocks,
             '<table bordered compact><caption>Итого по активностям</caption>',
             "<tr><th>Активность</th><th>Очки</th></tr>",

@@ -172,7 +172,7 @@ def test_lowering_max_level_warns_before_clearing_daily_batches(monkeypatch):
     assert "Мифическое <i>(Mythic)</i>: <b>2 пакета</b>" in text
     assert "Максимальное <i>(Ultimate)</i>: <b>3 пакета</b>" in text
     assert callback_data(text) == [
-        "pets/max_level/confirm/4",
+        "pets/max_level/confirm/0/4",
         "pets/max_level",
     ]
     assert markup is None
@@ -192,12 +192,37 @@ def test_confirming_lower_max_level_clears_unavailable_daily_batches(
     )
     bot = FakeBot()
 
-    confirm_max_egg_level(make_callback("pets/max_level/confirm/4"), bot)
+    confirm_max_egg_level(make_callback("pets/max_level/confirm/0/4"), bot)
 
     assert database.user.max_egg_level.value == 4
     assert database.user.hatch_batches_ultimate.value == 0
     assert database.user.hatch_batches_mythic.value == 0
     assert "Максимальный уровень: <b>Легендарное</b>" in bot.edited[-1][0]
+
+
+def test_old_max_level_confirmation_does_not_change_new_active_account(
+    monkeypatch,
+):
+    database = configure(
+        monkeypatch,
+        UserData(
+            account_id=7,
+            user_id=42,
+            username="tester",
+            hatch_batches_ultimate=3,
+        ),
+    )
+    bot = FakeBot()
+
+    confirm_max_egg_level(
+        make_callback("pets/max_level/confirm/6/4"),
+        bot,
+    )
+
+    assert database.user.max_egg_level.value == 6
+    assert database.user.hatch_batches_ultimate.value == 3
+    assert bot.answers[-1][1] == {"show_alert": True}
+    assert "Аккаунт изменился" in bot.answers[-1][0][1]
 
 
 def test_lowering_max_level_without_batch_data_saves_immediately(monkeypatch):

@@ -31,22 +31,45 @@ def register_handlers(bot: TeleBot) -> None:
             request_add,
             r"accounts/add(?:/(accounts|resources|technologies|pets|war_calculator))?",
         ),
-        (request_rename, "accounts/rename"),
-        (request_move, "accounts/move"),
+        (
+            request_rename,
+            r"accounts/rename(?:/(accounts|resources|technologies|pets|war_calculator))?",
+        ),
+        (
+            request_move,
+            r"accounts/move(?:/(accounts|resources|technologies|pets|war_calculator))?",
+        ),
         (
             request_add_nickname,
             r"accounts/add/(accounts|resources|technologies|pets|war_calculator)/clan/-?[0-9]+",
         ),
         (create_initial_account, r"accounts/create/-?[0-9]+"),
-        (move_account, r"accounts/move/[0-9]+/clan/-?[0-9]+"),
-        (leave_clan, r"accounts/move/[0-9]+/leave"),
+        (
+            move_account,
+            r"accounts/move/[0-9]+/clan/-?[0-9]+"
+            r"(?:/(resources|technologies|pets|war_calculator))?",
+        ),
+        (
+            leave_clan,
+            r"accounts/move/[0-9]+/leave(?:/confirm)?"
+            r"/(accounts|resources|technologies|pets|war_calculator)",
+        ),
         (
             select_account,
             r"accounts/select/(accounts|resources|technologies|pets|war_calculator)/[0-9]+",
         ),
-        (request_delete, "accounts/delete"),
-        (confirm_delete, r"accounts/delete/confirm/[0-9]+"),
-        (delete_account, r"accounts/delete/[0-9]+"),
+        (
+            request_delete,
+            r"accounts/delete/menu/(accounts|resources|technologies|pets|war_calculator)",
+        ),
+        (
+            confirm_delete,
+            r"accounts/delete/confirm/[0-9]+/(accounts|resources|technologies|pets|war_calculator)",
+        ),
+        (
+            delete_account,
+            r"accounts/delete/[0-9]+/(accounts|resources|technologies|pets|war_calculator)",
+        ),
     )
     for handler, button in callback_handlers:
         handlers.private_callback(

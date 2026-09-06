@@ -34,7 +34,7 @@ _GOOGLE_EXPORT_BUTTON = "admins/game_data/google"
 _GOOGLE_CONNECT_BUTTON = "admins/game_data/google/connect"
 _GOOGLE_CHECK_BUTTON = "admins/game_data/google/check"
 _IDENTITY_COLUMNS = 4
-_MAX_TABLE_COLUMNS = 20
+_MAX_TABLE_COLUMNS = 8
 _MAX_RICH_MESSAGE_BYTES = 30_000
 _MAX_RICH_MESSAGE_BLOCKS = 500
 

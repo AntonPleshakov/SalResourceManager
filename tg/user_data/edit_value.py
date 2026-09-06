@@ -16,6 +16,7 @@ from tg.user_data.editing_common import (
     VALUE_EDIT_SECTIONS,
     ValueEditState,
     account_line,
+    format_field_input_value,
     format_field_value,
     load_state,
     save_state,
@@ -48,7 +49,7 @@ def _show_value_prompt(
     chat_id, message_id = get_ids(callback_query)[1:]
     keyboard = InlineKeyboardMarkup(row_width=1)
     keyboard.add(Button("✖️ Отмена", state.section).inline())
-    current_value = format_field_value(
+    current_value = format_field_input_value(
         state.field,
         current_user.get_value(state.field_name),
     )
@@ -197,6 +198,8 @@ def request_value(callback_query: CallbackQuery, bot: TeleBot) -> None:
         callback_query,
         bot,
     )
+    if current_user is None:
+        return
     state = ValueEditState(
         field_name=field_name,
         account_id=current_user.account_id.value,

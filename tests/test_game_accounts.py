@@ -231,7 +231,7 @@ def test_clan_actions_separate_moving_and_leaving(
     accounts_menu(make_callback("accounts"), bot)
 
     assert "🏰 Сменить клан" in callback_texts(bot.edited[-1][0])
-    assert "🚪 Выйти из клана" in callback_texts(bot.edited[-1][0])
+    assert "🔗 Отвязать от клана" in callback_texts(bot.edited[-1][0])
 
     request_move(make_callback("accounts/move"), bot)
 
@@ -261,7 +261,21 @@ def test_leaving_clan_detaches_account_and_preserves_data(tmp_path, monkeypatch)
     bot = FakeBot()
 
     leave_clan(
-        make_callback(f"accounts/move/{account.account_id}/leave"), bot
+        make_callback(f"accounts/move/{account.account_id}/leave/accounts"),
+        bot,
+    )
+
+    assert database.get_active_account(42).clan_id == -100123
+    assert callback_data(bot.edited[-1][0]) == [
+        f"accounts/move/{account.account_id}/leave/confirm/accounts",
+        "accounts",
+    ]
+
+    leave_clan(
+        make_callback(
+            f"accounts/move/{account.account_id}/leave/confirm/accounts"
+        ),
+        bot,
     )
 
     assert database.get_active_account(42).clan_id is None
@@ -291,7 +305,7 @@ def test_accounts_menu_uses_explicit_clan_actions(tmp_path, monkeypatch):
     assert "клан не выбран" in bot.edited[-1][0]
     assert "Выбрать аккаунт" in callback_texts(bot.edited[-1][0])
     assert "🏰 Сменить клан" not in callback_texts(bot.edited[-1][0])
-    assert "🚪 Выйти из клана" in callback_texts(bot.edited[-1][0])
+    assert "🔗 Отвязать от клана" in callback_texts(bot.edited[-1][0])
 
     database.select_account(42, detached.account_id)
     accounts_menu(make_callback("accounts"), bot)
@@ -375,7 +389,7 @@ def test_account_selector_returns_to_resource_screen_after_switch(
     assert menu_buttons[0] == f"accounts/select/resources/{first.account_id}"
     assert f"accounts/select/resources/{second.account_id}" not in menu_buttons
     assert "accounts/add/resources" in menu_buttons
-    assert "accounts/delete" in menu_buttons
+    assert "accounts/delete/menu/resources" in menu_buttons
     assert "✏️ Переименовать" in callback_texts(bot.edited[-1][0])
     assert menu_buttons[-1] == "resources"
 
@@ -386,6 +400,13 @@ def test_account_selector_returns_to_resource_screen_after_switch(
     assert database.get_active_account(42).account_id == first.account_id
     assert "Аккаунт: <b>Main</b>" in bot.edited[-1][0]
     assert 'data="user_data/edit/hammers"' in bot.edited[-1][0]
+
+    select_account(
+        make_callback(f"accounts/select/resources/{first.account_id}"), bot
+    )
+
+    assert "<h2>Ресурсы</h2>" in bot.edited[-1][0]
+    assert not bot.callback_answers
     connection.close()
 
 
@@ -456,6 +477,11 @@ def test_stale_data_account_selection_detaches_and_prompts_for_clan(
     ).clan_id is None
     assert "Выберите клан аккаунта" in bot.edited[-1][0]
     assert "<h2>Ресурсы</h2>" not in bot.edited[-1][0]
+    assert callback_data(bot.edited[-1][0])[-1] == "accounts/resources"
+    assert all(
+        callback.endswith("/resources")
+        for callback in callback_data(bot.edited[-1][0])[:-1]
+    )
     connection.close()
 
 
@@ -584,24 +610,30 @@ def test_delete_selector_only_lists_inactive_accounts(tmp_path, monkeypatch):
     monkeypatch.setattr("tg.user_data.get_user_data_db", lambda: database)
     bot = FakeBot()
 
-    request_delete(make_callback("accounts/delete"), bot)
+    request_delete(make_callback("accounts/delete/menu/accounts"), bot)
 
     menu_buttons = callback_data(bot.edited[-1][0])
     assert menu_buttons == [
-        f"accounts/delete/confirm/{first.account_id}",
-        f"accounts/delete/confirm/{second.account_id}",
+        f"accounts/delete/confirm/{first.account_id}/accounts",
+        f"accounts/delete/confirm/{second.account_id}/accounts",
         "accounts",
     ]
-    assert f"accounts/delete/confirm/{active.account_id}" not in menu_buttons
+    assert (
+        f"accounts/delete/confirm/{active.account_id}/accounts"
+        not in menu_buttons
+    )
 
     confirm_delete(
-        make_callback(f"accounts/delete/confirm/{first.account_id}"), bot
+        make_callback(
+            f"accounts/delete/confirm/{first.account_id}/accounts"
+        ),
+        bot,
     )
 
     assert "Удалить аккаунт «Main»?" in bot.edited[-1][0]
     assert callback_data(bot.edited[-1][0]) == [
-        f"accounts/delete/{first.account_id}",
-        "accounts/delete",
+        f"accounts/delete/{first.account_id}/accounts",
+        "accounts/delete/menu/accounts",
     ]
     connection.close()
 

@@ -241,6 +241,27 @@ def test_home_menu_explains_scope_of_enabled_reminders(monkeypatch):
     assert "Не выключайте уведомления от бота в Telegram" in bot.sent[-1][1]
 
 
+def test_home_menu_leads_detached_account_to_clan_selection(monkeypatch):
+    prepare_home(monkeypatch)
+    monkeypatch.setattr(
+        "tg.navigation.get_user_data_db",
+        lambda: SimpleNamespace(
+            get_accounts=lambda _user_id: [
+                GameAccount(1, 42, "tester", "Лидер", True)
+            ],
+            get_assigned_user=lambda _user_id, _account_id: None,
+            reminders_enabled=lambda _user_id: True,
+        ),
+    )
+    bot = FakeBot()
+
+    navigation.home(make_message("/menu"), bot)
+
+    buttons = rich_buttons(bot.sent[-1][1])
+    assert buttons["accounts/resources"] == "🏰 Выбрать клан"
+    assert "resources" not in buttons
+
+
 def test_monday_reminders_can_be_toggled_from_home_menu(monkeypatch):
     state = {"enabled": True}
     database = SimpleNamespace(

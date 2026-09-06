@@ -20,7 +20,10 @@ from tg.admins.notification import (
 )
 from tg.admins.notification import delivery
 from tg.admins.notification.handlers import register_handlers
-from tg.admins.notification.views import notifications_menu
+from tg.admins.notification.views import (
+    notifications_menu,
+    show_notifications_menu,
+)
 from tg.handlers import ClanAdminContext
 from tg.rich import (
     back_button,
@@ -106,6 +109,7 @@ def confirm_standard_notification(
     )
     parts = [
         heading("Напомнить обновить данные?"),
+        footer(f"Клан: {context.group.title}"),
         "<p>Уведомление получат пользователи, которые не обновляли ни "
         "один ресурс с 03:00 понедельника.</p>",
         '<table compact><caption>Получатели</caption>',
@@ -177,7 +181,11 @@ def send_standard_notification_confirmed(
         f"Доставлено: {result.sent}, ошибок: {result.failed}",
         show_alert=True,
     )
-    notifications_menu(context)
+    show_notifications_menu(
+        context,
+        f"✅ Доставлено: <b>{result.sent}</b>. "
+        f"Ошибок: <b>{result.failed}</b>.",
+    )
 
 
 def request_custom_notification(
@@ -251,6 +259,18 @@ def _custom_delivery_buttons() -> str:
                     ),
                 )
             ),
+            button_row(
+                (
+                    callback_button(
+                        "👥 Изменить получателей",
+                        "admins/notifications/custom_audience",
+                    ),
+                    callback_button(
+                        "✏️ Изменить текст",
+                        "admins/notifications/custom",
+                    ),
+                )
+            ),
             back_button("✖️ Отмена", "admins/notifications"),
         )
     )
@@ -296,6 +316,7 @@ def receive_custom_notification_text(context: ClanAdminContext) -> None:
         input_rich_message(
             (
                 heading("Предпросмотр уведомления"),
+                footer(f"Клан: {context.group.title}"),
                 notice(formatting.escape_html(text)),
                 heading("Получатели", level=3),
                 _custom_audience_buttons(),
@@ -326,6 +347,12 @@ def select_custom_notification_audience(
     bot.add_data(user_id, notification_audience=audience.value)
     with bot.retrieve_data(user_id) as data:
         text = data.get("notification_text", "")
+    users = filter_custom_notification_users(
+        get_user_data_db().get_clan_users(context.group.group_id),
+        audience,
+        now(),
+    )
+    recipient_count = len(group_user_accounts(users))
     edit_rich_message(
         bot,
         chat_id,
@@ -335,11 +362,35 @@ def select_custom_notification_audience(
                 heading("Предпросмотр уведомления"),
                 notice(formatting.escape_html(text)),
                 footer(
-                    "Получатели: "
-                    f"{custom_notification_audience_title(audience)}"
+                    f"Клан: {context.group.title} · Получатели: "
+                    f"{custom_notification_audience_title(audience)} · "
+                    f"Пользователей: {recipient_count}"
                 ),
                 heading("Способ отправки", level=3),
                 _custom_delivery_buttons(),
+            )
+        ),
+    )
+
+
+def edit_custom_notification_audience(context: ClanAdminContext) -> None:
+    callback_query = context.update
+    bot = context.bot
+    user_id, chat_id, message_id = get_ids(callback_query)
+    with bot.retrieve_data(user_id) as data:
+        text = data.get("notification_text", "")
+    bot.set_state(user_id, NotificationStates.custom_audience)
+    edit_rich_message(
+        bot,
+        chat_id,
+        message_id,
+        input_rich_message(
+            (
+                heading("Предпросмотр уведомления"),
+                footer(f"Клан: {context.group.title}"),
+                notice(formatting.escape_html(text)),
+                heading("Получатели", level=3),
+                _custom_audience_buttons(),
             )
         ),
     )
@@ -413,7 +464,11 @@ def send_custom_group_notification_confirmed(
         f"Сообщений отправлено: {result.sent}, ошибок: {result.failed}",
         show_alert=True,
     )
-    notifications_menu(context)
+    show_notifications_menu(
+        context,
+        f"✅ В группу отправлено сообщений: <b>{result.sent}</b>. "
+        f"Ошибок: <b>{result.failed}</b>.",
+    )
 
 
 def send_custom_private_notification_confirmed(
@@ -447,4 +502,8 @@ def send_custom_private_notification_confirmed(
         f"Доставлено: {result.sent}, ошибок: {result.failed}",
         show_alert=True,
     )
-    notifications_menu(context)
+    show_notifications_menu(
+        context,
+        f"✅ Лично доставлено: <b>{result.sent}</b>. "
+        f"Ошибок: <b>{result.failed}</b>.",
+    )

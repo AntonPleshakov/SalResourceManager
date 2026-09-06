@@ -79,6 +79,7 @@ class FillState:
     account_id: int
     account_tag: str
     prompt_message_id: int
+    saved_field_names: tuple[str, ...] = ()
 
     @classmethod
     def start(
@@ -99,6 +100,11 @@ class FillState:
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "field_names", tuple(self.field_names))
+        object.__setattr__(
+            self,
+            "saved_field_names",
+            tuple(self.saved_field_names),
+        )
 
     @property
     def config(self) -> FillSection:
@@ -119,8 +125,28 @@ class FillState:
     def is_last_step(self) -> bool:
         return self.index + 1 >= len(self.field_names)
 
-    def next_step(self) -> "FillState":
-        return replace(self, index=self.index + 1)
+    @property
+    def saved_count(self) -> int:
+        return len(self.saved_field_names)
+
+    def next_step(
+        self, *, saved: bool = False, skipped: bool = False
+    ) -> "FillState":
+        saved_fields = set(self.saved_field_names)
+        if saved:
+            saved_fields.add(self.current_field.name)
+        elif skipped:
+            saved_fields.discard(self.current_field.name)
+        return replace(
+            self,
+            index=self.index + 1,
+            saved_field_names=tuple(
+                name for name in self.field_names if name in saved_fields
+            ),
+        )
+
+    def previous_step(self) -> "FillState":
+        return replace(self, index=max(0, self.index - 1))
 
     def is_valid(self) -> bool:
         if (
@@ -136,6 +162,10 @@ class FillState:
             or not isinstance(self.account_id, int)
             or not isinstance(self.account_tag, str)
             or not isinstance(self.prompt_message_id, int)
+            or not all(
+                name in self.field_names for name in self.saved_field_names
+            )
+            or len(self.saved_field_names) != len(set(self.saved_field_names))
         ):
             return False
 
@@ -191,3 +221,14 @@ def format_field_value(
     ):
         return format_points(Decimal(displayed_value))
     return displayed_value
+
+
+def format_field_input_value(
+    field: user_data_resources.ResourceField,
+    value: int,
+) -> str:
+    displayed = format_field_value(field, value)
+    if field.name not in user_data_resources.THOUSAND_INPUT_FIELDS:
+        return displayed
+    exact = f"{int(value):,}".replace(",", " ")
+    return f"{displayed} · {exact}"

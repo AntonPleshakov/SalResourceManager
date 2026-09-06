@@ -565,9 +565,14 @@ def test_game_data_rich_message_contains_native_tables_and_escaped_values():
     assert "<h2>Игровые данные</h2>" in message.html
     assert "Clan &lt;One&gt;" in message.html
     assert "player&lt;&amp;" in message.html
-    assert message.html.count("<table bordered striped compact>") == 2
-    assert "Поля 1 из 2" in message.html
-    assert "Поля 2 из 2" in message.html
+    table_count = message.html.count("<table bordered striped compact>")
+    assert table_count > 2
+    assert f"Поля 1 из {table_count}" in message.html
+    assert f"Поля {table_count} из {table_count}" in message.html
+    assert all(
+        table.count("<th>") <= 8
+        for table in message.html.split("<table bordered striped compact>")[1:]
+    )
     assert message.skip_entity_detection
 
 

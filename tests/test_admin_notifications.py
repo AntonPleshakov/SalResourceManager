@@ -420,7 +420,12 @@ def test_custom_notification_uses_authorized_context_group(monkeypatch):
     assert sent[0][3] == -100123
 
 
-def test_custom_notification_audience_can_be_selected():
+def test_custom_notification_audience_can_be_selected(monkeypatch):
+    users = [UserData(user_id=1, username="member")]
+    monkeypatch.setattr(
+        "tg.admins.notifications.get_user_data_db",
+        lambda: FakeUserDataDB(users),
+    )
     bot = NotificationFlowBot(
         {
             "notification_text": "Текст",
@@ -435,9 +440,12 @@ def test_custom_notification_audience_can_be_selected():
     assert bot.data["notification_audience"] == "monday"
     text = rich_html(bot.edited[0])
     assert "не обновлявшие ресурсы с 03:00 понедельника" in text
+    assert "Пользователей: 1" in text
     assert rich_callback_data(text) == [
         "admins/notifications/send_custom_group",
         "admins/notifications/send_custom_private",
+        "admins/notifications/custom_audience",
+        "admins/notifications/custom",
         "admins/notifications",
     ]
 

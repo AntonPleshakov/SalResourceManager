@@ -95,22 +95,28 @@ def accounts_menu(
     account_actions = [callback_button("➕ Добавить", f"accounts/add/{destination}")]
     if active is not None:
         account_actions.append(
-            callback_button("✏️ Переименовать", "accounts/rename")
+            callback_button(
+                "✏️ Переименовать", f"accounts/rename/{destination}"
+            )
         )
         target_clan_ids = available_clan_ids - {active.clan_id}
         if active.clan_id is None and target_clan_ids:
             account_actions.append(
-                callback_button("🏰 Выбрать клан", "accounts/move")
+                callback_button(
+                    "🏰 Выбрать клан", f"accounts/move/{destination}"
+                )
             )
         elif active.clan_id is not None and target_clan_ids:
             account_actions.append(
-                callback_button("🏰 Сменить клан", "accounts/move")
+                callback_button(
+                    "🏰 Сменить клан", f"accounts/move/{destination}"
+                )
             )
         if active.clan_id is not None:
             account_actions.append(
                 callback_button(
-                    "🚪 Выйти из клана",
-                    f"accounts/move/{active.account_id}/leave",
+                    "🔗 Отвязать от клана",
+                    f"accounts/move/{active.account_id}/leave/{destination}",
                 )
             )
     for index in range(0, len(account_actions), 2):
@@ -121,7 +127,7 @@ def accounts_menu(
                 (
                     callback_button(
                         "🗑 Удалить аккаунт",
-                        "accounts/delete",
+                        f"accounts/delete/menu/{destination}",
                         style="danger",
                     ),
                 )

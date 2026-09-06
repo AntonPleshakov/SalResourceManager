@@ -2,6 +2,7 @@ from telebot import TeleBot
 from telebot.types import CallbackQuery
 
 import tg.user_data as user_data
+from tg.user_data.account.routing import DESTINATIONS, open_destination
 from tg.user_data.common import get_current_accounts
 from tg.rich import (
     back_button,
@@ -22,10 +23,11 @@ def request_delete(callback_query: CallbackQuery, bot: TeleBot) -> None:
     if accounts is None:
         return
     candidates = [account for account in accounts if not account.is_active]
+    destination = callback_query.data.rsplit("/", maxsplit=1)[-1]
+    if destination not in DESTINATIONS | {"accounts"}:
+        destination = "accounts"
     if not candidates:
-        from tg.user_data.accounts import accounts_menu
-
-        accounts_menu(callback_query, bot)
+        open_destination(callback_query, bot, destination)
         return
     parts = [
         heading("Удаление аккаунта"),
@@ -38,12 +40,16 @@ def request_delete(callback_query: CallbackQuery, bot: TeleBot) -> None:
                 (
                     callback_button(
                         f"🗑 {account.tag}",
-                        f"accounts/delete/confirm/{account.account_id}",
+                        f"accounts/delete/confirm/{account.account_id}/"
+                        f"{destination}",
                     ),
                 )
             )
         )
-    parts.append(back_button("✖️ Отмена", "accounts"))
+    cancel_callback = (
+        f"accounts/{destination}" if destination != "accounts" else "accounts"
+    )
+    parts.append(back_button("✖️ Отмена", cancel_callback))
     edit_rich_message(
         bot,
         chat_id,
@@ -58,7 +64,11 @@ def confirm_delete(callback_query: CallbackQuery, bot: TeleBot) -> None:
     if accounts is None:
         return
     try:
-        account_id = int(callback_query.data.rsplit("/", maxsplit=1)[-1])
+        parts = callback_query.data.split("/")
+        account_id = int(parts[3])
+        destination = parts[4]
+        if destination not in DESTINATIONS | {"accounts"}:
+            raise ValueError("Раздел возврата не найден")
         account = next(
             account
             for account in accounts
@@ -83,9 +93,9 @@ def confirm_delete(callback_query: CallbackQuery, bot: TeleBot) -> None:
                 ),
                 confirmation_buttons(
                     "🗑 Удалить аккаунт и данные",
-                    f"accounts/delete/{account.account_id}",
+                    f"accounts/delete/{account.account_id}/{destination}",
                     "✖️ Отмена",
-                    "accounts/delete",
+                    f"accounts/delete/menu/{destination}",
                     destructive=True,
                 ),
             )
@@ -100,7 +110,11 @@ def delete_account(callback_query: CallbackQuery, bot: TeleBot) -> None:
     if accounts is None:
         return
     try:
-        account_id = int(callback_query.data.rsplit("/", maxsplit=1)[-1])
+        parts = callback_query.data.split("/")
+        account_id = int(parts[2])
+        destination = parts[3]
+        if destination not in DESTINATIONS | {"accounts"}:
+            raise ValueError("Раздел возврата не найден")
         if account_id not in {account.account_id for account in accounts}:
             raise ValueError("Игровой аккаунт не найден")
         database.delete_account(user_id, account_id)
@@ -108,6 +122,9 @@ def delete_account(callback_query: CallbackQuery, bot: TeleBot) -> None:
         bot.answer_callback_query(callback_query.id, str(error), show_alert=True)
         return
 
-    from tg.user_data.accounts import accounts_menu
-
-    accounts_menu(callback_query, bot, "✅ Игровой аккаунт и его данные удалены.")
+    open_destination(
+        callback_query,
+        bot,
+        destination,
+        "✅ Игровой аккаунт и его данные удалены.",
+    )

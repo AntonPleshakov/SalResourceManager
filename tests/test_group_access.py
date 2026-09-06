@@ -23,6 +23,7 @@ from tg.access import (
 )
 from tg.group_registration import (
     BOT_NOT_ADMIN_MESSAGE,
+    CANCEL_GROUP_REGISTRATION_TEXT,
     GROUP_ALREADY_REGISTERED_MESSAGE,
     GROUP_REGISTRATION_REQUEST_ID,
     GROUP_SELECTION_MESSAGE,
@@ -31,6 +32,7 @@ from tg.group_registration import (
     REGISTRATION_SUCCESS_MESSAGE,
     USER_NOT_GROUP_ADMIN_MESSAGE,
     USER_NOT_GROUP_MEMBER_MESSAGE,
+    cancel_group_registration,
     register_current_group,
     register_selected_group,
     request_group_registration,
@@ -121,7 +123,6 @@ class FakeBot:
 
     def send_message(self, chat_id, text, reply_markup=None):
         self.sent.append((chat_id, text, reply_markup))
-
 
 def test_group_member_statuses_are_allowed():
     for status in ("creator", "administrator", "member"):
@@ -430,6 +431,7 @@ class FakeRegistrationBot:
         self.group_type = group_type
         self.replies = []
         self.sent = []
+        self.rich_messages = []
         self.states = []
         self.deleted_states = []
 
@@ -452,6 +454,9 @@ class FakeRegistrationBot:
 
     def send_message(self, chat_id, text, reply_markup=None):
         self.sent.append((chat_id, text, reply_markup))
+
+    def send_rich_message(self, chat_id, rich_message):
+        self.rich_messages.append((chat_id, rich_message))
 
     def set_state(self, user_id, state):
         self.states.append((user_id, state))
@@ -492,7 +497,21 @@ def test_bot_admin_gets_picker_without_telegram_admin_requirement(monkeypatch):
     assert "request_username" not in button["request_chat"]
     assert "user_administrator_rights" not in button["request_chat"]
     assert "bot_administrator_rights" not in button["request_chat"]
+    assert bot.sent[0][2].keyboard[1][0]["text"] == CANCEL_GROUP_REGISTRATION_TEXT
     assert bot.states == [(42, GroupRegistrationStates.select_group)]
+
+
+def test_group_registration_can_be_cancelled():
+    bot = FakeRegistrationBot()
+    message = make_message(text=CANCEL_GROUP_REGISTRATION_TEXT)
+    clan = AccessGroup(-100001, "Existing clan")
+
+    cancel_group_registration(admin_context(message, bot, clan))
+
+    assert bot.deleted_states == [42]
+    assert bot.sent[-1][1] == "Регистрация клана отменена."
+    assert bot.rich_messages[-1][0] == 42
+    assert 'data="admins"' in bot.rich_messages[-1][1].html
 
 
 def test_bot_admin_can_register_selected_group_without_telegram_admin_rights(

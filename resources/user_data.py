@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from datetime import date
 import re
-from typing import Dict, Optional, Tuple
+from typing import Dict, Optional, Sequence, Tuple
 
 from parameters import Parameters
 from parameters.int_param import IntParam
@@ -102,11 +102,20 @@ def parse_editable_field_value(field_name: str, value: str) -> int:
         parsed = parse_non_negative_int(value)
         return validate_editable_field_value(field_name, parsed)
 
-    normalized = value.strip().replace(",", ".")
+    normalized = (
+        value.strip().casefold().replace(" ", "").replace("_", "")
+    )
+    explicit_thousands = normalized.endswith(("к", "k"))
+    if explicit_thousands:
+        normalized = normalized[:-1]
+    normalized = normalized.replace(",", ".")
     if not re.fullmatch(r"\d+(?:\.\d+)?", normalized):
         raise ValueError(
-            "Нужно ввести неотрицательное число с запятой или точкой"
+            "Введите точное количество или число в тысячах с точкой, "
+            "запятой либо суффиксом «к»"
         )
+    if "." not in normalized and not explicit_thousands:
+        return validate_editable_field_value(field_name, int(normalized))
     whole, fraction = normalized.partition(".")[::2]
     parsed = int(whole) * 1_000 + int(
         (fraction[:3] or "0").ljust(3, "0")
@@ -195,6 +204,28 @@ class UserData(Parameters):
             if (updated_on := self.get_updated_on(field.name)) is not None
         ]
         return max(updated_dates, default=None)
+
+    def get_last_resource_updated_on(self) -> Optional[date]:
+        updated_dates = [
+            updated_on
+            for field in RESOURCE_FIELDS
+            if (updated_on := self.get_updated_on(field.name)) is not None
+        ]
+        return max(updated_dates, default=None)
+
+    def fields_updated_count_since(
+        self,
+        fields: Sequence[ResourceField],
+        cutoff: date,
+    ) -> int:
+        return sum(
+            updated_on >= cutoff
+            for field in fields
+            if (updated_on := self.get_updated_on(field.name)) is not None
+        )
+
+    def resources_updated_count_since(self, cutoff: date) -> int:
+        return self.fields_updated_count_since(RESOURCE_FIELDS, cutoff)
 
     def has_resource_updates_since(self, cutoff: date) -> bool:
         return any(

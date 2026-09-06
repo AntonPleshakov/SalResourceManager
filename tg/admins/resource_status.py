@@ -43,17 +43,17 @@ def build_last_updates_report(
 ) -> str:
     sorted_users = sorted(
         users,
-        key=lambda user: user.get_last_updated_on() or date.min,
+        key=lambda user: user.get_last_resource_updated_on() or date.min,
         reverse=True,
     )
     user_blocks = [
         f"<p>{_user_link(user)}<br>"
-        f"<i>{_format_last_update(user.get_last_updated_on())}</i></p>"
+        f"<i>{_format_last_update(user.get_last_resource_updated_on())}</i></p>"
         for user in sorted_users
     ]
     header = "".join(
         (
-            heading("Последнее обновление аккаунтов"),
+            heading("Последнее обновление ресурсов"),
             highlight_metric("Всего аккаунтов", str(len(sorted_users))),
         )
     )

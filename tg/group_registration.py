@@ -17,10 +17,12 @@ from logger.app_logger import logger
 from tg.admins.common import has_current_admin_access
 from tg.clans import is_group_admin, is_group_member
 from tg.handlers import AdminContext, HandlerRegistry
+from tg.rich import back_button, deliver_rich_message, input_rich_message
 from tg.utils import get_ids, get_username
 
 
 GROUP_REGISTRATION_REQUEST_ID = 1
+CANCEL_GROUP_REGISTRATION_TEXT = "✖️ Отмена"
 
 
 class GroupRegistrationStates(StatesGroup):
@@ -70,6 +72,7 @@ def _group_selection_keyboard() -> ReplyKeyboardMarkup:
             ),
         )
     )
+    keyboard.add(KeyboardButton(CANCEL_GROUP_REGISTRATION_TEXT))
     return keyboard
 
 
@@ -88,6 +91,24 @@ def request_group_registration(context: AdminContext) -> None:
         reply_markup=_group_selection_keyboard(),
     )
     bot.set_state(user_id, GroupRegistrationStates.select_group)
+
+
+def cancel_group_registration(context: AdminContext) -> None:
+    message = context.update
+    bot = context.bot
+    bot.delete_state(context.user_id)
+    bot.send_message(
+        context.chat_id,
+        "Регистрация клана отменена.",
+        reply_markup=ReplyKeyboardRemove(),
+    )
+    deliver_rich_message(
+        message,
+        bot,
+        input_rich_message(
+            (back_button("⬅️ Вернуться в админ-панель", "admins"),)
+        ),
+    )
 
 
 def _register_group(
@@ -278,6 +299,13 @@ def register_handlers(bot: TeleBot) -> None:
     handlers.admin_callback(
         request_group_registration,
         button="admins/register_group",
+    )
+    handlers.admin_message(
+        cancel_group_registration,
+        content_types=["text"],
+        state=GroupRegistrationStates.select_group,
+        predicate=lambda message: message.text
+        == CANCEL_GROUP_REGISTRATION_TEXT,
     )
     handlers.admin_message(
         register_selected_group,
