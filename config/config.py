@@ -13,5 +13,9 @@ def getconf(option: str) -> str:
     return _config.get(_MODE, option)
 
 
+def is_debug_mode() -> bool:
+    return _MODE == "Debug"
+
+
 def reset_config(filepath: str) -> None:
     _config.read(filepath, encoding="utf-8")

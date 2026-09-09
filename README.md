@@ -16,6 +16,17 @@ command from [`infra/README.md`](infra/README.md) once to create
 
 ## Run
 
+Local debug mode uses Telegram long polling, so it does not require a public
+webhook URL or TLS certificates. For clans present in the local database, chat
+and membership lookups are simulated from local clan and administrator data:
+
+```powershell
+$env:MODE = "Debug"
+python main.py
+```
+
+Production runs with webhooks through Docker:
+
 ```bash
 docker compose pull
 docker compose up -d

@@ -5,11 +5,12 @@ from telebot import ExceptionHandler, TeleBot
 from telebot.types import CallbackQuery, InlineKeyboardMarkup, Message
 
 import tg.manager
-from config.config import getconf
+from config.config import getconf, is_debug_mode
 from db.initializer import initialize_database
 from logger.app_logger import logger
 from tg.access import GroupAccessMiddleware
 from tg.clans import sync_migrated_clan_titles
+from tg.debug_bot import DebugTeleBot
 from tg.filters import add_custom_filters
 from tg.handlers import HandlerRegistry
 from tg.metrics import (
@@ -22,6 +23,7 @@ from tg.metrics import (
     TelegramMetricsMiddleware,
 )
 from tg.middleware import NoOpPostProcessMiddleware, NoOpPreProcessMiddleware
+from tg.polling import serve_polling
 from tg.reminders import ReminderScheduler
 from tg.scheduling import AdminReconciliationScheduler
 from tg.utils import (
@@ -33,7 +35,8 @@ from tg.utils import (
 from tg.webhook import load_webhook_settings, serve_webhook
 
 
-bot = TeleBot(
+bot_class = DebugTeleBot if is_debug_mode() else TeleBot
+bot = bot_class(
     getconf("TOKEN"),
     parse_mode="HTML",
     use_class_middlewares=True,
@@ -135,9 +138,15 @@ def initialize_databases():
 
 if __name__ == "__main__":
     logger.info("Starting Sal Resources Manager")
+    debug_mode = is_debug_mode()
     try:
-        webhook_settings = load_webhook_settings()
+        webhook_settings = None if debug_mode else load_webhook_settings()
         databases = initialize_databases()
+        if isinstance(bot, DebugTeleBot):
+            bot.configure_fake_clan_data(
+                databases.access_group,
+                databases.admins,
+            )
         sync_migrated_clan_titles(bot, databases.access_group)
     except Exception:
         logger.exception(
@@ -175,16 +184,26 @@ if __name__ == "__main__":
         reminder_scheduler.start()
         admin_reconciliation_scheduler.start()
         APPLICATION_METRICS.ready.set(1)
-        logger.info(
-            "Sal Resources Manager started; listening for Telegram webhooks "
-            "on %s:%d/%s/ and exposing metrics on %s:%d/metrics",
-            webhook_settings.listen,
-            webhook_settings.port,
-            webhook_settings.url_path,
-            METRICS_LISTEN,
-            METRICS_PORT,
-        )
-        serve_webhook(bot, webhook_settings)
+        if debug_mode:
+            logger.info(
+                "Sal Resources Manager started; polling Telegram and "
+                "exposing metrics on %s:%d/metrics",
+                METRICS_LISTEN,
+                METRICS_PORT,
+            )
+            serve_polling(bot)
+        else:
+            logger.info(
+                "Sal Resources Manager started; listening for Telegram "
+                "webhooks on %s:%d/%s/ and exposing metrics on "
+                "%s:%d/metrics",
+                webhook_settings.listen,
+                webhook_settings.port,
+                webhook_settings.url_path,
+                METRICS_LISTEN,
+                METRICS_PORT,
+            )
+            serve_webhook(bot, webhook_settings)
     finally:
         APPLICATION_METRICS.ready.set(0)
         logger.info("Stopping Sal Resources Manager")
