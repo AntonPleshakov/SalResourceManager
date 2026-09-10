@@ -83,9 +83,10 @@ def _war_points_text(clan_id: int, clan_title: str) -> str:
         )
         day_blocks.append(
             details(
-                f"День {day} — {format_points(points)}"
+                f"День {day} — <b>{format_points(points)}</b>"
                 + (
-                    f" ({format_points(stale_report.points_by_day[day])})"
+                    f" (+ {format_points(stale_report.points_by_day[day])}"
+                    f" = {format_points(points + stale_report.points_by_day[day])})"
                     if stale_users
                     else ""
                 ),
@@ -97,8 +98,10 @@ def _war_points_text(clan_id: int, clan_title: str) -> str:
         f"<td>{escape(activity.title)}</td>"
         f'<td align="right"><b>{format_points(points)}</b>'
         + (
-            " <i>("
-            f"{format_points(stale_report.points_by_activity[activity])})</i>"
+            " <i>(+ "
+            f"{format_points(stale_report.points_by_activity[activity])}"
+            f" = {format_points(points + stale_report.points_by_activity[activity])}"
+            ")</i>"
             if stale_users
             else ""
         )
@@ -112,8 +115,11 @@ def _war_points_text(clan_id: int, clan_title: str) -> str:
             highlight_metric("Итог за войну", format_points(report.total)),
             *(
                 (
-                    "<p>(По устаревшим данным — "
-                    f"<b>{format_points(stale_report.total)}</b> очков)</p>",
+                    "<p>(+ <b>"
+                    f"{format_points(stale_report.total)}</b>"
+                    " = <b>"
+                    f"{format_points(report.total + stale_report.total)}</b>"
+                    " очков)</p>",
                 )
                 if stale_users
                 else ()
@@ -123,8 +129,7 @@ def _war_points_text(clan_id: int, clan_title: str) -> str:
     if not accounted_users:
         parts.append(
             notice(
-                "Нет актуальных данных: ни у одного аккаунта не обновлены "
-                "ресурсы с 03:00 понедельника."
+                "Сейчас доступны только возможные очки."
             )
         )
     parts.extend(
@@ -134,8 +139,7 @@ def _war_points_text(clan_id: int, clan_title: str) -> str:
             "Ресурсы для каждого дня сначала оцениваются отдельно.</p>",
             *(
                 (
-                    "<p><i>В скобках указаны возможные очки по "
-                    "устаревшим данным.</i></p>",
+                    "<p><i>(В скобках: + возможные очки = сумма.)</i></p>",
                 )
                 if stale_users
                 else ()
@@ -147,22 +151,24 @@ def _war_points_text(clan_id: int, clan_title: str) -> str:
             "<tr><th>Всего</th>"
             f'<th align="right">{format_points(report.total)}'
             + (
-                f" <i>({format_points(stale_report.total)})</i>"
+                f" <i>(+ {format_points(stale_report.total)}"
+                f" = {format_points(report.total + stale_report.total)})</i>"
                 if stale_users
                 else ""
             )
             + "</th></tr>",
             "</table>",
             '<table compact><caption>Данные аккаунтов</caption>',
-            "<tr><td>Учтено</td>"
+            "<tr><td>Учтено аккаунтов</td>"
             f'<td align="right"><b>{len(accounted_users)}</b></td></tr>',
-            "<tr><td>С устаревшими данными</td>"
+            "<tr><td>Аккаунты с возможными очками</td>"
             f'<td align="right"><b>{len(stale_users)}</b></td></tr>',
             "</table>",
             details(
-                "Какие данные считаются устаревшими",
-                "<p>Устаревшими считаются данные аккаунтов, у которых ни "
-                "один ресурс не обновлён с 03:00 понедельника.</p>",
+                "Возможные очки",
+                "<p>Рассчитаны по аккаунтам, у которых ни один ресурс "
+                "не обновлён с 03:00 понедельника. Данные могут быть "
+                "неактуальны, поэтому эти очки показаны отдельно.</p>",
             ),
             details(
                 "Как считается результат",

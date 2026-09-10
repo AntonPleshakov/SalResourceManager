@@ -329,34 +329,45 @@ def test_maximum_war_points_reports_stale_accounts_separately(
         in text
     )
     assert (
-        "(По устаревшим данным — "
-        f"<b>{format_points(expected_stale.total)}</b> очков)" in text
+        f"(+ <b>{format_points(expected_stale.total)}</b> = <b>"
+        f"{format_points(expected.total + expected_stale.total)}</b> очков)"
+        in text
     )
     assert (
         f"День 1 — {format_points(expected.points_by_day[1])} "
-        f"({format_points(expected_stale.points_by_day[1])})" in text
+        f"(+ {format_points(expected_stale.points_by_day[1])} = "
+        f"{format_points(expected.points_by_day[1] + expected_stale.points_by_day[1])})"
+        in text
     )
     activity = next(iter(expected.points_by_activity))
+    possible_activity_total = (
+        expected.points_by_activity[activity]
+        + expected_stale.points_by_activity[activity]
+    )
     assert (
         f'<td>{activity.title}</td><td align="right">'
         f"<b>{format_points(expected.points_by_activity[activity])}</b> "
-        "<i>("
-        f"{format_points(expected_stale.points_by_activity[activity])})</i>"
+        "<i>(+ "
+        f"{format_points(expected_stale.points_by_activity[activity])} = "
+        f"{format_points(possible_activity_total)})</i>"
         in text
     )
-    assert "В скобках указаны возможные очки по устаревшим данным" in text
+    assert "В скобках: + возможные очки = сумма." in text
     assert (
         f'<th align="right">{format_points(expected.total)} '
-        f"<i>({format_points(expected_stale.total)})</i></th>" in text
+        f"<i>(+ {format_points(expected_stale.total)} = "
+        f"{format_points(expected.total + expected_stale.total)})</i></th>"
+        in text
     )
-    assert "<tr><td>Учтено</td><td align=\"right\"><b>2</b>" in text
+    assert "<tr><td>Учтено аккаунтов</td><td align=\"right\"><b>2</b>" in text
     assert (
-        "<tr><td>С устаревшими данными</td>"
+        "<tr><td>Возможные очки</td>"
         '<td align="right"><b>2</b>'
         in text
     )
     assert "Всего колб в клане" in text
     assert "2.00к" in text
+    assert "Откуда берутся возможные очки" in text
     assert "ни один ресурс не обновлён с 03:00 понедельника" in text
 
 
