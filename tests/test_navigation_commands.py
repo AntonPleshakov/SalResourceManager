@@ -342,6 +342,10 @@ def test_recovery_commands_are_registered_before_scenario_handlers(monkeypatch):
     class RegistrationBot:
         def __init__(self):
             self.message_handlers = []
+            self.state = None
+
+        def get_state(self, user_id, chat_id=None):
+            return self.state
 
         def register_message_handler(self, handler, **kwargs):
             self.message_handlers.append((handler, kwargs))
@@ -359,3 +363,9 @@ def test_recovery_commands_are_registered_before_scenario_handlers(monkeypatch):
     assert bot.message_handlers[1][1]["commands"] == ["menu"]
     assert bot.message_handlers[2][0] is cancel_command
     assert bot.message_handlers[2][1]["commands"] == ["cancel"]
+    fallback, filters = bot.message_handlers[3]
+    assert fallback is navigation.home
+    assert "state" not in filters
+    assert filters["func"](make_message("обычный текст"))
+    bot.state = "active"
+    assert not filters["func"](make_message("значение состояния"))

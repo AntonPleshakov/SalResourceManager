@@ -26,6 +26,13 @@ def _has_active_state(message: Message, bot: TeleBot) -> bool:
     return bot.get_state(message.from_user.id, message.chat.id) is not None
 
 
+def _inactive_state_filter(bot: TeleBot):
+    def has_no_active_state(message: Message) -> bool:
+        return not _has_active_state(message, bot)
+
+    return has_no_active_state
+
+
 def _notify_about_cancelled_state(message: Message, bot: TeleBot) -> None:
     if _has_active_state(message, bot):
         bot.send_message(
@@ -86,15 +93,15 @@ def register_handlers(bot: TeleBot):
     user_data.register_handlers(bot)
     war.register_handlers(bot)
     releases.register_handlers(bot)
+    admins.register_handlers(bot)
     handlers.private_message(
         home,
         content_types=["text"],
-        state=None,
+        predicate=_inactive_state_filter(bot),
     )
     handlers.private_callback(home, button="home")
     handlers.private_callback(
         toggle_reminders,
         button="reminders/toggle",
     )
-    admins.register_handlers(bot)
     logger.info("Telegram handlers registered")
