@@ -361,13 +361,13 @@ def test_maximum_war_points_reports_stale_accounts_separately(
     )
     assert "<tr><td>Учтено аккаунтов</td><td align=\"right\"><b>2</b>" in text
     assert (
-        "<tr><td>Возможные очки</td>"
+        "<tr><td>Аккаунты с возможными очками</td>"
         '<td align="right"><b>2</b>'
         in text
     )
     assert "Всего колб в клане" in text
     assert "2.00к" in text
-    assert "Откуда берутся возможные очки" in text
+    assert "Возможные очки" in text
     assert "ни один ресурс не обновлён с 03:00 понедельника" in text
 
 

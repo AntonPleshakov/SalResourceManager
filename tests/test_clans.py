@@ -153,7 +153,7 @@ def test_membership_handler_detaches_accounts_when_user_leaves(
         )
     )
 
-    detached = users.get_user(42, account.account_id)
+    detached = users.get_active_account(42)
     assert detached is not None
     assert detached.clan_id is None
     connection.close()
@@ -184,7 +184,7 @@ def test_membership_handler_ignores_non_departures_and_unknown_groups(tmp_path):
             )
         )
 
-    attached = users.get_user(42, account.account_id)
+    attached = users.get_active_account(42)
     assert attached is not None
     assert attached.clan_id == -100001
     connection.close()

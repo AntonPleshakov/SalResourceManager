@@ -83,7 +83,7 @@ def _war_points_text(clan_id: int, clan_title: str) -> str:
         )
         day_blocks.append(
             details(
-                f"День {day} — <b>{format_points(points)}</b>"
+                f"День {day} — {format_points(points)}"
                 + (
                     f" (+ {format_points(stale_report.points_by_day[day])}"
                     f" = {format_points(points + stale_report.points_by_day[day])})"
