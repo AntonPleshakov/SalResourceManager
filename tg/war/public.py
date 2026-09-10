@@ -1,12 +1,15 @@
 from datetime import date, datetime
 from html import escape
+import sqlite3
 
 from telebot import TeleBot
 from telebot.types import CallbackQuery
 
 from common.datetime_utils import now, week_started_on
+from db.initializer import get_access_group_db
 from logger.app_logger import logger
 from resources.user_data import UserData
+from resources.clan_technologies import ClanTechnologies
 from resources.war import WarPointsCalculator
 import tg.war as war
 from tg.handlers import HandlerRegistry
@@ -33,6 +36,17 @@ def _resources_updated_since(user: UserData, cutoff: date) -> bool:
     return user.has_war_resource_updates_since(cutoff)
 
 
+def _clan_technologies(clan_id: int) -> ClanTechnologies:
+    try:
+        return get_access_group_db().get_clan_technologies(clan_id)
+    except RuntimeError:
+        return ClanTechnologies()
+    except sqlite3.ProgrammingError as error:
+        if "closed" not in str(error).casefold():
+            raise
+        return ClanTechnologies()
+
+
 def _war_points_text(clan_id: int, clan_title: str) -> str:
     database = war.get_user_data_db()
     users = database.get_clan_users(clan_id)
@@ -53,8 +67,10 @@ def _war_points_text(clan_id: int, clan_title: str) -> str:
         len(war.WAR_STAGES),
     )
     with observe_score_calculation("public"):
-        report = WarPointsCalculator().calculate(accounted_users, war.WAR_STAGES)
-        stale_report = WarPointsCalculator().calculate(
+        clan_technologies = _clan_technologies(clan_id)
+        calculator = WarPointsCalculator(clan_technologies)
+        report = calculator.calculate(accounted_users, war.WAR_STAGES)
+        stale_report = calculator.calculate(
             stale_users,
             war.WAR_STAGES,
         )

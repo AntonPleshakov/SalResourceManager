@@ -1,10 +1,13 @@
 from collections import Counter
 from html import escape
+import sqlite3
 
 from telebot import TeleBot
 from telebot.types import CallbackQuery
 
+from db.initializer import get_access_group_db
 from logger.app_logger import logger
+from resources.clan_technologies import ClanTechnologies
 from resources.user_data import UserData
 from resources.war import WarActivity, WarPointsCalculator
 from resources.war_rules.forge import explain_forge_occurrences
@@ -26,10 +29,15 @@ from tg.utils import format_points, get_ids, get_username
 from tg.war.supplementary import flasks_summary
 
 
-def _personal_war_points_text(user: UserData) -> str:
+def _personal_war_points_text(
+    user: UserData,
+    clan_technologies: ClanTechnologies | None = None,
+) -> str:
     logger.info("Calculating personal war points user_id=%s", user.user_id.value)
     with observe_score_calculation("personal_summary"):
-        report = WarPointsCalculator().calculate([user], war.WAR_STAGES)
+        report = WarPointsCalculator(clan_technologies).calculate(
+            [user], war.WAR_STAGES
+        )
     day_blocks = []
     for day, points in report.points_by_day.items():
         activities = "".join(
@@ -105,17 +113,44 @@ def _activity_occurrences(stages, selected_activity: WarActivity) -> int:
     )
 
 
+def _activity_day_numbers(stages, selected_activity: WarActivity) -> list[int]:
+    return [
+        day
+        for day, activities in sorted(stages.items())
+        for activity in activities
+        if activity == selected_activity
+    ]
+
+
+def _active_clan_technologies(user_id: int) -> ClanTechnologies:
+    account = war.get_user_data_db().get_active_account(user_id)
+    if account is None or account.clan_id is None:
+        return ClanTechnologies()
+    try:
+        return get_access_group_db().get_clan_technologies(account.clan_id)
+    except RuntimeError:
+        return ClanTechnologies()
+    except sqlite3.ProgrammingError as error:
+        if "closed" not in str(error).casefold():
+            raise
+        return ClanTechnologies()
+
+
 def _personal_war_activity_details_text(
-    user: UserData, activity: WarActivity
+    user: UserData,
+    activity: WarActivity,
+    clan_technologies: ClanTechnologies | None = None,
 ) -> str:
     occurrences = _activity_occurrences(war.WAR_STAGES, activity)
-    calculator = WarPointsCalculator()
+    technologies = clan_technologies or ClanTechnologies()
+    calculator = WarPointsCalculator(technologies)
     with observe_score_calculation("activity_details"):
         details = calculator.calculate_details(user, [activity])[activity]
         occurrence_points = calculator.calculate_occurrence_points(
             user,
             activity,
             occurrences,
+            _activity_day_numbers(war.WAR_STAGES, activity),
         )
         total_points = sum(occurrence_points)
     occurrence_rows = "".join(
@@ -136,7 +171,7 @@ def _personal_war_activity_details_text(
     ]
     if activity == WarActivity.FORGE:
         for index, occurrence_details in enumerate(
-            explain_forge_occurrences(user, occurrences),
+            explain_forge_occurrences(user, occurrences, technologies),
             start=1,
         ):
             items = "".join(
@@ -233,7 +268,7 @@ def personal_war_points(callback_query: CallbackQuery, bot: TeleBot) -> None:
         return
 
     parts = [
-        _personal_war_points_text(user),
+        _personal_war_points_text(user, _active_clan_technologies(user_id)),
         button_row(
             (
                 callback_button(
@@ -269,7 +304,9 @@ def personal_war_details_menu(
 
     activities = _configured_activities(war.WAR_STAGES)
     with observe_score_calculation("personal_details"):
-        report = WarPointsCalculator().calculate([user], war.WAR_STAGES)
+        report = WarPointsCalculator(
+            _active_clan_technologies(user_id)
+        ).calculate([user], war.WAR_STAGES)
     parts = [
         heading("Подробный расчёт"),
         account_context(str(user.tag.value)),
@@ -329,7 +366,9 @@ def personal_war_activity_details(
         chat_id,
         message_id,
         [
-            _personal_war_activity_details_text(user, activity),
+            _personal_war_activity_details_text(
+                user, activity, _active_clan_technologies(user_id)
+            ),
             button_row(
                 (
                     callback_button(

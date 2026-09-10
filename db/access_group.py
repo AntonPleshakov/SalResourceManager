@@ -4,6 +4,11 @@ from dataclasses import dataclass
 from typing import List, Optional
 
 from logger.app_logger import logger
+from resources.clan_technologies import (
+    CLAN_TECHNOLOGY_DEFINITIONS,
+    ClanTechnologies,
+    validate_clan_technology_level,
+)
 
 from .repository import DatabaseRepository
 
@@ -39,6 +44,45 @@ def _insert_group(connection, group_id: int, title: str) -> AccessGroup:
 
 
 class AccessGroupDB(DatabaseRepository):
+    def get_clan_technologies(self, group_id: int) -> ClanTechnologies:
+        columns = tuple(
+            definition.name for definition in CLAN_TECHNOLOGY_DEFINITIONS
+        )
+        row = self._database.fetch_one(
+            "SELECT " + ", ".join(columns) +
+            " FROM clan_technologies WHERE group_id = ?",
+            (int(group_id),),
+        )
+        if self.get_group(group_id) is None:
+            raise ValueError("Клан не найден")
+        if row is None:
+            return ClanTechnologies()
+        return ClanTechnologies(**dict(zip(columns, map(int, row))))
+
+    def set_clan_technology(
+        self, group_id: int, name: str, level: int
+    ) -> ClanTechnologies:
+        level = validate_clan_technology_level(name, level)
+        def save(connection) -> None:
+            clan = connection.execute(
+                "SELECT 1 FROM clans WHERE group_id = ?", (int(group_id),)
+            ).fetchone()
+            if clan is None:
+                raise ValueError("Клан не найден")
+            connection.execute(
+                "INSERT INTO clan_technologies (group_id) VALUES (?) "
+                "ON CONFLICT(group_id) DO NOTHING",
+                (int(group_id),),
+            )
+            connection.execute(
+                f'UPDATE clan_technologies SET "{name}" = ? '
+                "WHERE group_id = ?",
+                (level, int(group_id)),
+            )
+
+        self._database.run_in_transaction(save)
+        return self.get_clan_technologies(group_id)
+
     def get_groups(self) -> List[AccessGroup]:
         rows = self._database.fetch_all(
             "SELECT group_id, title FROM clans ORDER BY title, group_id"

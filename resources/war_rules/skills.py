@@ -1,6 +1,7 @@
 from decimal import Decimal
 from typing import Tuple
 
+from resources.clan_technologies import ClanTechnologies
 from resources.user_data import UserData
 from resources.war_rules.details import ActivityDetails, format_calculation_number
 
@@ -19,7 +20,10 @@ SKILL_AVERAGE_INITIAL_COUNT = sum(
 )
 
 
-def explain_skill_points(user: UserData) -> ActivityDetails:
+def explain_skill_points(
+    user: UserData,
+    clan_technologies: ClanTechnologies = ClanTechnologies(),
+) -> ActivityDetails:
     tickets = Decimal(user.skills.value)
     discount = Decimal(user.skill_summon_cost.value)
     ticket_cost = SKILL_BASE_TICKET_COST * (Decimal("100") - discount) / Decimal("100")
@@ -27,9 +31,34 @@ def explain_skill_points(user: UserData) -> ActivityDetails:
     expected_upgrades = max(
         summoned_skills - SKILL_AVERAGE_INITIAL_COUNT, Decimal("0")
     ) / SKILL_AVERAGE_DUPLICATES_PER_UPGRADE
-    creation_points = summoned_skills * SKILL_CREATION_POINTS
-    upgrade_points = expected_upgrades * SKILL_UPGRADE_POINTS
+    creation_base_points = summoned_skills * SKILL_CREATION_POINTS
+    upgrade_base_points = expected_upgrades * SKILL_UPGRADE_POINTS
+    summon_multiplier = clan_technologies.multiplier("summoning_skills")
+    upgrade_multiplier = clan_technologies.multiplier("upgrading_skills")
+    creation_points = creation_base_points * summon_multiplier
+    upgrade_points = upgrade_base_points * upgrade_multiplier
     points = creation_points + upgrade_points
+    creation_calculation = (
+        f"За создание навыков: "
+        f"{format_calculation_number(summoned_skills)} × "
+        f"{format_calculation_number(SKILL_CREATION_POINTS)} = "
+        f"{format_calculation_number(creation_base_points)} очков"
+    )
+    upgrade_calculation = (
+        f"За улучшения: {format_calculation_number(expected_upgrades)} × "
+        f"{format_calculation_number(SKILL_UPGRADE_POINTS)} = "
+        f"{format_calculation_number(upgrade_base_points)} очков"
+    )
+    if summon_multiplier != 1:
+        creation_calculation += (
+            f"; бонус клана × {format_calculation_number(summon_multiplier)} = "
+            f"{format_calculation_number(creation_points)} очков"
+        )
+    if upgrade_multiplier != 1:
+        upgrade_calculation += (
+            f"; бонус клана × {format_calculation_number(upgrade_multiplier)} = "
+            f"{format_calculation_number(upgrade_points)} очков"
+        )
     return ActivityDetails(
         consumable_points=points,
         repeatable_points=Decimal("0"),
@@ -48,13 +77,8 @@ def explain_skill_points(user: UserData) -> ActivityDetails:
             f"{format_calculation_number(SKILL_AVERAGE_INITIAL_COUNT)}, 0) ÷ "
             f"{format_calculation_number(SKILL_AVERAGE_DUPLICATES_PER_UPGRADE)} = "
             f"{format_calculation_number(expected_upgrades)}",
-            f"За создание навыков: "
-            f"{format_calculation_number(summoned_skills)} × "
-            f"{format_calculation_number(SKILL_CREATION_POINTS)} = "
-            f"{format_calculation_number(creation_points)} очков",
-            f"За улучшения: {format_calculation_number(expected_upgrades)} × "
-            f"{format_calculation_number(SKILL_UPGRADE_POINTS)} = "
-            f"{format_calculation_number(upgrade_points)} очков",
+            creation_calculation,
+            upgrade_calculation,
             f"Итого: {format_calculation_number(creation_points)} + "
             f"{format_calculation_number(upgrade_points)} = "
             f"{format_calculation_number(points)} очков",

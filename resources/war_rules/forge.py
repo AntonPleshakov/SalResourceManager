@@ -1,6 +1,7 @@
 from decimal import Decimal
 from typing import Tuple
 
+from resources.clan_technologies import ClanTechnologies
 from resources.user_data import UserData
 from resources.war_rules.details import ActivityDetails, format_calculation_number
 
@@ -53,10 +54,15 @@ def _forge_total_cost(forge_level: int) -> int:
     return FORGE_TOTAL_COSTS[forge_level]
 
 
-def explain_forge_level(forge_level: int) -> ActivityDetails:
+def explain_forge_level(
+    forge_level: int,
+    clan_technologies: ClanTechnologies = ClanTechnologies(),
+) -> ActivityDetails:
     total_cost = _forge_total_cost(forge_level)
     counted_thousands = total_cost // 1_000
-    points = Decimal(counted_thousands * FORGE_POINTS_PER_THOUSAND_COINS)
+    base_points = Decimal(counted_thousands * FORGE_POINTS_PER_THOUSAND_COINS)
+    multiplier = clan_technologies.multiplier("forge_upgrades")
+    points = base_points * multiplier
     calculations = []
     if forge_level == len(FORGE_TOTAL_COSTS):
         calculations.append(
@@ -68,6 +74,9 @@ def explain_forge_level(forge_level: int) -> ActivityDetails:
             f"Стоимость улучшений: {format_calculation_number(total_cost)} монет",
             f"Засчитываемые тысячи монет: {counted_thousands}",
             f"{counted_thousands} × {FORGE_POINTS_PER_THOUSAND_COINS} = "
+            f"{format_calculation_number(base_points)} очков",
+            f"Бонус клана за улучшение кузницы: × "
+            f"{format_calculation_number(multiplier)} = "
             f"{format_calculation_number(points)} очков",
         ]
     )
@@ -79,8 +88,11 @@ def explain_forge_level(forge_level: int) -> ActivityDetails:
     )
 
 
-def explain_forge_points(user: UserData) -> ActivityDetails:
-    return explain_forge_level(user.forge_level.value)
+def explain_forge_points(
+    user: UserData,
+    clan_technologies: ClanTechnologies = ClanTechnologies(),
+) -> ActivityDetails:
+    return explain_forge_level(user.forge_level.value, clan_technologies)
 
 
 def calculate_forge_points(user: UserData) -> Decimal:
@@ -88,16 +100,20 @@ def calculate_forge_points(user: UserData) -> Decimal:
 
 
 def explain_forge_occurrences(
-    user: UserData, occurrence_count: int
+    user: UserData,
+    occurrence_count: int,
+    clan_technologies: ClanTechnologies = ClanTechnologies(),
 ) -> Tuple[ActivityDetails, ...]:
     if occurrence_count <= 0:
         return ()
 
     forge_level = user.forge_level.value
-    occurrences = [explain_forge_level(forge_level)]
+    occurrences = [explain_forge_level(forge_level, clan_technologies)]
     if occurrence_count >= 2:
         if forge_level <= FORGE_MAX_LEVEL_FOR_SECOND_EVENT:
-            occurrences.append(explain_forge_level(forge_level + 1))
+            occurrences.append(
+                explain_forge_level(forge_level + 1, clan_technologies)
+            )
         else:
             occurrences.append(
                 ActivityDetails(

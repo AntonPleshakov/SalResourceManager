@@ -5,6 +5,7 @@ from enum import Enum
 from types import MappingProxyType
 from typing import Dict, Iterable, Mapping, Sequence, Tuple
 
+from resources.clan_technologies import ClanTechnologies
 from resources.user_data import UserData
 from resources.war_rules.details import ActivityDetails
 from resources.war_rules.dungeons import explain_dungeon_points
@@ -67,7 +68,10 @@ class WarPointsReport:
 
 
 class WarPointsCalculator:
-    def __init__(self):
+    def __init__(
+        self, clan_technologies: ClanTechnologies | None = None
+    ):
+        self._clan_technologies = clan_technologies or ClanTechnologies()
         self._details_rules = {
             WarActivity.FORGING: explain_forging_points,
             WarActivity.DUNGEONS: explain_dungeon_points,
@@ -78,13 +82,23 @@ class WarPointsCalculator:
             WarActivity.PETS: explain_pet_points,
         }
 
+    def _explain(
+        self, user: UserData, activity: WarActivity
+    ) -> ActivityDetails:
+        return self._details_rules[activity](user, self._clan_technologies)
+
+    def _apply_day_bonus(self, points: Decimal, day: int | None) -> Decimal:
+        if day is None:
+            return points
+        return points * self._clan_technologies.day_multiplier(day)
+
     def calculate_details(
         self,
         user: UserData,
         activities: Sequence[WarActivity],
     ) -> Mapping[WarActivity, ActivityDetails]:
         return {
-            activity: self._details_rules[activity](user)
+            activity: self._explain(user, activity)
             for activity in dict.fromkeys(activities)
             if activity in self._details_rules
         }
@@ -94,22 +108,31 @@ class WarPointsCalculator:
         user: UserData,
         activity: WarActivity,
         occurrence_count: int,
+        days: Sequence[int] = (),
     ) -> Tuple[Decimal, ...]:
         if occurrence_count <= 0:
             return ()
         if activity == WarActivity.FORGE:
-            return tuple(
+            points = tuple(
                 details.points
                 for details in explain_forge_occurrences(
                     user,
                     occurrence_count,
+                    self._clan_technologies,
                 )
             )
-
-        details = self._details_rules[activity](user)
-        return (
-            details.points,
-            *((details.repeatable_points,) * (occurrence_count - 1)),
+        else:
+            details = self._explain(user, activity)
+            points = (
+                details.points,
+                *((details.repeatable_points,) * (occurrence_count - 1)),
+            )
+        return tuple(
+            self._apply_day_bonus(
+                occurrence_points,
+                days[index] if index < len(days) else None,
+            )
+            for index, occurrence_points in enumerate(points)
         )
 
     def calculate(
@@ -123,12 +146,22 @@ class WarPointsCalculator:
             for activities in stages.values()
             for activity in activities
         )
+        occurrence_days = {
+            activity: tuple(
+                day
+                for day, activities in sorted(stages.items())
+                for candidate in activities
+                if candidate == activity
+            )
+            for activity in occurrence_counts
+        }
         user_schedules = [
             {
                 activity: self.calculate_occurrence_points(
                     user,
                     activity,
                     occurrence_counts[activity],
+                    occurrence_days[activity],
                 )
                 for activity in occurrence_counts
                 if activity in self._details_rules
@@ -168,7 +201,10 @@ class WarPointsCalculator:
                 else:
                     points = sum(
                         (
-                            self._details_rules[activity](user).points
+                            self._apply_day_bonus(
+                                self._explain(user, activity).points,
+                                day,
+                            )
                             for user in users
                         ),
                         Decimal("0"),

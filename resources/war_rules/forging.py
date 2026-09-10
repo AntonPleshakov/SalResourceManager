@@ -1,6 +1,7 @@
 from decimal import Decimal
 from typing import List, Sequence
 
+from resources.clan_technologies import ClanTechnologies
 from resources.user_data import UserData
 from resources.war_rules.details import ActivityDetails, format_calculation_number
 
@@ -67,13 +68,18 @@ def _expected_points_per_creation(forge_level: int) -> Decimal:
     )
 
 
-def explain_forging_points(user: UserData) -> ActivityDetails:
+def explain_forging_points(
+    user: UserData,
+    clan_technologies: ClanTechnologies = ClanTechnologies(),
+) -> ActivityDetails:
     hammers = Decimal(user.hammers.value)
     free_chance = Decimal(user.free_equipment_chance.value)
     paid_creation_chance = (Decimal("100") - free_chance) / Decimal("100")
     expected_creations = hammers / paid_creation_chance
     expected_points = _expected_points_per_creation(user.forge_level.value)
-    points = expected_creations * expected_points
+    base_points = expected_creations * expected_points
+    multiplier = clan_technologies.multiplier("forging_equipment")
+    points = base_points * multiplier
     return ActivityDetails(
         consumable_points=points,
         repeatable_points=Decimal("0"),
@@ -92,6 +98,9 @@ def explain_forging_points(user: UserData) -> ActivityDetails:
             f"{format_calculation_number(expected_points)}",
             f"{format_calculation_number(expected_creations)} × "
             f"{format_calculation_number(expected_points)} = "
+            f"{format_calculation_number(base_points)} очков",
+            f"Бонус клана за ковку: × "
+            f"{format_calculation_number(multiplier)} = "
             f"{format_calculation_number(points)} очков",
         ),
     )

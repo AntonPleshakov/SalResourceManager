@@ -8,6 +8,7 @@ from db.initializer import get_admins_db
 from logger.app_logger import logger
 from tg.admins import (
     add_admin,
+    clan_technologies,
     clans,
     del_admin,
     game_data,
@@ -117,6 +118,15 @@ def _show_admins_main_menu(
         heading("Настройки клана", level=3),
         button_row(
             (
+                callback_button(
+                    "🔬 Клановые технологии",
+                    "admins/clan_technologies",
+                    style="primary",
+                ),
+            )
+        ),
+        button_row(
+            (
                 callback_button("➕ Добавить клан", "admins/register_group"),
                 callback_button("✏️ Переименовать", "admins/rename_clan"),
             )
@@ -208,6 +218,7 @@ def register_handlers(bot: TeleBot):
         clan=ActiveClan(),
     )
     add_admin.register_handlers(bot)
+    clan_technologies.register_handlers(bot)
     clans.register_handlers(bot)
     del_admin.register_handlers(bot)
     game_data.register_handlers(bot)

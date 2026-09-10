@@ -5,6 +5,7 @@ from resources.egg_levels import (
     EggLevel,
     format_hatch_batch_count,
 )
+from resources.clan_technologies import ClanTechnologies
 from resources.user_data import UserData
 from resources.war_rules.details import ActivityDetails, format_calculation_number
 
@@ -53,19 +54,29 @@ def _purchased_egg_count(user: UserData) -> Decimal:
     )
 
 
-def explain_pet_points(user: UserData) -> ActivityDetails:
+def explain_pet_points(
+    user: UserData,
+    clan_technologies: ClanTechnologies = ClanTechnologies(),
+) -> ActivityDetails:
     base_eggs = Decimal(user.shells.value) / SHELLS_PER_EGG
     egg_multiplier = (
         Decimal("1")
         + Decimal(user.extra_egg_chance.value) / Decimal("100")
     )
     eggs = _purchased_egg_count(user)
-    merge_points = (Decimal(user.pets.value) + eggs) * PET_OR_EGG_MERGE_POINTS
+    merge_base_points = (
+        Decimal(user.pets.value) + eggs
+    ) * PET_OR_EGG_MERGE_POINTS
 
     eggs_per_batch = user.eggs_per_hatch_batch.value
     max_level = EggLevel(user.max_egg_level.value)
     daily_hatching_points = _daily_hatching_points(user)
     advance_hatching_points = Decimal(max_level.points * eggs_per_batch)
+    merge_multiplier = clan_technologies.multiplier("merging_pets")
+    hatch_multiplier = clan_technologies.multiplier("hatching_eggs")
+    merge_points = merge_base_points * merge_multiplier
+    daily_hatching_points *= hatch_multiplier
+    advance_hatching_points *= hatch_multiplier
     points = merge_points + daily_hatching_points + advance_hatching_points
 
     daily_batch_lines = tuple(
@@ -100,11 +111,16 @@ def explain_pet_points(user: UserData) -> ActivityDetails:
             f"Объединение: ({format_calculation_number(user.pets.value)} + "
             f"{format_calculation_number(eggs)}) × "
             f"{format_calculation_number(PET_OR_EGG_MERGE_POINTS)} = "
+            f"{format_calculation_number(merge_base_points)}; бонус клана × "
+            f"{format_calculation_number(merge_multiplier)} = "
             f"{format_calculation_number(merge_points)} очков",
-            _daily_hatching_calculation(user, max_level),
+            _daily_hatching_calculation(user, max_level)
+            + f"; бонус клана × {format_calculation_number(hatch_multiplier)} = "
+            + f"{format_calculation_number(daily_hatching_points)} очков",
             f"Заранее подготовленное вылупление: 1 пакет × "
             f"{eggs_per_batch} яйца × "
-            f"{format_calculation_number(max_level.points)} = "
+            f"{format_calculation_number(max_level.points)}; бонус клана × "
+            f"{format_calculation_number(hatch_multiplier)} = "
             f"{format_calculation_number(advance_hatching_points)} очков",
             f"Итого: {format_calculation_number(merge_points)} + "
             f"{format_calculation_number(daily_hatching_points)} + "
