@@ -9,7 +9,7 @@ from config.config import getconf, is_debug_mode
 from db.initializer import initialize_database
 from logger.app_logger import logger
 from tg.access import GroupAccessMiddleware
-from tg.clans import sync_migrated_clan_titles
+from tg.clans import register_membership_handlers, sync_migrated_clan_titles
 from tg.debug_bot import DebugTeleBot
 from tg.filters import add_custom_filters
 from tg.handlers import HandlerRegistry
@@ -162,6 +162,11 @@ if __name__ == "__main__":
         )
     )
     bot.setup_middleware(TelegramMetricsMiddleware())
+    register_membership_handlers(
+        bot,
+        databases.access_group,
+        databases.user_data,
+    )
     tg.manager.register_handlers(bot)
     tg.manager.configure_commands(bot)
     handlers = HandlerRegistry(bot)

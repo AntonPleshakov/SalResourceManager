@@ -93,6 +93,7 @@ def test_webhook_listener_is_configured(tmp_path, monkeypatch):
         max_connections=1,
         drop_pending_updates=False,
         secret_token="valid-secret",
+        allowed_updates=["message", "callback_query", "chat_member"],
     )
     listener_class.assert_called_once_with(
         bot=bot,

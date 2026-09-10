@@ -3,7 +3,7 @@
 from typing import Iterable, List
 
 from telebot import TeleBot
-from telebot.types import ChatMember
+from telebot.types import ChatMember, ChatMemberUpdated
 
 from db.access_group import AccessGroup, AccessGroupDB
 from logger.app_logger import logger
@@ -95,6 +95,35 @@ def refresh_clan_accounts(bot: TeleBot, clan_id: int, database) -> None:
             ) from error
         if not is_group_member(member):
             database.detach_accounts_from_clan(user_id, clan_id)
+
+
+def register_membership_handlers(
+    bot: TeleBot,
+    groups: AccessGroupDB,
+    database,
+) -> None:
+    """Detach accounts immediately when their owner leaves a clan."""
+
+    def handle_membership_update(update: ChatMemberUpdated) -> None:
+        clan_id = int(update.chat.id)
+        if groups.get_group(clan_id) is None:
+            return
+        if not is_group_member(update.old_chat_member):
+            return
+        if is_group_member(update.new_chat_member):
+            return
+
+        user_id = int(update.new_chat_member.user.id)
+        detached = database.detach_accounts_from_clan(user_id, clan_id)
+        logger.info(
+            "Processed clan departure group_id=%s user_id=%s "
+            "detached_accounts=%s",
+            clan_id,
+            user_id,
+            detached,
+        )
+
+    bot.register_chat_member_handler(handle_membership_update)
 
 
 def sync_migrated_clan_titles(bot: TeleBot, groups: AccessGroupDB) -> None:

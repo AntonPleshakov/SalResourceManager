@@ -10,6 +10,7 @@ from telebot.ext.sync import SyncWebhookListener
 
 from config.config import getconf
 from tg.metrics import WebhookMetricsMiddleware
+from tg.update_types import ALLOWED_UPDATES
 
 
 _PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -134,6 +135,7 @@ def build_webhook_listener(
             max_connections=1,
             drop_pending_updates=False,
             secret_token=settings.secret_token,
+            allowed_updates=list(ALLOWED_UPDATES),
         )
 
     webhook_path = f"/{settings.url_path}/"

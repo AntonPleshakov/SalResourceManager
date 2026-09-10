@@ -12,7 +12,7 @@ from db.access_group import (
 from db.admins import Admin, AdminsDB
 from db.database import Database
 from db.user_data import UserDataDB
-from tg.clans import sync_migrated_clan_titles
+from tg.clans import register_membership_handlers, sync_migrated_clan_titles
 
 
 PROJECT_ROOT = Path(__file__).parents[1]
@@ -120,6 +120,73 @@ def test_detached_account_keeps_data_and_can_move_to_another_clan(tmp_path):
     assigned = users.get_assigned_user(42, account.account_id)
     assert assigned is not None
     assert assigned.hammers.value == 1234
+    connection.close()
+
+
+@pytest.mark.parametrize(
+    ("new_status", "is_member"),
+    [("left", None), ("kicked", None), ("restricted", False)],
+)
+def test_membership_handler_detaches_accounts_when_user_leaves(
+    tmp_path,
+    new_status,
+    is_member,
+):
+    connection = Database(tmp_path / "database.db")
+    groups = AccessGroupDB(connection)
+    groups.add_group(-100001, "Alpha")
+    users = UserDataDB(connection)
+    account = users.add_account(42, "player", "Hero", clan_id=-100001)
+    handlers = []
+    bot = SimpleNamespace(register_chat_member_handler=handlers.append)
+    register_membership_handlers(bot, groups, users)
+
+    handlers[0](
+        SimpleNamespace(
+            chat=SimpleNamespace(id=-100001),
+            old_chat_member=SimpleNamespace(status="member"),
+            new_chat_member=SimpleNamespace(
+                status=new_status,
+                is_member=is_member,
+                user=SimpleNamespace(id=42),
+            ),
+        )
+    )
+
+    detached = users.get_user(42, account.account_id)
+    assert detached is not None
+    assert detached.clan_id is None
+    connection.close()
+
+
+def test_membership_handler_ignores_non_departures_and_unknown_groups(tmp_path):
+    connection = Database(tmp_path / "database.db")
+    groups = AccessGroupDB(connection)
+    groups.add_group(-100001, "Alpha")
+    users = UserDataDB(connection)
+    account = users.add_account(42, "player", "Hero", clan_id=-100001)
+    handlers = []
+    bot = SimpleNamespace(register_chat_member_handler=handlers.append)
+    register_membership_handlers(bot, groups, users)
+
+    for clan_id, old_status, new_status in (
+        (-100001, "member", "administrator"),
+        (-100999, "member", "left"),
+    ):
+        handlers[0](
+            SimpleNamespace(
+                chat=SimpleNamespace(id=clan_id),
+                old_chat_member=SimpleNamespace(status=old_status),
+                new_chat_member=SimpleNamespace(
+                    status=new_status,
+                    user=SimpleNamespace(id=42),
+                ),
+            )
+        )
+
+    attached = users.get_user(42, account.account_id)
+    assert attached is not None
+    assert attached.clan_id == -100001
     connection.close()
 
 
