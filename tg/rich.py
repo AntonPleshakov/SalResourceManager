@@ -55,11 +55,12 @@ def details(summary: str, html: str, *, opened: bool = False) -> str:
     )
 
 
-def back_button(text: str, data: str) -> str:
-    return button_row(
-        (callback_button(text, data),),
-        align="left",
-    )
+def back_button(text: str, data: str, *, divider: bool = True) -> str:
+    buttons = [callback_button(text, data)]
+    if data != "home":
+        buttons.append(callback_button("🏠 Главное меню", "home"))
+    prefix = "<hr>" if divider else ""
+    return f"{prefix}{button_row(buttons)}"
 
 
 def confirmation_buttons(

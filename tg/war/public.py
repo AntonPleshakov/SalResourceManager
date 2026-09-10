@@ -187,7 +187,7 @@ def public_war_points(callback_query: CallbackQuery, bot: TeleBot) -> None:
                     account.clan_id,
                     getattr(account, "clan_title", "") or str(account.clan_id),
                 ),
-                back_button("⬅️ Очки войны", "war_menu"),
+                back_button("⬅️ Очки войны", "war_menu", divider=False),
             )
         ),
     )

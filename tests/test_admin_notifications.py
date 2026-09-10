@@ -273,6 +273,7 @@ def test_standard_notification_confirmation_is_compact_and_uses_snapshot(
     assert rich_button_texts(text) == [
         "📣 Отправить напоминание",
         "✖️ Отмена",
+        "🏠 Главное меню",
     ]
     plan = bot.data["standard_notification_plan"]
     assert len(plan.recipients) == 1
@@ -448,6 +449,7 @@ def test_custom_notification_audience_can_be_selected(monkeypatch):
         "admins/notifications/custom_audience",
         "admins/notifications/custom",
         "admins/notifications",
+        "home",
     ]
 
 
@@ -468,6 +470,7 @@ def test_custom_notification_prompts_for_audience_after_text():
         "admins/notifications/custom_audience/today",
         "admins/notifications/custom_audience/monday",
         "admins/notifications",
+        "home",
     ]
 
 

@@ -321,6 +321,7 @@ def hatch_batches_menu(callback_query: CallbackQuery, bot: TeleBot) -> None:
             button_row(
                 (callback_button("✅ Готово", "pets", style="success"),)
             ),
+            back_button("🏠 Главное меню", "home"),
         )
     )
     edit_rich_message(

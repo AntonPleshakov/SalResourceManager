@@ -166,6 +166,7 @@ def test_new_account_clan_picker_only_shows_memberships(tmp_path, monkeypatch):
     assert callback_data(bot.edited[-1][0]) == [
         "accounts/add/accounts/clan/-100123",
         "accounts",
+        "home",
     ]
     connection.close()
 
@@ -187,6 +188,7 @@ def test_active_account_can_move_only_to_a_current_membership(tmp_path, monkeypa
     assert callback_data(bot.edited[-1][0]) == [
         f"accounts/move/{account.account_id}/clan/-100123",
         "accounts",
+        "home",
     ]
 
     move_account(
@@ -238,6 +240,7 @@ def test_clan_actions_separate_moving_and_leaving(
     assert callback_data(bot.edited[-1][0]) == [
         f"accounts/move/{account.account_id}/clan/-100456",
         "accounts",
+        "home",
     ]
     connection.close()
 
@@ -269,6 +272,7 @@ def test_leaving_clan_detaches_account_and_preserves_data(tmp_path, monkeypatch)
     assert callback_data(bot.edited[-1][0]) == [
         f"accounts/move/{account.account_id}/leave/confirm/accounts",
         "accounts",
+        "home",
     ]
 
     leave_clan(
@@ -391,7 +395,7 @@ def test_account_selector_returns_to_resource_screen_after_switch(
     assert "accounts/add/resources" in menu_buttons
     assert "accounts/delete/menu/resources" in menu_buttons
     assert "✏️ Переименовать" in callback_texts(bot.edited[-1][0])
-    assert menu_buttons[-1] == "resources"
+    assert menu_buttons[-2:] == ["resources", "home"]
 
     select_account(
         make_callback(f"accounts/select/resources/{first.account_id}"), bot
@@ -477,10 +481,13 @@ def test_stale_data_account_selection_detaches_and_prompts_for_clan(
     ).clan_id is None
     assert "Выберите клан аккаунта" in bot.edited[-1][0]
     assert "<h2>Ресурсы</h2>" not in bot.edited[-1][0]
-    assert callback_data(bot.edited[-1][0])[-1] == "accounts/resources"
+    assert callback_data(bot.edited[-1][0])[-2:] == [
+        "accounts/resources",
+        "home",
+    ]
     assert all(
         callback.endswith("/resources")
-        for callback in callback_data(bot.edited[-1][0])[:-1]
+        for callback in callback_data(bot.edited[-1][0])[:-2]
     )
     connection.close()
 
@@ -617,6 +624,7 @@ def test_delete_selector_only_lists_inactive_accounts(tmp_path, monkeypatch):
         f"accounts/delete/confirm/{first.account_id}/accounts",
         f"accounts/delete/confirm/{second.account_id}/accounts",
         "accounts",
+        "home",
     ]
     assert (
         f"accounts/delete/confirm/{active.account_id}/accounts"
@@ -634,6 +642,7 @@ def test_delete_selector_only_lists_inactive_accounts(tmp_path, monkeypatch):
     assert callback_data(bot.edited[-1][0]) == [
         f"accounts/delete/{first.account_id}/accounts",
         "accounts/delete/menu/accounts",
+        "home",
     ]
     connection.close()
 

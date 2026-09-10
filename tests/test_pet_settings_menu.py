@@ -174,7 +174,9 @@ def test_lowering_max_level_warns_before_clearing_daily_batches(monkeypatch):
     assert callback_data(text) == [
         "pets/max_level/confirm/0/4",
         "pets/max_level",
+        "home",
     ]
+    assert "<hr><tg-button-row>" in text
     assert markup is None
 
 
@@ -256,6 +258,7 @@ def test_daily_batch_editor_changes_each_level_independently(monkeypatch):
     hatch_batches_menu(make_callback("pets/batches"), bot)
     assert "pets/batches/6/plus" in callback_data(bot.edited[-1][0])
     assert "pets/batches/5/minus" in callback_data(bot.edited[-1][0])
+    assert callback_data(bot.edited[-1][0])[-1] == "home"
 
     change_hatch_batch_count(make_callback("pets/batches/6/plus"), bot)
     change_hatch_batch_count(make_callback("pets/batches/5/minus"), bot)

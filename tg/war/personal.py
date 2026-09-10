@@ -338,6 +338,7 @@ def personal_war_activity_details(
                     callback_button("📊 По дням", "war_calculator"),
                 )
             ),
+            back_button("🏠 Главное меню", "home"),
         ],
     )
 

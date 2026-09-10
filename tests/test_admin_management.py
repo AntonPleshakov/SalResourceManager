@@ -178,6 +178,7 @@ def test_delete_admin_options_exclude_requester(monkeypatch):
         "1",
         "101",
         "admins",
+        "home",
     ]
     assert bot.data["admin_group_title"] == "Test clan"
 

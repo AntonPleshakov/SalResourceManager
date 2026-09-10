@@ -344,7 +344,7 @@ def build_section_menu(
                 "их после изменения уровней или бонусов.</p>",
             )
         )
-    parts.append(back_button("⬅️ Главное меню", "home"))
+    parts.append(back_button("⬅️ Главное меню", "home", divider=False))
     return MenuContent(rich_message=input_rich_message(parts))
 
 

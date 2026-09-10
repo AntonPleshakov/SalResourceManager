@@ -207,7 +207,7 @@ def test_personal_war_details_menu_lists_every_configured_activity(monkeypatch):
     assert {
         f"war_calculator/details/{activity.value}" for activity in WarActivity
     }.issubset(buttons)
-    assert buttons[-1] == "war_calculator"
+    assert buttons[-2:] == ["war_calculator", "home"]
 
 
 def test_personal_war_activity_details_explain_resources_and_formula(monkeypatch):
@@ -238,6 +238,7 @@ def test_personal_war_activity_details_explain_resources_and_formula(monkeypatch
     assert rich_callback_data(text) == [
         "war_calculator/details",
         "war_calculator",
+        "home",
     ]
     assert markup is None
 
@@ -270,7 +271,7 @@ def test_maximum_war_points_returns_to_war_menu(monkeypatch):
     text = bot.edited[0][0]
     assert "<caption>Итого по активностям</caption>" in text
     assert "<th>Всего</th>" in text
-    assert callback_data(text) == ["war_menu"]
+    assert callback_data(text) == ["war_menu", "home"]
 
 
 def test_war_week_starts_at_three_on_monday():
@@ -374,5 +375,6 @@ def test_personal_war_calculator_prompts_when_data_is_missing(monkeypatch):
         "technologies",
         "pets",
         "war_menu",
+        "home",
     ]
     assert markup is None
