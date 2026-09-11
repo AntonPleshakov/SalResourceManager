@@ -2,7 +2,12 @@ from html import escape
 from typing import Iterable
 
 from telebot import TeleBot
-from telebot.types import CallbackQuery, InputRichMessage, Message
+from telebot.types import (
+    CallbackQuery,
+    InlineKeyboardMarkup,
+    InputRichMessage,
+    Message,
+)
 
 
 _BUTTON_STYLES = frozenset({"danger", "success", "primary", "link"})
@@ -109,11 +114,13 @@ def edit_rich_message(
     chat_id: int,
     message_id: int,
     rich_message: InputRichMessage,
+    reply_markup: InlineKeyboardMarkup | None = None,
 ) -> None:
     bot.edit_message_text(
         chat_id=chat_id,
         message_id=message_id,
         rich_message=rich_message,
+        reply_markup=reply_markup,
     )
 
 

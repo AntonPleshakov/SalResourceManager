@@ -49,6 +49,14 @@ def make_message(text: str) -> Message:
     )
 
 
+def callback_data(markup):
+    return [
+        button.callback_data
+        for row in markup.keyboard
+        for button in row
+    ]
+
+
 class ClanTechnologyBot:
     def __init__(self):
         self.data = {}
@@ -199,6 +207,18 @@ def test_level_input_has_cancel_and_max_buttons_and_returns_to_grid(
     assert bot.deleted_messages == [(42, 2)]
     assert bot.edits[-1][1]["message_id"] == 1
     assert "уровень 5 — сохранено" in bot.edits[-1][1]["rich_message"].html
+    markup = bot.edits[-1][1]["reply_markup"]
+    assert callback_data(markup) == [
+        *(
+            f"admins/clan_technologies/edit/{definition.name}"
+            for definition in CLAN_TECHNOLOGY_DEFINITIONS
+            if definition.affects_war_points
+        ),
+        "admins",
+        "home",
+    ]
+    assert markup.keyboard[0][0].text == "⚒️ 5 / 10"
+    assert "<tg-button" not in bot.edits[-1][1]["rich_message"].html
 
 
 def test_max_level_button_saves_max_and_returns_to_grid(tmp_path, monkeypatch):
@@ -222,4 +242,5 @@ def test_max_level_button_saves_max_and_returns_to_grid(tmp_path, monkeypatch):
     assert groups.get_clan_technologies(-100123).forging_equipment == 10
     rich_message = bot.edits[-1][1]["rich_message"]
     assert "уровень Max — сохранено" in rich_message.html
-    assert ">Max</tg-button>" in rich_message.html
+    markup = bot.edits[-1][1]["reply_markup"]
+    assert markup.keyboard[0][0].text == "⚒️ Max"

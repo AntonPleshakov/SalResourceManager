@@ -19,8 +19,6 @@ from tg.handlers import (
     HandlerRegistry,
 )
 from tg.rich import (
-    back_button,
-    callback_button,
     details,
     edit_rich_message,
     footer,
@@ -72,18 +70,36 @@ def _level_keyboard(definition) -> InlineKeyboardMarkup:
     return keyboard
 
 
-def _technology_level_button(definition, technologies) -> str:
+def _technology_level_label(definition, technologies) -> str:
     level = getattr(technologies, definition.name)
-    label = (
+    return (
         "Max"
         if level == definition.max_level
         else f"{level} / {definition.max_level}"
     )
-    return callback_button(
-        label,
-        f"admins/clan_technologies/edit/{definition.name}",
-        style="primary" if level == definition.max_level else None,
+
+
+def _technology_keyboard(technologies) -> InlineKeyboardMarkup:
+    keyboard = InlineKeyboardMarkup(row_width=TECHNOLOGIES_PER_ROW)
+    for index in range(0, len(SCORING_TECHNOLOGIES), TECHNOLOGIES_PER_ROW):
+        definitions = SCORING_TECHNOLOGIES[
+            index : index + TECHNOLOGIES_PER_ROW
+        ]
+        keyboard.row(
+            *(
+                Button(
+                    f"{definition.icon} "
+                    f"{_technology_level_label(definition, technologies)}",
+                    f"admins/clan_technologies/edit/{definition.name}",
+                ).inline()
+                for definition in definitions
+            )
+        )
+    keyboard.row(
+        Button("⬅️ Админ-панель", "admins").inline(),
+        Button("🏠 Главное меню", "home").inline(),
     )
+    return keyboard
 
 
 def _technology_cells(values) -> str:
@@ -107,7 +123,7 @@ def _technology_grid(technologies) -> str:
             for definition in definitions
         )
         level_cells = _technology_cells(
-            _technology_level_button(definition, technologies)
+            escape(_technology_level_label(definition, technologies))
             for definition in definitions
         )
         rows.extend(
@@ -139,7 +155,6 @@ def _clan_technologies_message(group, technologies, notice: str = ""):
             ),
             notice_part,
             _technology_grid(technologies),
-            back_button("⬅️ Админ-панель", "admins"),
         )
     )
 
@@ -155,6 +170,7 @@ def _show_clan_technologies(
         chat_id,
         message_id,
         _clan_technologies_message(group, technologies, notice),
+        reply_markup=_technology_keyboard(technologies),
     )
 
 
