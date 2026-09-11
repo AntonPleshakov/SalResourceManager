@@ -1,11 +1,15 @@
 from contextlib import nullcontext
 from decimal import Decimal
+from types import SimpleNamespace
 
 import pytest
 from telebot.types import CallbackQuery, Chat, Message, User
 
 from db.access_group import AccessGroupDB
 from db.database import Database
+from resources.clan_technology_calculator import (
+    rank_clan_technology_upgrades,
+)
 from resources.clan_technologies import (
     CLAN_TECHNOLOGY_BY_NAME,
     CLAN_TECHNOLOGY_DEFINITIONS,
@@ -24,6 +28,7 @@ from resources.war_rules.skills import (
 )
 from tests.handler_context import clan_admin_context
 from tg.admins.clan_technologies import (
+    clan_technology_calculator,
     request_clan_technology_level,
     save_clan_technology_level,
     set_max_clan_technology_level,
@@ -178,6 +183,75 @@ def test_combat_and_reward_technologies_do_not_change_points():
     assert configured == baseline
 
 
+def test_upgrade_calculator_ranks_marginal_points_per_flask():
+    users = [UserData(user_id=1)]
+    stages = {
+        1: (
+            WarActivity.TECHNOLOGIES,
+            WarActivity.TECHNOLOGIES,
+            WarActivity.TECHNOLOGIES,
+        )
+    }
+
+    recommendations = rank_clan_technology_upgrades(
+        users,
+        ClanTechnologies(),
+        stages,
+    )
+
+    assert recommendations[0].definition.name == "tech_tree"
+    assert recommendations[0].points_gain > 0
+    assert recommendations[0].max_points_gain == (
+        recommendations[0].points_gain * 10
+    )
+    assert recommendations[0].levels_to_max == 10
+    assert recommendations[0].flasks_to_max == 4_860
+    assert recommendations[0].points_per_flask > (
+        recommendations[1].points_per_flask
+    )
+    assert recommendations[-1].points_gain == 0
+
+
+def test_upgrade_calculator_skips_maxed_technologies():
+    recommendations = rank_clan_technology_upgrades(
+        [UserData(user_id=1)],
+        ClanTechnologies(tech_tree=10),
+        {1: (WarActivity.TECHNOLOGIES,) * 3},
+    )
+
+    assert "tech_tree" not in {
+        recommendation.definition.name
+        for recommendation in recommendations
+    }
+
+
+def test_upgrade_calculator_only_recalculates_each_next_level(monkeypatch):
+    calculations = []
+
+    class CalculatorStub:
+        def __init__(self, technologies):
+            self.technologies = technologies
+
+        def calculate(self, users, stages):
+            calculations.append(self.technologies)
+            return SimpleNamespace(
+                total=Decimal(sum(self.technologies.values()))
+            )
+
+    monkeypatch.setattr(
+        "resources.clan_technology_calculator.WarPointsCalculator",
+        CalculatorStub,
+    )
+
+    recommendations = rank_clan_technology_upgrades(
+        [UserData(user_id=1)],
+        ClanTechnologies(),
+        {},
+    )
+
+    assert len(calculations) == len(recommendations) + 1
+
+
 def test_level_input_has_cancel_and_max_buttons_and_returns_to_grid(
     tmp_path, monkeypatch
 ):
@@ -214,6 +288,7 @@ def test_level_input_has_cancel_and_max_buttons_and_returns_to_grid(
             for definition in CLAN_TECHNOLOGY_DEFINITIONS
             if definition.affects_war_points
         ),
+        "admins/clan_technologies/calculator",
         "admins",
         "home",
     ]
@@ -244,3 +319,38 @@ def test_max_level_button_saves_max_and_returns_to_grid(tmp_path, monkeypatch):
     assert "уровень Max — сохранено" in rich_message.html
     markup = bot.edits[-1][1]["reply_markup"]
     assert markup.keyboard[0][0].text == "⚒️ Max"
+
+
+def test_clan_technology_calculator_uses_selected_clan_data(
+    tmp_path, monkeypatch
+):
+    database = Database(tmp_path / "clan-calculator.db")
+    groups = AccessGroupDB(database)
+    groups.add_group(-100123, "Test clan")
+    users = [UserData(user_id=1)]
+    monkeypatch.setattr(
+        "tg.admins.clan_technologies.get_access_group_db", lambda: groups
+    )
+    monkeypatch.setattr(
+        "tg.admins.clan_technologies.get_user_data_db",
+        lambda: type(
+            "UserDataStub",
+            (),
+            {"get_clan_users": lambda _, group_id: users},
+        )(),
+    )
+    bot = ClanTechnologyBot()
+    callback = make_callback("admins/clan_technologies/calculator")
+
+    clan_technology_calculator(clan_admin_context(callback, bot))
+
+    rich_message = bot.edits[-1][1]["rich_message"]
+    assert "Выгоднее всего сейчас" in rich_message.html
+    assert "Очков/колбу" in rich_message.html
+    assert "За 1 уровень" in rich_message.html
+    assert "До Max" in rich_message.html
+    assert "<th>Уровень</th>" not in rich_message.html
+    assert "ур. ·" in rich_message.html
+    assert "/🧪" in rich_message.html
+    assert "аккаунтов клана (1)" in rich_message.html
+    assert "admins/clan_technologies" in rich_message.html

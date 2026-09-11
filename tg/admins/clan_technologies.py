@@ -5,13 +5,17 @@ from telebot.apihelper import ApiTelegramException
 from telebot.handler_backends import State, StatesGroup
 from telebot.types import InlineKeyboardMarkup
 
-from db.initializer import get_access_group_db
+from db.initializer import get_access_group_db, get_user_data_db
 from logger.app_logger import logger
+from resources.clan_technology_calculator import (
+    rank_clan_technology_upgrades,
+)
 from resources.clan_technologies import (
     CLAN_TECHNOLOGY_BY_NAME,
     CLAN_TECHNOLOGY_DEFINITIONS,
     validate_clan_technology_level,
 )
+from resources.war import WAR_STAGES
 from tg.handlers import (
     ActiveClan,
     ClanAdminContext,
@@ -25,7 +29,7 @@ from tg.rich import (
     heading,
     input_rich_message,
 )
-from tg.utils import Button, get_ids, get_username
+from tg.utils import Button, format_points, get_ids, get_username
 
 
 TECHNOLOGIES_PER_ROW = 4
@@ -96,10 +100,89 @@ def _technology_keyboard(technologies) -> InlineKeyboardMarkup:
             )
         )
     keyboard.row(
+        Button(
+            "🧮 Что качать?",
+            "admins/clan_technologies/calculator",
+        ).inline()
+    )
+    keyboard.row(
         Button("⬅️ Админ-панель", "admins").inline(),
         Button("🏠 Главное меню", "home").inline(),
     )
     return keyboard
+
+
+def _technology_calculator_message(group, users, technologies):
+    recommendations = rank_clan_technology_upgrades(
+        users,
+        technologies,
+        WAR_STAGES,
+    )
+    parts = [
+        heading("Калькулятор клановых технологий"),
+        footer(f"Клан: {group.title}"),
+    ]
+    if not users:
+        parts.append(
+            "<blockquote>В клане пока нет аккаунтов с игровыми "
+            "данными. Добавьте аккаунты, чтобы сравнить улучшения."
+            "</blockquote>"
+        )
+    elif not recommendations:
+        parts.append(
+            "<blockquote>Все технологии, влияющие на очки войны, "
+            "уже улучшены до максимума.</blockquote>"
+        )
+    else:
+        best = recommendations[0]
+        parts.extend(
+            (
+                "<aside>Выгоднее всего сейчас<br>"
+                f"<b>{escape(best.definition.icon)} "
+                f"{escape(best.definition.title)} → "
+                f"уровень {best.next_level}</b><br>"
+                f"+{format_points(best.points_gain)} очков за "
+                f"{best.definition.flask_cost} колб</aside>",
+                '<table bordered compact><caption>Рейтинг улучшений</caption>',
+                "<tr><th>Технология</th><th>Очков/колбу</th>"
+                "<th>За 1 уровень</th><th>До Max</th></tr>",
+                *(
+                    "<tr>"
+                    f"<td>{escape(recommendation.definition.icon)} "
+                    f"{escape(recommendation.definition.title)}</td>"
+                    f"<td><b>"
+                    f"{format_points(recommendation.points_per_flask)}"
+                    "/🧪</b></td>"
+                    f"<td>+{format_points(recommendation.points_gain)}</td>"
+                    f"<td>+{format_points(recommendation.max_points_gain)}<br>"
+                    f"{recommendation.levels_to_max} ур. · "
+                    f"{recommendation.flasks_to_max} 🧪</td>"
+                    "</tr>"
+                    for recommendation in recommendations
+                ),
+                "</table>",
+                details(
+                    "Как считается рейтинг",
+                    "<p>Для каждой доступной технологии калькулятор "
+                    "повышает уровень на один и пересчитывает итоговые "
+                    "очки войны. Рейтинг отсортирован по приросту очков "
+                    "на одну потраченную колбу. Рядом показан прирост "
+                    "за один уровень и суммарный прирост до Max.</p>"
+                    "<p>Используются последние сохранённые данные всех "
+                    f"аккаунтов клана ({len(users)}) и текущее расписание "
+                    "войны. Боевые бонусы и награды не входят в рейтинг, "
+                    "поскольку они не увеличивают очки.</p>",
+                ),
+            )
+        )
+    parts.append(
+        '<hr><tg-button-row>'
+        '<tg-button type="callback_data" '
+        'data="admins/clan_technologies">⬅️ Технологии</tg-button>'
+        '<tg-button type="callback_data" data="home">'
+        "🏠 Главное меню</tg-button></tg-button-row>"
+    )
+    return input_rich_message(parts)
 
 
 def _technology_cells(values) -> str:
@@ -181,6 +264,26 @@ def clan_technologies_menu(context: ClanAdminContext) -> None:
     bot.delete_state(callback_query.from_user.id)
     _show_clan_technologies(
         bot, chat_id, message_id, context.group
+    )
+
+
+def clan_technology_calculator(context: ClanAdminContext) -> None:
+    callback_query = context.update
+    bot = context.bot
+    _, chat_id, message_id = get_ids(callback_query)
+    technologies = get_access_group_db().get_clan_technologies(
+        context.group.group_id
+    )
+    users = get_user_data_db().get_clan_users(context.group.group_id)
+    edit_rich_message(
+        bot,
+        chat_id,
+        message_id,
+        _technology_calculator_message(
+            context.group,
+            users,
+            technologies,
+        ),
     )
 
 
@@ -355,6 +458,11 @@ def register_handlers(bot: TeleBot) -> None:
     handlers.clan_admin_callback(
         clan_technologies_menu,
         button="admins/clan_technologies",
+        clan=ActiveClan(),
+    )
+    handlers.clan_admin_callback(
+        clan_technology_calculator,
+        button="admins/clan_technologies/calculator",
         clan=ActiveClan(),
     )
     handlers.clan_admin_callback(
