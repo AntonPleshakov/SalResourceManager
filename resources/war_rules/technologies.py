@@ -4,8 +4,8 @@ from resources.clan_technologies import ClanTechnologies
 from resources.user_data import UserData
 from resources.war_rules.details import ActivityDetails, format_calculation_number
 
-FIFTH_TIER_TECHNOLOGY_POINTS = 163_260
-FOURTH_TIER_TECHNOLOGY_POINTS = 86_040
+FIFTH_TIER_TECHNOLOGY_POINTS = 90_700
+FOURTH_TIER_TECHNOLOGY_POINTS = 47_800
 
 
 def explain_technology_points(

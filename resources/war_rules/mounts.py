@@ -5,8 +5,8 @@ from resources.war_rules.details import ActivityDetails, format_calculation_numb
 from resources.war_rules.mount_packages import summon_packages as _summon_packages
 
 
-MOUNT_CREATION_POINTS = 1_080
-MOUNT_MERGE_POINTS = 1_080
+MOUNT_CREATION_POINTS = 600
+MOUNT_MERGE_POINTS = 600
 def explain_mount_points(
     user: UserData,
     clan_technologies: ClanTechnologies = ClanTechnologies(),

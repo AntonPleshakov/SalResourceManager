@@ -51,12 +51,12 @@ class EggLevel(IntEnum):
     @property
     def points(self) -> int:
         return {
-            EggLevel.COMMON: 720,
-            EggLevel.RARE: 2_880,
-            EggLevel.EPIC: 5_760,
-            EggLevel.LEGENDARY: 11_520,
-            EggLevel.ULTIMATE: 23_040,
-            EggLevel.MYTHIC: 46_080,
+            EggLevel.COMMON: 400,
+            EggLevel.RARE: 1_600,
+            EggLevel.EPIC: 3_200,
+            EggLevel.LEGENDARY: 6_400,
+            EggLevel.ULTIMATE: 12_800,
+            EggLevel.MYTHIC: 25_600,
         }[self]
 
     @property

@@ -6,7 +6,7 @@ from resources.war_rules.details import ActivityDetails, format_calculation_numb
 
 
 DUNGEON_RUNS = 8
-DUNGEON_POINTS_PER_RUN = 4_200
+DUNGEON_POINTS_PER_RUN = 3_000
 
 
 def explain_dungeon_points(

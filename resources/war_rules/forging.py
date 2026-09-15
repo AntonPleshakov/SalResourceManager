@@ -54,10 +54,10 @@ def weapon_points(weapon_index: int) -> int:
     if not 0 <= weapon_index < 10:
         raise ValueError(f"Unknown weapon index: {weapon_index}")
     if weapon_index <= 2:
-        return 2
+        return 1
     if weapon_index <= 5:
-        return 4
-    return 5
+        return 2
+    return 3
 
 
 def _expected_points_per_creation(forge_level: int) -> Decimal:

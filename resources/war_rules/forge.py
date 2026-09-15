@@ -6,7 +6,7 @@ from resources.user_data import UserData
 from resources.war_rules.details import ActivityDetails, format_calculation_number
 
 
-FORGE_POINTS_PER_THOUSAND_COINS = 38
+FORGE_POINTS_PER_THOUSAND_COINS = 27
 FORGE_RESET_UPGRADES = 8
 FORGE_MAX_LEVEL_FOR_SECOND_EVENT = 22
 FORGE_TOTAL_COSTS: Tuple[int, ...] = (

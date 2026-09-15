@@ -440,18 +440,18 @@ def test_forge_chance_matrix_has_35_levels_and_ten_weapon_levels():
 def test_war_points_calculator_applies_fixed_forging_rule():
     user = UserData(user_id=42, forge_level=1, hammers=3)
 
-    assert weapon_points(2) == 2
-    assert weapon_points(3) == 4
-    assert weapon_points(9) == 5
+    assert weapon_points(2) == 1
+    assert weapon_points(3) == 2
+    assert weapon_points(9) == 3
     report = WarPointsCalculator().calculate(
         [user], {1: (WarActivity.FORGING,)}
     )
 
-    assert report.points_by_day == {1: 6}
+    assert report.points_by_day == {1: 3}
     assert report.points_by_activity_by_day == {
-        1: {WarActivity.FORGING: 6}
+        1: {WarActivity.FORGING: 3}
     }
-    assert report.total == 6
+    assert report.total == 3
 
 
 def test_forging_applies_free_equipment_chance():
@@ -466,8 +466,8 @@ def test_forging_applies_free_equipment_chance():
         [user], {1: (WarActivity.FORGING,)}
     )
 
-    assert report.points_by_day == {1: 8}
-    assert report.total == 8
+    assert report.points_by_day == {1: 4}
+    assert report.total == 4
 
 
 def test_war_points_calculator_reports_each_activity_separately():
@@ -486,16 +486,16 @@ def test_war_points_calculator_reports_each_activity_separately():
 
     assert report.points_by_activity_by_day == {
         1: {
-            WarActivity.FORGING: 12,
-            WarActivity.DUNGEONS: 33_600,
+            WarActivity.FORGING: 6,
+            WarActivity.DUNGEONS: 24_000,
         }
     }
     assert report.points_by_activity == {
-        WarActivity.FORGING: 6,
-        WarActivity.DUNGEONS: 33_600,
+        WarActivity.FORGING: 3,
+        WarActivity.DUNGEONS: 24_000,
     }
-    assert report.points_by_day == {1: 33_612}
-    assert report.total == 33_606
+    assert report.points_by_day == {1: 24_006}
+    assert report.total == 24_003
 
 
 def test_consumable_activity_scores_once_and_repeatable_activity_scores_each_time():
@@ -663,8 +663,8 @@ def test_war_points_calculator_applies_fixed_dungeon_rule_per_user():
         users, {1: (WarActivity.DUNGEONS,)}
     )
 
-    assert report.points_by_day == {1: 67_200}
-    assert report.total == 67_200
+    assert report.points_by_day == {1: 48_000}
+    assert report.total == 48_000
 
 
 def test_war_points_calculator_applies_forge_upgrade_rule():
@@ -674,8 +674,8 @@ def test_war_points_calculator_applies_forge_upgrade_rule():
         users, {1: (WarActivity.FORGE,)}
     )
 
-    assert report.points_by_day == {1: 7_638}
-    assert report.total == 7_638
+    assert report.points_by_day == {1: 5_427}
+    assert report.total == 5_427
 
 
 def test_war_points_calculator_applies_fixed_technology_rule_per_user():
@@ -685,8 +685,8 @@ def test_war_points_calculator_applies_fixed_technology_rule_per_user():
         users, {1: (WarActivity.TECHNOLOGIES,)}
     )
 
-    assert report.points_by_day == {1: 498_600}
-    assert report.total == 498_600
+    assert report.points_by_day == {1: 277_000}
+    assert report.total == 277_000
 
 
 def test_war_points_calculator_applies_mount_rule():
@@ -702,8 +702,8 @@ def test_war_points_calculator_applies_mount_rule():
         [user], {1: (WarActivity.MOUNTS,)}
     )
 
-    assert report.points_by_day == {1: 124_200}
-    assert report.total == 124_200
+    assert report.points_by_day == {1: 69_000}
+    assert report.total == 69_000
 
 
 def test_war_points_calculator_applies_pet_rule():
@@ -713,8 +713,8 @@ def test_war_points_calculator_applies_pet_rule():
         [user], {1: (WarActivity.PETS,)}
     )
 
-    assert report.points_by_day == {1: Decimal("468675.0")}
-    assert report.total == Decimal("468675.0")
+    assert report.points_by_day == {1: Decimal("260375.0")}
+    assert report.total == Decimal("260375.0")
 
 
 def test_pet_rule_uses_batch_size_level_and_daily_batches():
@@ -732,21 +732,21 @@ def test_pet_rule_uses_batch_size_level_and_daily_batches():
 
     details = explain_pet_points(user)
 
-    assert details.repeatable_points == 140_400
-    assert details.consumable_points == 34_560
-    assert calculate_pet_points(user) == 174_960
+    assert details.repeatable_points == 78_000
+    assert details.consumable_points == 19_200
+    assert calculate_pet_points(user) == 97_200
     assert any("Legendary" in value for value in details.inputs)
     assert all("99" not in value for value in details.inputs)
 
 
 def test_egg_points_follow_the_configured_level_scale():
     assert tuple(level.points for level in EGG_LEVELS) == (
-        720,
-        2_880,
-        5_760,
-        11_520,
-        23_040,
-        46_080,
+        400,
+        1_600,
+        3_200,
+        6_400,
+        12_800,
+        25_600,
     )
 
 
@@ -761,10 +761,10 @@ def test_war_points_calculator_estimates_skill_points():
         WarActivity.SKILLS
     ]
 
-    assert report.points_by_day == {1: Decimal("18881.550")}
-    assert report.total == Decimal("18881.550")
+    assert report.points_by_day == {1: Decimal("10808.250")}
+    assert report.total == Decimal("10808.250")
     assert any(
-        "За создание навыков: 75 × 225 = 16 875 очков" in calculation
+        "За создание навыков: 75 × 125 = 9 375 очков" in calculation
         for calculation in details.calculations
     )
 

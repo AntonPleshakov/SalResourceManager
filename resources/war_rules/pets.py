@@ -10,7 +10,7 @@ from resources.user_data import UserData
 from resources.war_rules.details import ActivityDetails, format_calculation_number
 
 
-PET_OR_EGG_MERGE_POINTS = 2_250
+PET_OR_EGG_MERGE_POINTS = 1_250
 SHELLS_PER_EGG = 100
 def _daily_hatching_points(user: UserData) -> Decimal:
     max_level = EggLevel(user.max_egg_level.value)

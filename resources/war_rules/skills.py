@@ -6,8 +6,8 @@ from resources.user_data import UserData
 from resources.war_rules.details import ActivityDetails, format_calculation_number
 
 
-SKILL_CREATION_POINTS = Decimal("225")
-SKILL_UPGRADE_POINTS = Decimal("175")
+SKILL_CREATION_POINTS = Decimal("125")
+SKILL_UPGRADE_POINTS = Decimal("125")
 SKILL_BASE_TICKET_COST = Decimal("40")
 SKILL_AVERAGE_DUPLICATES_PER_UPGRADE = Decimal("5")
 SKILL_SYSTEM_DISTRIBUTION: Tuple[Tuple[Decimal, int], ...] = (
