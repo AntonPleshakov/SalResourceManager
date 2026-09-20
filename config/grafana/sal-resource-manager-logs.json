@@ -10,31 +10,22 @@
   "panels": [
     {
       "datasource": {"type": "victoriametrics-logs-datasource", "uid": "victorialogs"},
-      "description": "Сообщения выбранных контейнеров, содержащие признаки ошибок.",
-      "gridPos": {"h": 9, "w": 24, "x": 0, "y": 0},
-      "id": 1,
-      "options": {"dedupStrategy": "none", "enableLogDetails": true, "prettifyLogMessage": false, "showCommonLabels": false, "showLabels": false, "showTime": true, "sortOrder": "Descending", "wrapLogMessage": true},
-      "targets": [{"datasource": {"type": "victoriametrics-logs-datasource", "uid": "victorialogs"}, "expr": "container_name:~\"${container:raw}\" AND _msg:~\"(?i)(error|exception|traceback|failed|critical)\" AND _msg:~\"${search:raw}\"", "queryType": "range", "refId": "A"}],
-      "title": "Ошибки",
-      "type": "logs"
-    },
-    {
-      "datasource": {"type": "victoriametrics-logs-datasource", "uid": "victorialogs"},
-      "description": "Все сообщения выбранных контейнеров с дополнительным поиском по тексту.",
-      "gridPos": {"h": 18, "w": 24, "x": 0, "y": 9},
+      "description": "По умолчанию показаны логи приложения без debug и trace. В строке — сервис и сообщение; исходная запись доступна в поле original в деталях. Поиск работает по полному исходному тексту. Записи без распознанного уровня также видны.",
+      "gridPos": {"h": 25, "w": 24, "x": 0, "y": 0},
       "id": 2,
-      "options": {"dedupStrategy": "none", "enableLogDetails": true, "prettifyLogMessage": false, "showCommonLabels": false, "showLabels": true, "showTime": true, "sortOrder": "Descending", "wrapLogMessage": true},
-      "targets": [{"datasource": {"type": "victoriametrics-logs-datasource", "uid": "victorialogs"}, "expr": "container_name:~\"${container:raw}\" AND _msg:~\"${search:raw}\"", "queryType": "range", "refId": "A"}],
-      "title": "Все логи",
+      "options": {"dedupStrategy": "none", "enableLogDetails": true, "prettifyLogMessage": false, "showCommonLabels": false, "showLabels": false, "showLogAttributes": false, "showTime": true, "showLevel": true, "showControls": true, "syntaxHighlighting": false, "sortOrder": "Descending", "wrapLogMessage": true},
+      "targets": [{"datasource": {"type": "victoriametrics-logs-datasource", "uid": "victorialogs"}, "expr": "container_name:~\"${container:raw}\" AND _msg:~\"${search:raw}\" | copy _msg as original | unpack_json if (_msg:~\"^\\s*[{]\") fields (level, msg, message) result_prefix \"parsed_\" | unpack_logfmt if (_msg:~\"^(logger|ts|time|timestamp|level)=\" AND parsed_level:\"\" AND parsed_msg:\"\" AND parsed_message:\"\") fields (level, msg, message) result_prefix \"parsed_\" | extract_regexp '(?s)^[0-9]{2}/[0-9]{2} [0-9:]{8} (?P<parsed_level>[A-Z]+) (?P<logger>[^ ]+) (?P<source>[^ ]+) [|] (?P<parsed_message>.*)$' keep_original_fields | extract_regexp '(?s)^[0-9]{4}-[0-9T:.Z+-]+[\\t ]+(?P<parsed_level>info|warn|error|fatal|panic|debug|trace)[\\t ]+(?P<source>[^\\t ]+)[\\t ]+(?P<parsed_message>.*)$' keep_original_fields | format '<parsed_level>' as level skip_empty_results | format if (level:\"\") 'unknown' as level | filter ${level:raw} | format '<parsed_message>' as _msg skip_empty_results | format '<parsed_msg>' as _msg skip_empty_results | copy container_name as service | replace_regexp ('^sal-resource-manager-?', '') at service | format if (service:\"\") 'bot' as service | format '[<service>] <_msg>' as _msg | delete parsed_level, parsed_msg, parsed_message", "queryType": "instant", "editorMode": "code", "packJson": false, "maxLines": 1000, "refId": "A"}],
+      "title": "Логи",
       "type": "logs"
     }
   ],
-  "refresh": "10s",
+  "refresh": "30s",
   "schemaVersion": 42,
   "tags": ["sal-resource-manager", "logs", "victorialogs"],
   "templating": {
     "list": [
-      {"current": {"selected": true, "text": "Все сервисы", "value": "sal-resource-manager.*"}, "description": "Регулярное выражение для имени Docker-контейнера.", "hide": 0, "label": "Контейнер", "name": "container", "options": [], "query": "sal-resource-manager.*", "skipUrlSync": false, "type": "textbox"},
+      {"current": {"selected": true, "text": "Приложение", "value": "^sal-resource-manager$"}, "description": "Источник логов. По умолчанию показаны пользовательские действия приложения без инфраструктурного шума.", "hide": 0, "label": "Сервис", "name": "container", "options": [{"selected": true, "text": "Приложение", "value": "^sal-resource-manager$"}, {"selected": false, "text": "Все сервисы", "value": "^sal-resource-manager(?:-.*)?$"}, {"selected": false, "text": "Grafana", "value": "^sal-resource-manager-grafana$"}, {"selected": false, "text": "Caddy", "value": "^sal-resource-manager-caddy$"}, {"selected": false, "text": "VictoriaLogs", "value": "^sal-resource-manager-victorialogs$"}], "query": "Приложение : ^sal-resource-manager$, Все сервисы : ^sal-resource-manager(?:-.*)?$, Grafana : ^sal-resource-manager-grafana$, Caddy : ^sal-resource-manager-caddy$, VictoriaLogs : ^sal-resource-manager-victorialogs$", "skipUrlSync": false, "type": "custom", "multi": false, "includeAll": false},
+      {"current": {"selected": true, "text": "Без debug и trace", "value": "NOT level:~\"(?i)^(debug|trace)$\""}, "description": "Фильтр по уровню записи. Без debug и trace включает сообщения без уровня; Все позволяет посмотреть отладочные записи.", "hide": 0, "label": "Уровень", "name": "level", "options": [{"selected": true, "text": "Без debug и trace", "value": "NOT level:~\"(?i)^(debug|trace)$\""}, {"selected": false, "text": "Все", "value": "*"}, {"selected": false, "text": "Info", "value": "level:~\"(?i)^(info|notice)$\""}, {"selected": false, "text": "Предупреждения и ошибки", "value": "level:~\"(?i)^(warn|warning|error|critical|fatal|panic)$\""}, {"selected": false, "text": "Ошибки", "value": "level:~\"(?i)^(error|critical|fatal|panic)$\""}], "query": "Без debug и trace : NOT level:~\"(?i)^(debug|trace)$\", Все : *, Info : level:~\"(?i)^(info|notice)$\", Предупреждения и ошибки : level:~\"(?i)^(warn|warning|error|critical|fatal|panic)$\", Ошибки : level:~\"(?i)^(error|critical|fatal|panic)$\"", "skipUrlSync": false, "type": "custom", "multi": false, "includeAll": false},
       {"current": {"selected": true, "text": ".*", "value": ".*"}, "description": "Регулярное выражение для текста сообщения.", "hide": 0, "label": "Поиск", "name": "search", "options": [], "query": ".*", "skipUrlSync": false, "type": "textbox"}
     ]
   },
@@ -43,6 +34,6 @@
   "timezone": "browser",
   "title": "Sal Resource Manager — Логи",
   "uid": "sal-resource-manager-logs",
-  "version": 1,
+  "version": 3,
   "weekStart": ""
 }

@@ -97,6 +97,7 @@ services:
 
     environment:
       GOMEMLIMIT: 200MiB
+      GF_LOG_FILTERS: plugin.victoriametrics-logs-datasource:warn
       GF_USERS_ALLOW_SIGN_UP: "false"
       GF_AUTH_ANONYMOUS_ENABLED: "false"
       GF_ANALYTICS_REPORTING_ENABLED: "false"
@@ -109,6 +110,13 @@ services:
 
     expose:
       - "3000"
+
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:3000/api/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 20s
 
     volumes:
       - ./config/grafana/grafana.ini:/etc/grafana/grafana.ini:ro
@@ -134,8 +142,11 @@ services:
     restart: unless-stopped
 
     depends_on:
-      - bot
-      - grafana
+      bot:
+        condition: service_started
+      grafana:
+        condition: service_healthy
+        restart: true
 
     environment:
       CADDY_PUBLIC_HOST: ${CADDY_PUBLIC_HOST:?CADDY_PUBLIC_HOST is required}

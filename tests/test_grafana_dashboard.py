@@ -1,5 +1,6 @@
 import configparser
 import json
+import re
 from pathlib import Path
 
 
@@ -212,6 +213,17 @@ def test_caddy_is_the_only_public_entrypoint() -> None:
     assert "CADDY_OAUTH_HOST" in compose
 
 
+def test_caddy_waits_until_grafana_is_ready() -> None:
+    compose = (PROJECT_DIR / "compose.yaml").read_text(encoding="utf-8")
+    grafana_service = compose.split("  grafana:", 1)[1].split("  caddy:", 1)[0]
+    caddy_service = compose.split("  caddy:", 1)[1].split("  victorialogs:", 1)[0]
+
+    assert 'http://localhost:3000/api/health' in grafana_service
+    assert 'test: ["CMD", "curl", "-fsS"' in grafana_service
+    assert "grafana:\n        condition: service_healthy" in caddy_service
+    assert "restart: true" in caddy_service
+
+
 def test_server_configuration_only_allows_caddy_through_ufw() -> None:
     remote_script = (
         PROJECT_DIR / "infra" / "configure_server" / "remote.sh"
@@ -247,22 +259,105 @@ def test_logs_dashboard_uses_victorialogs_and_is_provisioned() -> None:
     queries = _queries(dashboard)
 
     assert dashboard["uid"] == "sal-resource-manager-logs"
-    assert {panel["title"] for panel in dashboard["panels"]} == {
-        "Ошибки",
-        "Все логи",
-    }
+    assert [panel["title"] for panel in dashboard["panels"]] == ["Логи"]
     assert all(
         panel["datasource"]["uid"] == "victorialogs"
         for panel in dashboard["panels"]
     )
     assert "container_name" in queries
     assert "_msg" in queries
-    assert "(?i)(error|exception|traceback|failed|critical)" in queries
     assert [variable["name"] for variable in dashboard["templating"]["list"]] == [
         "container",
+        "level",
         "search",
     ]
     assert "sal-resource-manager-logs.json:/etc/grafana/dashboards/" in compose
+
+
+def test_logs_are_readable_without_losing_original_details() -> None:
+    dashboard = json.loads(LOGS_DASHBOARD_FILE.read_text(encoding="utf-8"))
+    panel = dashboard["panels"][0]
+    target = panel["targets"][0]
+    query = target["expr"]
+
+    assert target["queryType"] == "instant"
+    assert target["packJson"] is False
+    assert panel["options"]["syntaxHighlighting"] is False
+    assert panel["options"]["showLabels"] is False
+    assert panel["options"]["enableLogDetails"] is True
+    assert "copy _msg as original" in query
+    assert query.index('${search:raw}') < query.index("copy _msg as original")
+    assert "format '[<service>] <_msg>' as _msg" in query
+    assert 'unpack_json if (_msg:~"^\\s*[{]") fields (level, msg, message)' in query
+    assert 'unpack_logfmt if (_msg:~"^(logger|ts|time|timestamp|level)="' in query
+    assert "format '<parsed_msg>' as _msg skip_empty_results" in query
+    assert "format '<parsed_message>' as _msg skip_empty_results" in query
+    assert "replace_regexp ('^sal-resource-manager-?', '') at service" in query
+    assert "replace_regexp '^sal-resource-manager-?' with ''" not in query
+
+
+def test_logs_dashboard_defaults_to_application_logs() -> None:
+    dashboard = json.loads(LOGS_DASHBOARD_FILE.read_text(encoding="utf-8"))
+    variable = next(
+        item for item in dashboard["templating"]["list"]
+        if item["name"] == "container"
+    )
+
+    assert variable["type"] == "custom"
+    assert variable["current"] == {
+        "selected": True,
+        "text": "Приложение",
+        "value": "^sal-resource-manager$",
+    }
+    assert any(
+        option["text"] == "Все сервисы"
+        and option["value"] == "^sal-resource-manager(?:-.*)?$"
+        for option in variable["options"]
+    )
+
+
+def test_logs_default_filter_preserves_info_errors_and_unknown_levels() -> None:
+    dashboard = json.loads(LOGS_DASHBOARD_FILE.read_text(encoding="utf-8"))
+    variable = next(v for v in dashboard["templating"]["list"] if v["name"] == "level")
+    value = variable["current"]["value"]
+    assert value.startswith('NOT level:~"')
+    pattern = value.removeprefix('NOT level:~"').removesuffix('"')
+    for level in ("debug", "DEBUG", "trace", "TRACE"):
+        assert re.search(pattern, level)
+    for level in ("info", "INFO", "warning", "error", "critical", "unknown", "", "notice"):
+        assert not re.search(pattern, level)
+    assert any(option["value"] == "*" for option in variable["options"])
+    assert "| filter ${level:raw}" in _queries(dashboard)
+
+
+def test_logs_extract_plaintext_level_and_message_without_losing_tracebacks() -> None:
+    dashboard = json.loads(LOGS_DASHBOARD_FILE.read_text(encoding="utf-8"))
+    patterns = re.findall(r"extract_regexp '([^']+)'", _queries(dashboard))
+    cases = [
+        (
+            "20/09 15:35:04 INFO SalResourcesManager handlers:12 | Updated 3 accounts",
+            "INFO", "Updated 3 accounts",
+        ),
+        (
+            "20/09 15:35:04 ERROR SalResourcesManager handlers:12 | Export failed\nTraceback:\n  ValueError: invalid input",
+            "ERROR", "Export failed\nTraceback:\n  ValueError: invalid input",
+        ),
+        (
+            "20/09 15:35:04 INFO SalResourcesManager handlers:12 | Received level=debug in payload",
+            "INFO", "Received level=debug in payload",
+        ),
+        (
+            "2026-09-20T15:35:04.749Z\tinfo\tVictoriaLogs/main.go:12\tstarted server",
+            "info", "started server",
+        ),
+    ]
+    for line, level, message in cases:
+        matches = [match for pattern in patterns if (match := re.search(pattern, line))]
+        assert len(matches) == 1
+        assert matches[0]["parsed_level"] == level
+        assert matches[0]["parsed_message"] == message
+    for line in ("unstructured log", "Traceback (most recent call last):", "  ValueError: bad input"):
+        assert not any(re.search(pattern, line) for pattern in patterns)
 
 
 def test_prometheus_has_a_disk_size_limit() -> None:
