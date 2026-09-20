@@ -2,6 +2,7 @@ from datetime import date, datetime, timezone
 from pathlib import Path
 import re
 
+import pytest
 from prometheus_client import CollectorRegistry
 from telebot.types import CallbackQuery, Chat, Message, User
 
@@ -36,7 +37,10 @@ from tests.handler_context import admin_context, clan_admin_context
 
 
 class FakeWorksheet:
-    def __init__(self):
+    def __init__(self, title=USER_DATA_PAGE_NAME):
+        self.title = title
+        self.index = 1
+        self.url = "https://docs.google.test/report/edit#gid=123"
         self.cleared = False
         self.values = None
         self.start = None
@@ -56,6 +60,9 @@ class FakeWorksheet:
     def show_dimensions(self, start, end=None, dimension="ROWS"):
         self.shown_dimensions.append((start, end, dimension))
 
+    def get_all_values(self, **kwargs):
+        return self.values or []
+
 
 class FakeSpreadsheet:
     def __init__(self, worksheet, exists=True):
@@ -68,6 +75,15 @@ class FakeSpreadsheet:
         self.permissions = []
         self.shares = []
         self.removed_permissions = []
+        self.other_worksheets = []
+        self.deleted_worksheets = []
+
+    def worksheets(self):
+        return [self.worksheet, *self.other_worksheets]
+
+    def del_worksheet(self, worksheet):
+        self.other_worksheets.remove(worksheet)
+        self.deleted_worksheets.append(worksheet)
 
     def worksheet_by_title(self, worksheet_name):
         self.requested_worksheet = worksheet_name
@@ -268,7 +284,8 @@ def test_report_replaces_google_worksheet_with_sqlite_snapshot(monkeypatch):
             },
         )
     ]
-    assert url == "https://docs.google.test/report"
+    assert url == worksheet.url
+    assert worksheet.index == 0
 
 
 def test_report_creates_missing_worksheet():
@@ -281,6 +298,44 @@ def test_report_creates_missing_worksheet():
 
     assert spreadsheet.added_worksheet == USER_DATA_PAGE_NAME
     assert worksheet.values == GameDataReport.HEADER
+
+
+@pytest.mark.parametrize("exists", [False, True])
+@pytest.mark.parametrize("title", ["Лист1", "Sheet1"])
+def test_report_removes_empty_default_sheet_and_opens_user_data(exists, title):
+    worksheet = FakeWorksheet()
+    spreadsheet = FakeSpreadsheet(worksheet, exists=exists)
+    default_worksheet = FakeWorksheet(title)
+    spreadsheet.other_worksheets.append(default_worksheet)
+    report = GameDataReport(FakeClient(spreadsheet), FakeGroups())
+
+    for _ in range(2):
+        url = report.export(-100123, "Test clan", "admin@example.com", [])
+
+        assert spreadsheet.worksheets() == [worksheet]
+        assert worksheet.index == 0
+        assert url == worksheet.url
+    assert spreadsheet.deleted_worksheets == [default_worksheet]
+
+
+@pytest.mark.parametrize(
+    "title, values",
+    [("Лист1", [["Notes"]]), ("Sheet1", [['=""']]), ("Notes", [])],
+)
+def test_report_preserves_nonempty_default_sheets_and_custom_sheets(title, values):
+    worksheet = FakeWorksheet()
+    spreadsheet = FakeSpreadsheet(worksheet)
+    other_worksheet = FakeWorksheet(title)
+    other_worksheet.values = values
+    spreadsheet.other_worksheets.append(other_worksheet)
+
+    GameDataReport(FakeClient(spreadsheet), FakeGroups()).export(
+        -100123, "Test clan", "admin@example.com", []
+    )
+
+    assert spreadsheet.other_worksheets == [other_worksheet]
+    assert spreadsheet.deleted_worksheets == []
+    assert worksheet.index == 0
 
 
 def test_report_creates_a_clan_spreadsheet_in_configured_folder():

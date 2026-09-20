@@ -249,6 +249,20 @@ class GameDataReport:
     def build_rows(cls, users: Iterable[UserData]) -> list[list[str]]:
         return cls.HEADER + [cls._to_report_row(user) for user in users]
 
+    @staticmethod
+    def _select_report_worksheet(spreadsheet, worksheet) -> None:
+        for candidate in spreadsheet.worksheets():
+            if candidate.title not in {"Лист1", "Sheet1"}:
+                continue
+            values = candidate.get_all_values(
+                include_tailing_empty=False,
+                include_tailing_empty_rows=False,
+                value_render=pygsheets.ValueRenderOption.FORMULA,
+            )
+            if not any(value != "" for row in values for value in row):
+                spreadsheet.del_worksheet(candidate)
+        worksheet.index = 0
+
     def export(
         self,
         group_id: int,
@@ -272,8 +286,9 @@ class GameDataReport:
         worksheet.update_values("A1", rows, extend=True)
         worksheet.show_dimensions(1, worksheet.cols, dimension="COLUMNS")
         worksheet.frozen_rows = len(self.HEADER)
+        self._select_report_worksheet(spreadsheet, worksheet)
         logger.info("Game data report exported: users=%d", len(users))
-        return spreadsheet.url
+        return worksheet.url
 
     def revoke_access(self, group_id: int, google_email: str | None) -> None:
         if not google_email:
