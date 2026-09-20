@@ -179,6 +179,10 @@ install_configuration() {
         "$APP_DIR/config/grafana/sal-resource-manager-system.json" \
         root root 0644 true
     install_managed_file \
+        "$SOURCE_DIR/grafana-logs-dashboard.json" \
+        "$APP_DIR/config/grafana/sal-resource-manager-logs.json" \
+        root root 0644 true
+    install_managed_file \
         "$SOURCE_DIR/grafana.ini" "$APP_DIR/config/grafana/grafana.ini" \
         "$GRAFANA_UID" "$GRAFANA_GID" 0400 true
     install_managed_file \
@@ -463,6 +467,8 @@ main() {
         fail "grafana-dashboard.json was not uploaded."
     [[ -f "$SOURCE_DIR/grafana-system-dashboard.json" ]] ||
         fail "grafana-system-dashboard.json was not uploaded."
+    [[ -f "$SOURCE_DIR/grafana-logs-dashboard.json" ]] ||
+        fail "grafana-logs-dashboard.json was not uploaded."
     [[ -f "$SOURCE_DIR/Caddyfile" ]] || fail "Caddyfile was not uploaded."
     [[ -f "$SOURCE_DIR/oauth-homepage.html" ]] ||
         fail "OAuth homepage was not uploaded."

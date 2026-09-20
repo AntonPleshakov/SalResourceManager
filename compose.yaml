@@ -116,6 +116,7 @@ services:
       - ./config/grafana/dashboards.yml:/etc/grafana/provisioning/dashboards/sal-resource-manager.yml:ro
       - ./config/grafana/sal-resource-manager.json:/etc/grafana/dashboards/sal-resource-manager.json:ro
       - ./config/grafana/sal-resource-manager-system.json:/etc/grafana/dashboards/sal-resource-manager-system.json:ro
+      - ./config/grafana/sal-resource-manager-logs.json:/etc/grafana/dashboards/sal-resource-manager-logs.json:ro
       - grafana-data:/var/lib/grafana
 
     mem_limit: 256m

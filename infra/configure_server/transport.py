@@ -13,6 +13,7 @@ from .settings import (
     GRAFANA_DASHBOARD_FILE,
     GRAFANA_DASHBOARDS_CONFIG_FILE,
     GRAFANA_DATASOURCES_CONFIG_FILE,
+    GRAFANA_LOGS_DASHBOARD_FILE,
     GRAFANA_SYSTEM_DASHBOARD_FILE,
     OAUTH_HOMEPAGE_FILE,
     OAUTH_PRIVACY_FILE,
@@ -95,6 +96,7 @@ def _cleanup_remote_files(
         "grafana-dashboards.yml",
         "grafana-dashboard.json",
         "grafana-system-dashboard.json",
+        "grafana-logs-dashboard.json",
         "config.ini",
         "google_oauth_token.json",
         "ghcr-credentials",
@@ -135,6 +137,7 @@ def configure_server(settings: Settings) -> None:
             (GRAFANA_DASHBOARDS_CONFIG_FILE, "grafana-dashboards.yml"),
             (GRAFANA_DASHBOARD_FILE, "grafana-dashboard.json"),
             (GRAFANA_SYSTEM_DASHBOARD_FILE, "grafana-system-dashboard.json"),
+            (GRAFANA_LOGS_DASHBOARD_FILE, "grafana-logs-dashboard.json"),
             (settings.config_file, "config.ini"),
             (settings.google_oauth_token_file, "google_oauth_token.json"),
         )

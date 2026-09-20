@@ -1,0 +1,48 @@
+{
+  "annotations": {"list": []},
+  "editable": false,
+  "graphTooltip": 0,
+  "id": null,
+  "links": [
+    {"asDropdown": false, "icon": "dashboard", "includeVars": false, "keepTime": true, "tags": [], "targetBlank": false, "title": "Приложение", "type": "link", "url": "/d/sal-resource-manager/application"},
+    {"asDropdown": false, "icon": "dashboard", "includeVars": false, "keepTime": true, "tags": [], "targetBlank": false, "title": "Система", "type": "link", "url": "/d/sal-resource-manager-system/system"}
+  ],
+  "panels": [
+    {
+      "datasource": {"type": "victoriametrics-logs-datasource", "uid": "victorialogs"},
+      "description": "Сообщения выбранных контейнеров, содержащие признаки ошибок.",
+      "gridPos": {"h": 9, "w": 24, "x": 0, "y": 0},
+      "id": 1,
+      "options": {"dedupStrategy": "none", "enableLogDetails": true, "prettifyLogMessage": false, "showCommonLabels": false, "showLabels": false, "showTime": true, "sortOrder": "Descending", "wrapLogMessage": true},
+      "targets": [{"datasource": {"type": "victoriametrics-logs-datasource", "uid": "victorialogs"}, "expr": "container_name:~\"${container:raw}\" AND _msg:~\"(?i)(error|exception|traceback|failed|critical)\" AND _msg:~\"${search:raw}\"", "queryType": "range", "refId": "A"}],
+      "title": "Ошибки",
+      "type": "logs"
+    },
+    {
+      "datasource": {"type": "victoriametrics-logs-datasource", "uid": "victorialogs"},
+      "description": "Все сообщения выбранных контейнеров с дополнительным поиском по тексту.",
+      "gridPos": {"h": 18, "w": 24, "x": 0, "y": 9},
+      "id": 2,
+      "options": {"dedupStrategy": "none", "enableLogDetails": true, "prettifyLogMessage": false, "showCommonLabels": false, "showLabels": true, "showTime": true, "sortOrder": "Descending", "wrapLogMessage": true},
+      "targets": [{"datasource": {"type": "victoriametrics-logs-datasource", "uid": "victorialogs"}, "expr": "container_name:~\"${container:raw}\" AND _msg:~\"${search:raw}\"", "queryType": "range", "refId": "A"}],
+      "title": "Все логи",
+      "type": "logs"
+    }
+  ],
+  "refresh": "10s",
+  "schemaVersion": 42,
+  "tags": ["sal-resource-manager", "logs", "victorialogs"],
+  "templating": {
+    "list": [
+      {"current": {"selected": true, "text": "Все сервисы", "value": "sal-resource-manager.*"}, "description": "Регулярное выражение для имени Docker-контейнера.", "hide": 0, "label": "Контейнер", "name": "container", "options": [], "query": "sal-resource-manager.*", "skipUrlSync": false, "type": "textbox"},
+      {"current": {"selected": true, "text": ".*", "value": ".*"}, "description": "Регулярное выражение для текста сообщения.", "hide": 0, "label": "Поиск", "name": "search", "options": [], "query": ".*", "skipUrlSync": false, "type": "textbox"}
+    ]
+  },
+  "time": {"from": "now-1h", "to": "now"},
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "Sal Resource Manager — Логи",
+  "uid": "sal-resource-manager-logs",
+  "version": 1,
+  "weekStart": ""
+}

@@ -26,6 +26,9 @@ GRAFANA_DASHBOARD_FILE = PROJECT_DIR / "config/grafana/sal-resource-manager.json
 GRAFANA_SYSTEM_DASHBOARD_FILE = (
     PROJECT_DIR / "config/grafana/sal-resource-manager-system.json"
 )
+GRAFANA_LOGS_DASHBOARD_FILE = (
+    PROJECT_DIR / "config/grafana/sal-resource-manager-logs.json"
+)
 
 
 class ConfigureError(RuntimeError):
@@ -139,6 +142,7 @@ def require_local_prerequisites(settings: Settings) -> None:
         GRAFANA_DASHBOARDS_CONFIG_FILE,
         GRAFANA_DASHBOARD_FILE,
         GRAFANA_SYSTEM_DASHBOARD_FILE,
+        GRAFANA_LOGS_DASHBOARD_FILE,
         REMOTE_SCRIPT_FILE,
         settings.config_file,
         settings.google_oauth_token_file,

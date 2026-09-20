@@ -166,6 +166,10 @@ def test_remote_script_is_uploaded_executed_and_cleaned_up(monkeypatch):
             configure_settings.GRAFANA_SYSTEM_DASHBOARD_FILE,
             "grafana-system-dashboard.json",
         ),
+        (
+            configure_settings.GRAFANA_LOGS_DASHBOARD_FILE,
+            "grafana-logs-dashboard.json",
+        ),
     ):
         assert any(
             call[0][0] == "scp"

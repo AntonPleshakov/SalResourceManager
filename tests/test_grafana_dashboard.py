@@ -15,6 +15,12 @@ SYSTEM_DASHBOARD_FILE = (
     / "grafana"
     / "sal-resource-manager-system.json"
 )
+LOGS_DASHBOARD_FILE = (
+    Path(__file__).parents[1]
+    / "config"
+    / "grafana"
+    / "sal-resource-manager-logs.json"
+)
 PROJECT_DIR = Path(__file__).parents[1]
 
 
@@ -233,6 +239,30 @@ def test_victorialogs_is_bounded_and_available_in_grafana() -> None:
     assert "type: docker_logs" in vector
     assert "when_full: drop_newest" in vector
     assert "type: victoriametrics-logs-datasource" in datasources
+
+
+def test_logs_dashboard_uses_victorialogs_and_is_provisioned() -> None:
+    dashboard = json.loads(LOGS_DASHBOARD_FILE.read_text(encoding="utf-8"))
+    compose = (PROJECT_DIR / "compose.yaml").read_text(encoding="utf-8")
+    queries = _queries(dashboard)
+
+    assert dashboard["uid"] == "sal-resource-manager-logs"
+    assert {panel["title"] for panel in dashboard["panels"]} == {
+        "Ошибки",
+        "Все логи",
+    }
+    assert all(
+        panel["datasource"]["uid"] == "victorialogs"
+        for panel in dashboard["panels"]
+    )
+    assert "container_name" in queries
+    assert "_msg" in queries
+    assert "(?i)(error|exception|traceback|failed|critical)" in queries
+    assert [variable["name"] for variable in dashboard["templating"]["list"]] == [
+        "container",
+        "search",
+    ]
+    assert "sal-resource-manager-logs.json:/etc/grafana/dashboards/" in compose
 
 
 def test_prometheus_has_a_disk_size_limit() -> None:
