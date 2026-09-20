@@ -89,17 +89,38 @@ def test_validate_database_rejects_invalid_file(tmp_path):
 
 
 @pytest.mark.parametrize(
-    "host",
-    ["8.8.8.8", "bot.example.com"],
+    "url",
+    [
+        "https://bot.example.com:8443/telegram/",
+    ],
 )
-def test_webhook_validation_accepts_ipv4_and_dns_names(tmp_path, host):
+def test_webhook_validation_accepts_public_https_dns_name(tmp_path, url):
     config = tmp_path / "config.ini"
     config.write_text(
-        f"[DEFAULT]\nWEBHOOK_URL=https://{host}:8443/telegram/\n[Release]\n",
+        f"[DEFAULT]\nWEBHOOK_URL={url}\n[Release]\n",
         encoding="utf-8",
     )
 
     migration._validate_webhook_url(config)
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://8.8.8.8/telegram/",
+        "https://bot.example.com/telegram/",
+        "https://bot.example.com:443/telegram/",
+    ],
+)
+def test_webhook_validation_rejects_urls_without_caddy_public_dns(tmp_path, url):
+    config = tmp_path / "config.ini"
+    config.write_text(
+        f"[DEFAULT]\nWEBHOOK_URL={url}\n[Release]\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(migration.MigrationError):
+        migration._validate_webhook_url(config)
 
 
 def test_validate_volume_backup_accepts_safe_archive(tmp_path):

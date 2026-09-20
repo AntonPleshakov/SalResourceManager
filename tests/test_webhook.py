@@ -1,6 +1,5 @@
 import logging
-from pathlib import Path
-from unittest.mock import ANY, Mock
+from unittest.mock import Mock
 
 import pytest
 
@@ -29,8 +28,6 @@ def test_webhook_settings_normalize_the_public_url():
         "0.0.0.0",
         8443,
         "valid_secret-token",
-        Path("certificate.pem"),
-        Path("private.key"),
     )
 
     assert settings.public_url == "https://bot.example.com/telegram/"
@@ -52,8 +49,6 @@ def test_webhook_settings_reject_invalid_public_urls(url, error):
             "0.0.0.0",
             8443,
             "valid-secret",
-            Path("certificate.pem"),
-            Path("private.key"),
         )
 
 
@@ -64,14 +59,10 @@ def test_webhook_settings_reject_invalid_secret_token():
             "0.0.0.0",
             8443,
             "not valid",
-            Path("certificate.pem"),
-            Path("private.key"),
         )
 
 
 def test_webhook_listener_is_configured(tmp_path, monkeypatch):
-    certificate_path = tmp_path / "certificate.pem"
-    certificate_path.write_bytes(b"certificate")
     listener = Mock()
     listener_class = Mock(return_value=listener)
     monkeypatch.setattr(webhook, "SyncWebhookListener", listener_class)
@@ -81,15 +72,12 @@ def test_webhook_listener_is_configured(tmp_path, monkeypatch):
         "0.0.0.0",
         8443,
         "valid-secret",
-        certificate_path,
-        tmp_path / "private.key",
     )
 
     result = build_webhook_listener(bot, settings)
 
     bot.set_webhook.assert_called_once_with(
         url="https://bot.example.com/telegram/",
-        certificate=ANY,
         max_connections=1,
         drop_pending_updates=False,
         secret_token="valid-secret",
@@ -100,7 +88,7 @@ def test_webhook_listener_is_configured(tmp_path, monkeypatch):
         secret_token="valid-secret",
         host="0.0.0.0",
         port=8443,
-        ssl_context=(str(certificate_path), str(tmp_path / "private.key")),
+        ssl_context=None,
         url_path="/telegram/",
     )
     listener.app.add_middleware.assert_called_once_with(
@@ -115,20 +103,24 @@ def test_serve_webhook_starts_listener(monkeypatch):
     listener = Mock()
     build_listener = Mock(return_value=listener)
     monkeypatch.setattr(webhook, "build_webhook_listener", build_listener)
+    run = Mock()
+    monkeypatch.setattr(webhook.uvicorn, "run", run)
     bot = Mock()
     settings = build_webhook_settings(
         "https://bot.example.com/telegram",
         "0.0.0.0",
         8443,
         "valid-secret",
-        Path("certificate.pem"),
-        Path("private.key"),
     )
 
     serve_webhook(bot, settings)
 
     build_listener.assert_called_once_with(bot, settings)
-    listener.run_app.assert_called_once_with()
+    run.assert_called_once_with(
+        app=listener.app,
+        host="0.0.0.0",
+        port=8443,
+    )
 
 
 def test_uvicorn_logging_is_configured(monkeypatch):

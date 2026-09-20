@@ -9,9 +9,6 @@ GRAFANA_UID="472"
 GRAFANA_GID="0"
 CONTAINER_NAME="sal-resource-manager"
 SOURCE_DIR="${1:?Source directory is required}"
-CERTIFICATE_SCRIPT="$APP_DIR/generate-webhook-certificate.sh"
-CERTIFICATE_PATH="$APP_DIR/certs/webhook.pem"
-PRIVATE_KEY_PATH="$APP_DIR/certs/webhook.key"
 APP_RESTART_REQUIRED=false
 PREPARE_ONLY="${PREPARE_ONLY:-false}"
 SWAP_FILE="/swapfile"
@@ -84,7 +81,6 @@ ensure_directories() {
     install -d -m 0750 "$APP_DIR"
     install -d -m 0750 "$APP_DIR/config"
     install -d -m 0750 "$APP_DIR/config/grafana"
-    install -o "$APP_UID" -g "$APP_GID" -d -m 0750 "$APP_DIR/certs"
     install -o "$APP_UID" -g "$APP_GID" -d -m 0750 "$APP_DIR/data"
 }
 
@@ -147,6 +143,9 @@ install_configuration() {
         "$SOURCE_DIR/compose.yaml" "$APP_DIR/compose.yaml" \
         root root 0644 false
     install_managed_file \
+        "$SOURCE_DIR/Caddyfile" "$APP_DIR/config/Caddyfile" \
+        root root 0644 true
+    install_managed_file \
         "$SOURCE_DIR/prometheus.yml" "$APP_DIR/config/prometheus.yml" \
         root root 0644 true
     install_managed_file \
@@ -171,9 +170,6 @@ install_configuration() {
     install_managed_file \
         "$SOURCE_DIR/grafana.ini" "$APP_DIR/config/grafana/grafana.ini" \
         "$GRAFANA_UID" "$GRAFANA_GID" 0400 true
-    install_managed_file \
-        "$SOURCE_DIR/generate-webhook-certificate.sh" "$CERTIFICATE_SCRIPT" \
-        root root 0750 false
     install_managed_file \
         "$SOURCE_DIR/config.ini" "$APP_DIR/config/config.ini" \
         "$APP_UID" "$APP_GID" 0400 true
@@ -221,51 +217,42 @@ read_config_option() {
     ' "$APP_DIR/config/config.ini"
 }
 
-ensure_openssl() {
-    if command -v openssl >/dev/null 2>&1; then
-        log "OpenSSL is available."
-        return
-    fi
+validate_public_hostname() {
+    local hostname="$1"
+    local label
+    local labels
 
-    log "OpenSSL is missing. Installing it..."
-    require_command apt-get
-    export DEBIAN_FRONTEND=noninteractive
-    apt-get update
-    apt-get install -y openssl
-    require_command openssl
+    [[ ${#hostname} -le 253 ]] || return 1
+    [[ "$hostname" == *.* ]] || return 1
+    [[ ! "$hostname" =~ ^[0-9.]+$ ]] || return 1
+    IFS='.' read -r -a labels <<<"$hostname"
+    for label in "${labels[@]}"; do
+        [[ "$label" =~ ^[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?$ ]] ||
+            return 1
+    done
 }
 
-configure_webhook_certificate() {
-    local certificate_status
+configure_caddy_environment() {
+    local environment_file="$SOURCE_DIR/caddy.env"
     local public_host
+    local webhook_path
     local webhook_url
 
     webhook_url="$(read_config_option WEBHOOK_URL)"
-
-    [[ "$webhook_url" =~ ^https://([^/:]+):8443/.+ ]] ||
-        fail "WEBHOOK_URL must use a DNS name or public IPv4 address and port 8443."
+    [[ "$webhook_url" =~ ^https://([^/:]+):8443(/[^?#]*)$ ]] ||
+        fail "WEBHOOK_URL must use a public DNS name and HTTPS port 8443."
     public_host="${BASH_REMATCH[1]}"
+    webhook_path="${BASH_REMATCH[2]}"
+    validate_public_hostname "$public_host" ||
+        fail "WEBHOOK_URL host must be a valid public DNS name, not an IP address."
+    [[ "$webhook_path" =~ ^/[A-Za-z0-9._~/-]+/$ ]] ||
+        fail "WEBHOOK_URL path must end with '/' and contain only safe URL path characters."
 
-    certificate_status="$(
-        "$CERTIFICATE_SCRIPT" \
-            "$public_host" \
-            "$CERTIFICATE_PATH" \
-            "$PRIVATE_KEY_PATH" \
-            "$APP_UID" \
-            "$APP_GID"
-    )"
-    case "$certificate_status" in
-        current)
-            log "Webhook certificate for $public_host is current."
-            ;;
-        generated)
-            APP_RESTART_REQUIRED=true
-            log "Generated a webhook certificate for $public_host."
-            ;;
-        *)
-            fail "Unexpected certificate generator result: $certificate_status"
-            ;;
-    esac
+    printf 'CADDY_PUBLIC_HOST=%s\nCADDY_WEBHOOK_PATH=%s\n' \
+        "$public_host" "$webhook_path" > "$environment_file"
+    chmod 0600 "$environment_file"
+    install_managed_file \
+        "$environment_file" "$APP_DIR/.env" root root 0600 true
 }
 
 configure_firewall() {
@@ -278,9 +265,11 @@ configure_firewall() {
         return
     fi
 
+    ufw allow 80/tcp >/dev/null
     ufw allow 8443/tcp >/dev/null
-    ufw allow 3000/tcp >/dev/null
-    log "UFW allows inbound TCP traffic on ports 8443 and 3000."
+    ufw allow 8443/udp >/dev/null
+    ufw --force delete allow 3000/tcp >/dev/null 2>&1 || true
+    log "UFW allows ACME HTTP and Caddy HTTPS on port 8443."
 }
 
 login_to_ghcr() {
@@ -307,7 +296,7 @@ pull_images() {
     (
         cd "$APP_DIR"
         docker compose pull \
-            bot node-exporter prometheus grafana victorialogs vector
+            bot node-exporter prometheus grafana victorialogs vector caddy
     )
 }
 
@@ -317,7 +306,7 @@ apply_compose() {
     if [[ "$APP_RESTART_REQUIRED" == "true" ]]; then
         compose_args+=(--force-recreate)
     fi
-    compose_args+=(bot node-exporter prometheus grafana victorialogs vector)
+    compose_args+=(bot node-exporter prometheus grafana victorialogs vector caddy)
 
     (
         cd "$APP_DIR"
@@ -339,7 +328,7 @@ verify_application() {
 
         if [[ "$status" == "running" ]] &&
             grep -Fq "Sal Resources Manager started" <<<"$logs" &&
-            grep -Fq "Uvicorn running on https://0.0.0.0:8443" <<<"$logs"; then
+            grep -Fq "Uvicorn running on http://0.0.0.0:8443" <<<"$logs"; then
             log "Application startup completed."
             return
         fi
@@ -392,21 +381,6 @@ verify_storage() {
     '
     log "Persistent /app/data mount is writable by the application user."
 
-    local certificate_mount
-    mount_format='{{range .Mounts}}{{if eq .Destination "/app/certs"}}'
-    mount_format+='{{.Source}}|{{.RW}}{{end}}{{end}}'
-    certificate_mount="$(
-        docker inspect \
-            --format "$mount_format" \
-            "$CONTAINER_NAME"
-    )"
-    [[ "$certificate_mount" == "$APP_DIR/certs|false" ]] ||
-        fail "Unexpected /app/certs mount: '$certificate_mount'."
-    docker exec "$CONTAINER_NAME" sh -c '
-        test -r /app/certs/webhook.pem
-        test -r /app/certs/webhook.key
-    '
-    log "Webhook certificate and private key are readable by the application."
 }
 
 verify_auxiliary_services() {
@@ -417,7 +391,8 @@ verify_auxiliary_services() {
         sal-resource-manager-prometheus \
         sal-resource-manager-grafana \
         sal-resource-manager-victorialogs \
-        sal-resource-manager-vector; do
+        sal-resource-manager-vector \
+        sal-resource-manager-caddy; do
         status="$(docker inspect --format '{{.State.Status}}' "$container")"
         [[ "$status" == "running" ]] ||
             fail "Container $container is not running: $status"
@@ -432,7 +407,9 @@ verify_auxiliary_services() {
     [[ "$victorialogs_mount" == \
         "sal-resource-manager_victorialogs-data|true" ]] ||
         fail "Unexpected VictoriaLogs data mount: '$victorialogs_mount'."
-    log "Prometheus, Grafana, VictoriaLogs, and Vector are running."
+    docker exec sal-resource-manager-caddy \
+        caddy validate --config /etc/caddy/Caddyfile >/dev/null
+    log "Caddy, Prometheus, Grafana, VictoriaLogs, and Vector are running."
 }
 
 main() {
@@ -450,8 +427,7 @@ main() {
         fail "grafana-dashboard.json was not uploaded."
     [[ -f "$SOURCE_DIR/grafana-system-dashboard.json" ]] ||
         fail "grafana-system-dashboard.json was not uploaded."
-    [[ -f "$SOURCE_DIR/generate-webhook-certificate.sh" ]] ||
-        fail "Certificate generator was not uploaded."
+    [[ -f "$SOURCE_DIR/Caddyfile" ]] || fail "Caddyfile was not uploaded."
     [[ -f "$SOURCE_DIR/config.ini" ]] || fail "config.ini was not uploaded."
     [[ -f "$SOURCE_DIR/google_oauth_token.json" ]] ||
         fail "google_oauth_token.json was not uploaded."
@@ -461,8 +437,7 @@ main() {
     ensure_compose
     ensure_swap
     install_configuration
-    ensure_openssl
-    configure_webhook_certificate
+    configure_caddy_environment
     configure_firewall
     login_to_ghcr
     pull_images

@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Optional, Sequence
 
 from .settings import (
-    CERTIFICATE_SCRIPT_FILE,
+    CADDY_CONFIG_FILE,
     GRAFANA_DASHBOARD_FILE,
     GRAFANA_DASHBOARDS_CONFIG_FILE,
     GRAFANA_DATASOURCES_CONFIG_FILE,
@@ -81,7 +81,7 @@ def _cleanup_remote_files(
 ) -> None:
     names = (
         "configure-remote.sh",
-        "generate-webhook-certificate.sh",
+        "Caddyfile",
         "compose.yaml",
         "prometheus.yml",
         "vector.yaml",
@@ -118,8 +118,8 @@ def configure_server(settings: Settings) -> None:
         log("Copying the desired server configuration...")
         uploads = (
             (REMOTE_SCRIPT_FILE, "configure-remote.sh"),
-            (CERTIFICATE_SCRIPT_FILE, "generate-webhook-certificate.sh"),
             (PROJECT_DIR / "compose.yaml", "compose.yaml"),
+            (CADDY_CONFIG_FILE, "Caddyfile"),
             (PROMETHEUS_CONFIG_FILE, "prometheus.yml"),
             (VECTOR_CONFIG_FILE, "vector.yaml"),
             (GRAFANA_DATASOURCES_CONFIG_FILE, "grafana-datasources.yml"),

@@ -25,18 +25,17 @@ $env:MODE = "Debug"
 python main.py
 ```
 
-Production runs with webhooks through Docker:
+Deploy production through the infrastructure script, which configures Caddy and
+Docker Compose:
 
 ```bash
-docker compose pull
-docker compose up -d
-docker compose logs -f bot
+python infra/configure-server.py user@server
 ```
 
-Grafana: `http://<server-ip>:3000`. Prometheus:
-`http://127.0.0.1:9090`. SQLite data is stored in `data/`; migration rules are
-in [`db/README.md`](db/README.md). Container logs are available from the
-VictoriaLogs data source in Grafana Explore.
+Grafana is served at the root of the HTTPS domain and port from `WEBHOOK_URL`.
+Prometheus remains private at `http://127.0.0.1:9090`. SQLite data is stored in
+`data/`; migration rules are in [`db/README.md`](db/README.md). Container logs
+are available from the VictoriaLogs data source in Grafana Explore.
 
 ## Clans
 

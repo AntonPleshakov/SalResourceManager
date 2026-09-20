@@ -1,0 +1,13 @@
+{$CADDY_PUBLIC_HOST}:8443 {
+	encode zstd gzip
+	tls {
+		issuer acme {
+			disable_tlsalpn_challenge
+		}
+	}
+
+	@telegram path {$CADDY_WEBHOOK_PATH}
+	reverse_proxy @telegram bot:8443
+
+	reverse_proxy grafana:3000
+}

@@ -123,12 +123,14 @@ def _validate_webhook_url(config_file: Path) -> None:
         ) from error
     host = parsed.hostname or ""
     try:
-        address = ipaddress.ip_address(host)
+        ipaddress.ip_address(host)
+        is_ip_address = True
     except ValueError:
-        address = None
+        is_ip_address = False
     labels = host.split(".")
     valid_hostname = (
-        host.isascii()
+        not is_ip_address
+        and host.isascii()
         and len(host) <= 253
         and len(labels) >= 2
         and all(
@@ -140,15 +142,20 @@ def _validate_webhook_url(config_file: Path) -> None:
             for label in labels
         )
     )
-    valid_address = address is not None and address.version == 4 and address.is_global
-    if parsed.scheme != "https" or port != 8443:
+    if (
+        parsed.scheme != "https"
+        or port != 8443
+        or parsed.username
+        or parsed.password
+        or parsed.query
+        or parsed.fragment
+    ):
         raise MigrationError(
-            "Release WEBHOOK_URL must use HTTPS and port 8443."
+            "Release WEBHOOK_URL must use HTTPS on port 8443."
         )
-    if not parsed.path.strip("/") or not (valid_address or valid_hostname):
+    if not parsed.path.strip("/") or not valid_hostname:
         raise MigrationError(
-            "Release WEBHOOK_URL must contain a path and a valid DNS name "
-            "or public IPv4 address."
+            "Release WEBHOOK_URL must contain a path and a valid DNS name."
         )
 
 

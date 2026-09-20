@@ -122,10 +122,8 @@ def test_remote_script_is_uploaded_executed_and_cleaned_up(monkeypatch):
     )
     assert any(
         call[0][0] == "scp"
-        and call[0][-2] == str(configure_settings.CERTIFICATE_SCRIPT_FILE)
-        and call[0][-1].endswith(
-            f":{remote_dir}/generate-webhook-certificate.sh"
-        )
+        and call[0][-2] == str(configure_settings.CADDY_CONFIG_FILE)
+        and call[0][-1].endswith(f":{remote_dir}/Caddyfile")
         for call in calls
     )
     assert any(
@@ -212,3 +210,16 @@ def test_remote_configuration_creates_swap_only_when_missing():
     assert "swapon --show=NAME --noheadings" in remote_script
     assert "mkswap \"$SWAP_FILE\"" in remote_script
     assert "'/swapfile none swap sw 0 0'" in remote_script
+
+
+def test_remote_configuration_uses_caddy_for_public_https():
+    remote_script = configure_settings.REMOTE_SCRIPT_FILE.read_text(
+        encoding="utf-8"
+    )
+
+    assert "configure_caddy_environment" in remote_script
+    assert "ufw allow 80/tcp" in remote_script
+    assert "ufw allow 8443/tcp" in remote_script
+    assert "ufw allow 443/tcp" not in remote_script
+    assert "ufw --force delete allow 3000/tcp" in remote_script
+    assert "generate-webhook-certificate" not in remote_script

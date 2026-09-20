@@ -2,9 +2,9 @@ import logging
 import re
 import secrets
 from dataclasses import dataclass
-from pathlib import Path
 from urllib.parse import urlsplit, urlunsplit
 
+import uvicorn
 from telebot import TeleBot
 from telebot.ext.sync import SyncWebhookListener
 
@@ -13,11 +13,8 @@ from tg.metrics import WebhookMetricsMiddleware
 from tg.update_types import ALLOWED_UPDATES
 
 
-_PROJECT_ROOT = Path(__file__).resolve().parents[1]
 WEBHOOK_LISTEN = "0.0.0.0"
 WEBHOOK_PORT = 8443
-WEBHOOK_CERTIFICATE_PATH = _PROJECT_ROOT / "certs" / "webhook.pem"
-WEBHOOK_PRIVATE_KEY_PATH = _PROJECT_ROOT / "certs" / "webhook.key"
 _SECRET_TOKEN_PATTERN = re.compile(r"^[A-Za-z0-9_-]{1,256}$")
 _INVALID_HTTP_REQUEST_MESSAGE = "Invalid HTTP request received."
 
@@ -40,8 +37,6 @@ class WebhookSettings:
     port: int
     url_path: str
     secret_token: str
-    certificate_path: Path
-    private_key_path: Path
 
 
 def generate_webhook_secret_token() -> str:
@@ -53,8 +48,6 @@ def build_webhook_settings(
     listen: str,
     port: int,
     secret_token: str,
-    certificate_path: Path,
-    private_key_path: Path,
 ) -> WebhookSettings:
     parsed_url = urlsplit(public_url.strip())
     if parsed_url.scheme != "https" or not parsed_url.hostname:
@@ -86,8 +79,6 @@ def build_webhook_settings(
         port=port,
         url_path=url_path,
         secret_token=secret_token,
-        certificate_path=certificate_path,
-        private_key_path=private_key_path,
     )
 
 
@@ -97,15 +88,7 @@ def load_webhook_settings() -> WebhookSettings:
         listen=WEBHOOK_LISTEN,
         port=WEBHOOK_PORT,
         secret_token=generate_webhook_secret_token(),
-        certificate_path=WEBHOOK_CERTIFICATE_PATH,
-        private_key_path=WEBHOOK_PRIVATE_KEY_PATH,
     )
-    for option, path in (
-        ("WEBHOOK_CERTIFICATE_PATH", settings.certificate_path),
-        ("WEBHOOK_PRIVATE_KEY_PATH", settings.private_key_path),
-    ):
-        if not path.is_file():
-            raise FileNotFoundError(f"{option} does not exist: {path}")
     return settings
 
 
@@ -128,15 +111,13 @@ def configure_uvicorn_logging() -> None:
 def build_webhook_listener(
     bot: TeleBot, settings: WebhookSettings
 ) -> SyncWebhookListener:
-    with settings.certificate_path.open("rb") as certificate:
-        bot.set_webhook(
-            url=settings.public_url,
-            certificate=certificate,
-            max_connections=1,
-            drop_pending_updates=False,
-            secret_token=settings.secret_token,
-            allowed_updates=list(ALLOWED_UPDATES),
-        )
+    bot.set_webhook(
+        url=settings.public_url,
+        max_connections=1,
+        drop_pending_updates=False,
+        secret_token=settings.secret_token,
+        allowed_updates=list(ALLOWED_UPDATES),
+    )
 
     webhook_path = f"/{settings.url_path}/"
     listener = SyncWebhookListener(
@@ -144,10 +125,7 @@ def build_webhook_listener(
         secret_token=settings.secret_token,
         host=settings.listen,
         port=settings.port,
-        ssl_context=(
-            str(settings.certificate_path),
-            str(settings.private_key_path),
-        ),
+        ssl_context=None,
         url_path=webhook_path,
     )
     listener.app.add_middleware(
@@ -160,4 +138,9 @@ def build_webhook_listener(
 
 def serve_webhook(bot: TeleBot, settings: WebhookSettings) -> None:
     configure_uvicorn_logging()
-    build_webhook_listener(bot, settings).run_app()
+    listener = build_webhook_listener(bot, settings)
+    uvicorn.run(
+        app=listener.app,
+        host=settings.listen,
+        port=settings.port,
+    )

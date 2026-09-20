@@ -10,16 +10,13 @@ services:
     environment:
       MODE: ${MODE:-Release}
 
-    ports:
-      - "8443:8443"
-
     expose:
+      - "8443"
       - "9100"
 
     volumes:
       - ${CONFIG_FILE:-./config/config.ini}:/app/config/config.ini:ro
       - ${GOOGLE_OAUTH_TOKEN_FILE:-./config/google_oauth_token.json}:/app/config/google_oauth_token.json:ro
-      - ./certs:/app/certs:ro
       - ./data:/app/data
 
     mem_limit: 256m
@@ -110,8 +107,8 @@ services:
       GF_UNIFIED_ALERTING_ENABLED: "false"
       GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /etc/grafana/dashboards/sal-resource-manager.json
 
-    ports:
-      - "3000:3000"
+    expose:
+      - "3000"
 
     volumes:
       - ./config/grafana/grafana.ini:/etc/grafana/grafana.ini:ro
@@ -123,6 +120,38 @@ services:
 
     mem_limit: 256m
     cpus: 0.50
+
+    logging:
+      driver: local
+      options:
+        max-size: "5m"
+        max-file: "2"
+
+  caddy:
+    image: caddy:2.11.4-alpine
+    container_name: sal-resource-manager-caddy
+    restart: unless-stopped
+
+    depends_on:
+      - bot
+      - grafana
+
+    environment:
+      CADDY_PUBLIC_HOST: ${CADDY_PUBLIC_HOST:?CADDY_PUBLIC_HOST is required}
+      CADDY_WEBHOOK_PATH: ${CADDY_WEBHOOK_PATH:?CADDY_WEBHOOK_PATH is required}
+
+    ports:
+      - "80:80"
+      - "8443:8443"
+      - "8443:8443/udp"
+
+    volumes:
+      - ./config/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+
+    mem_limit: 96m
+    cpus: 0.25
 
     logging:
       driver: local
@@ -177,6 +206,8 @@ services:
         max-file: "2"
 
 volumes:
+  caddy-config:
+  caddy-data:
   grafana-data:
   prometheus-data:
   victorialogs-data:

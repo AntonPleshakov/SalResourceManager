@@ -191,19 +191,28 @@ def test_grafana_uses_a_separate_restricted_config() -> None:
     assert template.has_option("security", "admin_password")
 
 
-def test_grafana_port_is_published_on_all_host_interfaces() -> None:
+def test_caddy_is_the_only_public_entrypoint() -> None:
     compose = (PROJECT_DIR / "compose.yaml").read_text(encoding="utf-8")
+    bot_service = compose.split("  bot:", 1)[1].split("  node-exporter:", 1)[0]
 
-    assert '- "3000:3000"' in compose
-    assert "127.0.0.1:3000:3000" not in compose
+    assert '- "80:80"' in compose
+    assert '- "8443:8443"' in compose
+    assert '- "443:443"' not in compose
+    assert "ports:" not in bot_service
+    assert '- "3000:3000"' not in compose
+    assert "caddy-data:/data" in compose
+    assert "caddy-config:/config" in compose
 
 
-def test_server_configuration_allows_grafana_through_ufw() -> None:
+def test_server_configuration_only_allows_caddy_through_ufw() -> None:
     remote_script = (
         PROJECT_DIR / "infra" / "configure_server" / "remote.sh"
     ).read_text(encoding="utf-8")
 
-    assert "ufw allow 3000/tcp" in remote_script
+    assert "ufw allow 80/tcp" in remote_script
+    assert "ufw allow 8443/tcp" in remote_script
+    assert "ufw allow 443/tcp" not in remote_script
+    assert "ufw --force delete allow 3000/tcp" in remote_script
 
 
 def test_victorialogs_is_bounded_and_available_in_grafana() -> None:
