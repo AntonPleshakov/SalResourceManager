@@ -1,12 +1,14 @@
 import io
 import sqlite3
+import subprocess
+import sys
 import tarfile
 from pathlib import Path
 
 import pytest
 
 from infra.configure_server.settings import Settings as ConfigureSettings
-from infra.migrate_server import migration
+from infra.migrate_server import cli, migration
 from infra.migrate_server.settings import (
     Connection,
     MigrationSettings,
@@ -36,6 +38,42 @@ def make_settings(tmp_path, **overrides):
     }
     values.update(overrides)
     return MigrationSettings(**values)
+
+
+@pytest.mark.parametrize("failed_host", ["old-server", "new-server"])
+def test_preflight_preserves_ssh_error_without_starting_migration(
+    tmp_path, monkeypatch, capfd, failed_host,
+):
+    settings = make_settings(tmp_path)
+    checked_hosts = []
+    deployments = []
+
+    def fake_ssh_command(connection, remote_command):
+        checked_hosts.append(connection.target)
+        script = (
+            "import sys; "
+            "sys.stderr.write('ssh: Permission denied (publickey).\\n'); "
+            "sys.exit(255)"
+            if connection.target == failed_host else "pass"
+        )
+        return [sys.executable, "-c", script]
+
+    monkeypatch.setattr(cli, "resolve_settings", lambda argv: settings)
+    monkeypatch.setattr(migration, "_validate_local_settings", lambda settings: None)
+    monkeypatch.setattr(migration, "ssh_command", fake_ssh_command)
+    monkeypatch.setattr(migration, "configure_server", deployments.append)
+
+    assert cli.main([]) == 255
+
+    output = capfd.readouterr()
+    assert f"({failed_host})" in output.out
+    assert "ssh: Permission denied (publickey)." in output.err
+    assert "command failed with exit code 255" in output.err
+    assert checked_hosts == (
+        ["old-server"] if failed_host == "old-server"
+        else ["old-server", "new-server"]
+    )
+    assert deployments == []
 
 
 def test_resolve_settings_supports_separate_connections(tmp_path):
@@ -86,6 +124,60 @@ def test_validate_database_rejects_invalid_file(tmp_path):
 
     with pytest.raises(sqlite3.DatabaseError):
         migration.validate_database(database)
+
+
+@pytest.mark.parametrize("use_wal", [False, True])
+def test_database_backup_includes_committed_wal_without_changing_source(
+    tmp_path, use_wal,
+):
+    source = tmp_path / "source.db"
+    backup = tmp_path / "backup.db"
+    database = sqlite3.connect(source)
+    try:
+        if use_wal:
+            database.execute("PRAGMA journal_mode=WAL")
+            database.execute("PRAGMA wal_autocheckpoint=0")
+        database.execute("CREATE TABLE example (value TEXT)")
+        database.execute("INSERT INTO example VALUES ('latest committed record')")
+        database.commit()
+        original = source.read_bytes()
+        wal = Path(str(source) + "-wal")
+        original_wal = wal.read_bytes() if use_wal else None
+        if use_wal:
+            assert original_wal
+
+        with backup.open("xb") as output:
+            subprocess.run(
+                [sys.executable, "-c", migration.DATABASE_BACKUP_SCRIPT, str(source)],
+                stdout=output, check=True,
+            )
+
+        assert source.read_bytes() == original
+        if use_wal:
+            assert wal.read_bytes() == original_wal
+        migration.validate_database(backup)
+        with sqlite3.connect(backup) as restored:
+            assert restored.execute("SELECT value FROM example").fetchall() == [
+                ("latest committed record",)
+            ]
+            assert restored.execute("PRAGMA journal_mode").fetchone() == ("delete",)
+    finally:
+        database.close()
+
+
+def test_database_download_removes_partial_backup_on_failure(tmp_path, monkeypatch):
+    backup = tmp_path / "backup.db"
+
+    def fail_download(connection, script, **kwargs):
+        kwargs["stdout"].write(b"partial database")
+        raise subprocess.CalledProcessError(1, "ssh")
+
+    monkeypatch.setattr(migration, "run_remote", fail_download)
+
+    with pytest.raises(subprocess.CalledProcessError):
+        migration.download_database(Connection("old-server", None, None), backup)
+
+    assert not backup.exists()
 
 
 @pytest.mark.parametrize(

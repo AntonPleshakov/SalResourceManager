@@ -206,7 +206,7 @@ def _preflight_source(connection: Connection) -> None:
         f'{shlex.quote(CONTAINER_NAME)} 2>/dev/null)" = true && '
         f"{volume_checks}"
     )
-    run_remote(connection, script, quiet=True)
+    run_remote(connection, script)
 
 
 def _preflight_destination(
@@ -236,14 +236,14 @@ def _preflight_destination(
         f"{container_checks} && "
         f"{database_check} && {volume_check}"
     )
-    run_remote(connection, script, quiet=True)
+    run_remote(connection, script)
 
 
 def preflight(settings: MigrationSettings) -> None:
     _validate_local_settings(settings)
-    log("Checking the old server...")
+    log(f"Checking the old server ({settings.source.target})...")
     _preflight_source(settings.source)
-    log("Checking the new server...")
+    log(f"Checking the new server ({settings.destination.target})...")
     _preflight_destination(
         settings.destination,
         settings.overwrite_destination,
@@ -316,12 +316,40 @@ def stop_destination_services(
     )
 
 
+DATABASE_BACKUP_SCRIPT = """
+import shutil
+import sqlite3
+import sys
+import tempfile
+from contextlib import closing
+from pathlib import Path
+
+source = Path(sys.argv[1])
+with tempfile.TemporaryDirectory() as directory:
+    snapshot = Path(directory) / 'snapshot.db'
+    shutil.copyfile(source, snapshot)
+    wal = Path(str(source) + '-wal')
+    if wal.exists():
+        shutil.copyfile(wal, Path(str(snapshot) + '-wal'))
+    backup = Path(directory) / 'backup.db'
+    with closing(sqlite3.connect(snapshot)) as database:
+        with closing(sqlite3.connect(backup)) as output:
+            database.backup(output)
+            output.execute('PRAGMA journal_mode=DELETE')
+    with backup.open('rb') as output:
+        shutil.copyfileobj(output, sys.stdout.buffer)
+"""
+
+
 def download_database(connection: Connection, backup_file: Path) -> None:
-    wal_path = shlex.quote(f"{DATABASE_PATH}-wal")
+    # The source services are stopped before copying the database and its WAL.
+    # Recover a private copy so SQLite never modifies the source files.
     script = (
-        f"if [ -s {wal_path} ]; then "
-        "echo 'SQLite WAL still contains data after shutdown.' >&2; exit 20; fi; "
-        f"cat {shlex.quote(DATABASE_PATH)}"
+        f"image=$(docker inspect --format '{{{{.Image}}}}' {CONTAINER_NAME}) && "
+        "docker run --rm --network none --user 0:0 "
+        f"--mount type=bind,src={APP_DIR}/data,dst=/source,readonly "
+        '--entrypoint python "$image" -c '
+        f"{shlex.quote(DATABASE_BACKUP_SCRIPT)} /source/sal_resources.db"
     )
     with backup_file.open("xb") as output:
         try:

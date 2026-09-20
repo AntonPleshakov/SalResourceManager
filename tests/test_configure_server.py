@@ -229,6 +229,8 @@ def test_remote_configuration_uses_caddy_for_public_https():
     )
 
     assert "configure_caddy_environment" in remote_script
+    assert "verify_bot_image" in remote_script
+    assert "Bot image uses Caddy-managed TLS" in remote_script
     assert "ufw allow 80/tcp" in remote_script
     assert "ufw allow 8443/tcp" in remote_script
     assert "ufw allow 443/tcp" not in remote_script

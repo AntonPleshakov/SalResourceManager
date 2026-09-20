@@ -322,6 +322,20 @@ pull_images() {
     )
 }
 
+verify_bot_image() {
+    local verification
+
+    verification="from tg.webhook import WebhookSettings; assert list(WebhookSettings.__annotations__) == ['public_url', 'listen', 'port', 'url_path', 'secret_token'], 'bot image still expects application-managed TLS certificates'"
+    if ! (
+        cd "$APP_DIR"
+        docker compose run --rm --no-deps --entrypoint python bot \
+            -c "$verification"
+    ); then
+        fail "Bot image is incompatible with the Caddy TLS configuration. Publish the current application image before deployment."
+    fi
+    log "Bot image uses Caddy-managed TLS."
+}
+
 apply_compose() {
     local compose_args=(up -d --remove-orphans)
 
@@ -469,6 +483,7 @@ main() {
     configure_firewall
     login_to_ghcr
     pull_images
+    verify_bot_image
     if [[ "$PREPARE_ONLY" == "true" ]]; then
         log "Server preparation completed without starting services."
         return
