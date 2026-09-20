@@ -126,6 +126,17 @@ def test_remote_script_is_uploaded_executed_and_cleaned_up(monkeypatch):
         and call[0][-1].endswith(f":{remote_dir}/Caddyfile")
         for call in calls
     )
+    for source, remote_name in (
+        (configure_settings.OAUTH_HOMEPAGE_FILE, "oauth-homepage.html"),
+        (configure_settings.OAUTH_PRIVACY_FILE, "oauth-privacy.html"),
+        (configure_settings.OAUTH_TERMS_FILE, "oauth-terms.html"),
+    ):
+        assert any(
+            call[0][0] == "scp"
+            and call[0][-2] == str(source)
+            and call[0][-1].endswith(f":{remote_dir}/{remote_name}")
+            for call in calls
+        )
     assert any(
         call[0][0] == "scp"
         and call[0][-2] == str(configure_settings.PROMETHEUS_CONFIG_FILE)
@@ -223,3 +234,5 @@ def test_remote_configuration_uses_caddy_for_public_https():
     assert "ufw allow 443/tcp" not in remote_script
     assert "ufw --force delete allow 3000/tcp" in remote_script
     assert "generate-webhook-certificate" not in remote_script
+    assert "OAUTH_BRANDING_URL" in remote_script
+    assert "CADDY_OAUTH_HOST" in remote_script

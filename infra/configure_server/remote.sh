@@ -81,6 +81,8 @@ ensure_directories() {
     install -d -m 0750 "$APP_DIR"
     install -d -m 0750 "$APP_DIR/config"
     install -d -m 0750 "$APP_DIR/config/grafana"
+    install -d -m 0755 "$APP_DIR/config/oauth/privacy"
+    install -d -m 0755 "$APP_DIR/config/oauth/terms"
     install -o "$APP_UID" -g "$APP_GID" -d -m 0750 "$APP_DIR/data"
 }
 
@@ -145,6 +147,15 @@ install_configuration() {
     install_managed_file \
         "$SOURCE_DIR/Caddyfile" "$APP_DIR/config/Caddyfile" \
         root root 0644 true
+    install_managed_file \
+        "$SOURCE_DIR/oauth-homepage.html" \
+        "$APP_DIR/config/oauth/index.html" root root 0644 true
+    install_managed_file \
+        "$SOURCE_DIR/oauth-privacy.html" \
+        "$APP_DIR/config/oauth/privacy/index.html" root root 0644 true
+    install_managed_file \
+        "$SOURCE_DIR/oauth-terms.html" \
+        "$APP_DIR/config/oauth/terms/index.html" root root 0644 true
     install_managed_file \
         "$SOURCE_DIR/prometheus.yml" "$APP_DIR/config/prometheus.yml" \
         root root 0644 true
@@ -234,6 +245,8 @@ validate_public_hostname() {
 
 configure_caddy_environment() {
     local environment_file="$SOURCE_DIR/caddy.env"
+    local oauth_host
+    local oauth_url
     local public_host
     local webhook_path
     local webhook_url
@@ -248,8 +261,17 @@ configure_caddy_environment() {
     [[ "$webhook_path" =~ ^/[A-Za-z0-9._~/-]+/$ ]] ||
         fail "WEBHOOK_URL path must end with '/' and contain only safe URL path characters."
 
-    printf 'CADDY_PUBLIC_HOST=%s\nCADDY_WEBHOOK_PATH=%s\n' \
-        "$public_host" "$webhook_path" > "$environment_file"
+    oauth_url="$(read_config_option OAUTH_BRANDING_URL)"
+    [[ "$oauth_url" =~ ^https://([^/:]+):8443/?$ ]] ||
+        fail "OAUTH_BRANDING_URL must use a public DNS name and HTTPS port 8443."
+    oauth_host="${BASH_REMATCH[1]}"
+    validate_public_hostname "$oauth_host" ||
+        fail "OAUTH_BRANDING_URL host must be a valid public DNS name."
+    [[ "$oauth_host" != "$public_host" ]] ||
+        fail "Webhook and OAuth branding must use different DNS names."
+
+    printf 'CADDY_PUBLIC_HOST=%s\nCADDY_OAUTH_HOST=%s\nCADDY_WEBHOOK_PATH=%s\n' \
+        "$public_host" "$oauth_host" "$webhook_path" > "$environment_file"
     chmod 0600 "$environment_file"
     install_managed_file \
         "$environment_file" "$APP_DIR/.env" root root 0600 true
@@ -428,6 +450,12 @@ main() {
     [[ -f "$SOURCE_DIR/grafana-system-dashboard.json" ]] ||
         fail "grafana-system-dashboard.json was not uploaded."
     [[ -f "$SOURCE_DIR/Caddyfile" ]] || fail "Caddyfile was not uploaded."
+    [[ -f "$SOURCE_DIR/oauth-homepage.html" ]] ||
+        fail "OAuth homepage was not uploaded."
+    [[ -f "$SOURCE_DIR/oauth-privacy.html" ]] ||
+        fail "OAuth privacy policy was not uploaded."
+    [[ -f "$SOURCE_DIR/oauth-terms.html" ]] ||
+        fail "OAuth terms were not uploaded."
     [[ -f "$SOURCE_DIR/config.ini" ]] || fail "config.ini was not uploaded."
     [[ -f "$SOURCE_DIR/google_oauth_token.json" ]] ||
         fail "google_oauth_token.json was not uploaded."

@@ -1,13 +1,33 @@
-{$CADDY_PUBLIC_HOST}:8443 {
-	encode zstd gzip
+(public_tls) {
 	tls {
 		issuer acme {
 			disable_tlsalpn_challenge
 		}
 	}
+}
 
-	@telegram path {$CADDY_WEBHOOK_PATH}
-	reverse_proxy @telegram bot:8443
+{$CADDY_PUBLIC_HOST}:8443 {
+	import public_tls
+	encode zstd gzip
 
-	reverse_proxy grafana:3000
+	handle {$CADDY_WEBHOOK_PATH} {
+		reverse_proxy bot:8443
+	}
+
+	handle {
+		reverse_proxy grafana:3000
+	}
+}
+
+{$CADDY_OAUTH_HOST}:8443 {
+	import public_tls
+	encode zstd gzip
+	header {
+		Content-Security-Policy "default-src 'self'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+		Referrer-Policy "no-referrer"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+	}
+	root * /srv/oauth
+	file_server
 }

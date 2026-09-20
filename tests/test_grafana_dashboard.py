@@ -202,6 +202,8 @@ def test_caddy_is_the_only_public_entrypoint() -> None:
     assert '- "3000:3000"' not in compose
     assert "caddy-data:/data" in compose
     assert "caddy-config:/config" in compose
+    assert "./config/oauth:/srv/oauth:ro" in compose
+    assert "CADDY_OAUTH_HOST" in compose
 
 
 def test_server_configuration_only_allows_caddy_through_ufw() -> None:
@@ -238,3 +240,25 @@ def test_prometheus_has_a_disk_size_limit() -> None:
 
     assert "--storage.tsdb.retention.time=15d" in compose
     assert "--storage.tsdb.retention.size=1GB" in compose
+
+
+def test_oauth_branding_site_has_required_public_pages() -> None:
+    oauth_dir = PROJECT_DIR / "config" / "oauth"
+    homepage = (oauth_dir / "index.html").read_text(encoding="utf-8")
+    privacy = (oauth_dir / "privacy" / "index.html").read_text(
+        encoding="utf-8"
+    )
+    terms = (oauth_dir / "terms" / "index.html").read_text(encoding="utf-8")
+    caddyfile = (PROJECT_DIR / "config" / "Caddyfile").read_text(
+        encoding="utf-8"
+    )
+
+    assert 'href="/privacy/"' in homepage
+    assert 'href="/terms/"' in homepage
+    assert "Google Drive" in homepage
+    assert "Google Sheets" in homepage
+    assert "OAuth-токен" in privacy
+    assert "не продаются" in privacy
+    assert "Google Account" in terms
+    assert "{$CADDY_OAUTH_HOST}:8443" in caddyfile
+    assert "root * /srv/oauth" in caddyfile

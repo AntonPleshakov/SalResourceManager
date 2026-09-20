@@ -15,6 +15,9 @@ INFRA_DIR = PACKAGE_DIR.parent
 PROJECT_DIR = INFRA_DIR.parent
 REMOTE_SCRIPT_FILE = PACKAGE_DIR / "remote.sh"
 CADDY_CONFIG_FILE = PROJECT_DIR / "config/Caddyfile"
+OAUTH_HOMEPAGE_FILE = PROJECT_DIR / "config/oauth/index.html"
+OAUTH_PRIVACY_FILE = PROJECT_DIR / "config/oauth/privacy/index.html"
+OAUTH_TERMS_FILE = PROJECT_DIR / "config/oauth/terms/index.html"
 PROMETHEUS_CONFIG_FILE = PROJECT_DIR / "config/prometheus.yml"
 VECTOR_CONFIG_FILE = PROJECT_DIR / "config/vector.yaml"
 GRAFANA_DATASOURCES_CONFIG_FILE = PROJECT_DIR / "config/grafana/datasources.yml"
@@ -127,6 +130,9 @@ def require_local_prerequisites(settings: Settings) -> None:
     files = [
         PROJECT_DIR / "compose.yaml",
         CADDY_CONFIG_FILE,
+        OAUTH_HOMEPAGE_FILE,
+        OAUTH_PRIVACY_FILE,
+        OAUTH_TERMS_FILE,
         PROMETHEUS_CONFIG_FILE,
         VECTOR_CONFIG_FILE,
         GRAFANA_DATASOURCES_CONFIG_FILE,

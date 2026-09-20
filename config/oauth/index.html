@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Sal Resources Manager exports clan data to private Google Sheets.">
+  <title>Sal Resources Manager</title>
+  <style>
+    :root { color-scheme: light dark; font-family: system-ui, sans-serif; }
+    body { margin: 0; background: #10151d; color: #e8edf5; }
+    main { max-width: 760px; margin: 0 auto; padding: 64px 24px; }
+    h1 { font-size: clamp(2rem, 7vw, 4rem); line-height: 1; margin: 0 0 24px; }
+    h2 { margin-top: 40px; }
+    p, li { color: #bdc8d8; font-size: 1.05rem; line-height: 1.7; }
+    a { color: #8dc8ff; }
+    .card { margin-top: 32px; padding: 24px; border: 1px solid #334155; border-radius: 16px; background: #18212e; }
+    footer { margin-top: 56px; display: flex; gap: 24px; flex-wrap: wrap; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Sal Resources Manager</h1>
+    <p>Telegram-бот для управления игровыми кланами, участниками и ресурсами.</p>
+
+    <section class="card">
+      <h2>Интеграция с Google</h2>
+      <p>По явной команде администратора бот экспортирует данные выбранного клана в закрытую Google Таблицу.</p>
+      <ul>
+        <li>Google Sheets используется для записи и обновления отчёта.</li>
+        <li>Google Drive используется для создания таблиц в выделенной папке и управления доступом к ним.</li>
+        <li>Приложение не использует данные Google для рекламы и не продаёт их.</li>
+      </ul>
+    </section>
+
+    <h2>Доступ</h2>
+    <p>Приложение предназначено для администратора и известных ему участников игровых кланов. Авторизация Google выполняется владельцем аккаунта через стандартную страницу согласия Google.</p>
+
+    <footer>
+      <a href="/privacy/">Политика конфиденциальности</a>
+      <a href="/terms/">Условия использования</a>
+    </footer>
+  </main>
+</body>
+</html>

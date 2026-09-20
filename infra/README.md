@@ -20,7 +20,10 @@ application image.
 The remote host requires Docker Engine and a user with root or passwordless
 `sudo` access. Set a public DNS name in `WEBHOOK_URL` and prepare
 `config/config.ini` and `config/google_oauth_token.json`. The DNS name must
-resolve to the server's public address before deployment.
+resolve to the server's public address before deployment. Set a different DNS
+name in `OAUTH_BRANDING_URL`; it serves the public OAuth homepage, privacy
+policy, and terms from the same Caddy instance. Both names must resolve before
+deployment.
 
 Configure or update the host:
 
@@ -54,6 +57,10 @@ proxy. Caddy obtains and renews the public certificate over port `80`, and
 Grafana is available at the root of the webhook domain on port `8443`.
 Configuration creates 1 GiB of swap when the host has no active swap. Container
 logs are available through the VictoriaLogs data source in Grafana.
+
+Use the branding URL, `/privacy/`, and `/terms/` as the Google OAuth homepage,
+privacy policy, and terms URLs. Add the shared parent domain to Google OAuth
+Authorized domains and verify it in Google Search Console.
 
 ## Replace a server
 
