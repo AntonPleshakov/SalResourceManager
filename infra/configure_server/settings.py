@@ -16,6 +16,7 @@ PROJECT_DIR = INFRA_DIR.parent
 REMOTE_SCRIPT_FILE = PACKAGE_DIR / "remote.sh"
 CERTIFICATE_SCRIPT_FILE = PACKAGE_DIR / "generate-webhook-certificate.sh"
 PROMETHEUS_CONFIG_FILE = PROJECT_DIR / "config/prometheus.yml"
+VECTOR_CONFIG_FILE = PROJECT_DIR / "config/vector.yaml"
 GRAFANA_DATASOURCES_CONFIG_FILE = PROJECT_DIR / "config/grafana/datasources.yml"
 GRAFANA_DASHBOARDS_CONFIG_FILE = PROJECT_DIR / "config/grafana/dashboards.yml"
 GRAFANA_DASHBOARD_FILE = PROJECT_DIR / "config/grafana/sal-resource-manager.json"
@@ -37,6 +38,7 @@ class Settings:
     port: Optional[int]
     ghcr_username: Optional[str]
     ghcr_token: Optional[str]
+    prepare_only: bool = False
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -125,6 +127,7 @@ def require_local_prerequisites(settings: Settings) -> None:
     files = [
         PROJECT_DIR / "compose.yaml",
         PROMETHEUS_CONFIG_FILE,
+        VECTOR_CONFIG_FILE,
         GRAFANA_DATASOURCES_CONFIG_FILE,
         GRAFANA_DASHBOARDS_CONFIG_FILE,
         GRAFANA_DASHBOARD_FILE,

@@ -18,8 +18,9 @@ application image.
 ## Configure server
 
 The remote host requires Docker Engine and a user with root or passwordless
-`sudo` access. Set a static public IPv4 address in `WEBHOOK_URL` and prepare
-`config/config.ini` and `config/google_oauth_token.json`.
+`sudo` access. Set a public IPv4 address or DNS name in `WEBHOOK_URL` and prepare
+`config/config.ini` and `config/google_oauth_token.json`. A DNS name must resolve
+to the server's public address.
 
 Configure or update the host:
 
@@ -48,7 +49,21 @@ Private registries additionally use `GHCR_USERNAME` and `GHCR_TOKEN`.
 Persistent files are stored under `/opt/sal-resource-manager`. Back up and
 restore `data/sal_resources.db` when replacing a host; deployment does not copy
 application data. Provider firewalls must allow inbound TCP ports `8443` and
-`3000`.
+`3000`. Configuration creates 1 GiB of swap when the host has no active swap.
+Container logs are available through the VictoriaLogs data source in Grafana.
 
-Re-run the command after configuration or public-IP changes and periodically
+Re-run the command after configuration or webhook-host changes and periodically
 to renew the webhook certificate.
+
+## Replace a server
+
+Set the new public IP or DNS name in `config/config.ini`, then run:
+
+```bash
+python infra/migrate-server.py old-host new-host
+```
+
+The command checks both hosts, prepares the new host without starting services,
+stops the old stateful services, verifies and transfers SQLite and monitoring
+volumes, and starts the new host. It restarts the old stack if migration fails.
+Use `--help` for separate SSH identities, ports, and backup location.

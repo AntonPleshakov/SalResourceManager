@@ -9,4 +9,5 @@ config/google_oauth_token.json
 *.log*
 data/
 certs/
+*.db.backup*
 __pycache__/

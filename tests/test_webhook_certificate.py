@@ -20,14 +20,14 @@ pytestmark = pytest.mark.skipif(
 )
 
 
-def run_generator(tmp_path: Path, public_ip: str) -> subprocess.CompletedProcess:
+def run_generator(tmp_path: Path, public_host: str) -> subprocess.CompletedProcess:
     certificate = tmp_path / "webhook.pem"
     private_key = tmp_path / "webhook.key"
     return subprocess.run(
         [
             "bash",
             str(SCRIPT),
-            public_ip,
+            public_host,
             str(certificate),
             str(private_key),
             str(os.getuid()),
@@ -91,3 +91,24 @@ def test_certificate_generator_replaces_certificate_when_ip_changes(tmp_path):
         text=True,
     )
     assert "IP Address:203.0.113.11" in certificate_details.stdout
+
+
+def test_certificate_generator_supports_dns_names(tmp_path):
+    result = run_generator(tmp_path, "bot.example.com")
+
+    assert result.stdout.strip() == "generated"
+    certificate_details = subprocess.run(
+        [
+            "openssl",
+            "x509",
+            "-in",
+            str(tmp_path / "webhook.pem"),
+            "-noout",
+            "-ext",
+            "subjectAltName",
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    assert "DNS:bot.example.com" in certificate_details.stdout

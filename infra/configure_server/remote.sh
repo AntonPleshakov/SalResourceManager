@@ -13,6 +13,9 @@ CERTIFICATE_SCRIPT="$APP_DIR/generate-webhook-certificate.sh"
 CERTIFICATE_PATH="$APP_DIR/certs/webhook.pem"
 PRIVATE_KEY_PATH="$APP_DIR/certs/webhook.key"
 APP_RESTART_REQUIRED=false
+PREPARE_ONLY="${PREPARE_ONLY:-false}"
+SWAP_FILE="/swapfile"
+SWAP_SIZE_MIB="1024"
 
 log() {
     printf '[configure] %s\n' "$*"
@@ -47,6 +50,34 @@ ensure_compose() {
     apt-get install -y docker-compose-v2
     docker compose version >/dev/null 2>&1 ||
         fail "Docker Compose installation failed."
+}
+
+ensure_swap() {
+    require_command swapon
+    if swapon --show=NAME --noheadings | grep -q '[^[:space:]]'; then
+        log "Swap is already active."
+        return
+    fi
+
+    require_command mkswap
+    if [[ ! -e "$SWAP_FILE" ]]; then
+        if command -v fallocate >/dev/null 2>&1; then
+            fallocate -l "${SWAP_SIZE_MIB}M" "$SWAP_FILE"
+        else
+            dd if=/dev/zero of="$SWAP_FILE" bs=1M count="$SWAP_SIZE_MIB" \
+                status=none
+        fi
+    fi
+    [[ -f "$SWAP_FILE" ]] || fail "$SWAP_FILE is not a regular file."
+    chown root:root "$SWAP_FILE"
+    chmod 0600 "$SWAP_FILE"
+    mkswap "$SWAP_FILE" >/dev/null
+    swapon "$SWAP_FILE"
+    if ! awk '$1 == "/swapfile" && $3 == "swap" { found = 1 } END { exit !found }' \
+        /etc/fstab; then
+        printf '%s\n' '/swapfile none swap sw 0 0' >> /etc/fstab
+    fi
+    log "Enabled ${SWAP_SIZE_MIB} MiB of persistent swap at $SWAP_FILE."
 }
 
 ensure_directories() {
@@ -117,6 +148,9 @@ install_configuration() {
         root root 0644 false
     install_managed_file \
         "$SOURCE_DIR/prometheus.yml" "$APP_DIR/config/prometheus.yml" \
+        root root 0644 true
+    install_managed_file \
+        "$SOURCE_DIR/vector.yaml" "$APP_DIR/config/vector.yaml" \
         root root 0644 true
     install_managed_file \
         "$SOURCE_DIR/grafana-datasources.yml" \
@@ -203,18 +237,18 @@ ensure_openssl() {
 
 configure_webhook_certificate() {
     local certificate_status
-    local public_ip
+    local public_host
     local webhook_url
 
     webhook_url="$(read_config_option WEBHOOK_URL)"
 
-    [[ "$webhook_url" =~ ^https://([0-9]{1,3}(\.[0-9]{1,3}){3}):8443/.+ ]] ||
-        fail "WEBHOOK_URL must use a public IPv4 address and port 8443."
-    public_ip="${BASH_REMATCH[1]}"
+    [[ "$webhook_url" =~ ^https://([^/:]+):8443/.+ ]] ||
+        fail "WEBHOOK_URL must use a DNS name or public IPv4 address and port 8443."
+    public_host="${BASH_REMATCH[1]}"
 
     certificate_status="$(
         "$CERTIFICATE_SCRIPT" \
-            "$public_ip" \
+            "$public_host" \
             "$CERTIFICATE_PATH" \
             "$PRIVATE_KEY_PATH" \
             "$APP_UID" \
@@ -222,11 +256,11 @@ configure_webhook_certificate() {
     )"
     case "$certificate_status" in
         current)
-            log "Webhook certificate for $public_ip is current."
+            log "Webhook certificate for $public_host is current."
             ;;
         generated)
             APP_RESTART_REQUIRED=true
-            log "Generated a webhook certificate for $public_ip."
+            log "Generated a webhook certificate for $public_host."
             ;;
         *)
             fail "Unexpected certificate generator result: $certificate_status"
@@ -268,18 +302,25 @@ login_to_ghcr() {
         --password-stdin
 }
 
+pull_images() {
+    log "Pulling the configured service images..."
+    (
+        cd "$APP_DIR"
+        docker compose pull \
+            bot node-exporter prometheus grafana victorialogs vector
+    )
+}
+
 apply_compose() {
     local compose_args=(up -d --remove-orphans)
 
     if [[ "$APP_RESTART_REQUIRED" == "true" ]]; then
         compose_args+=(--force-recreate)
     fi
-    compose_args+=(bot node-exporter prometheus grafana)
+    compose_args+=(bot node-exporter prometheus grafana victorialogs vector)
 
-    log "Pulling the configured service images..."
     (
         cd "$APP_DIR"
-        docker compose pull bot node-exporter prometheus grafana
         docker compose "${compose_args[@]}"
     )
 }
@@ -368,11 +409,39 @@ verify_storage() {
     log "Webhook certificate and private key are readable by the application."
 }
 
+verify_auxiliary_services() {
+    local container
+    local status
+
+    for container in \
+        sal-resource-manager-prometheus \
+        sal-resource-manager-grafana \
+        sal-resource-manager-victorialogs \
+        sal-resource-manager-vector; do
+        status="$(docker inspect --format '{{.State.Status}}' "$container")"
+        [[ "$status" == "running" ]] ||
+            fail "Container $container is not running: $status"
+    done
+
+    local victorialogs_mount
+    victorialogs_mount="$(
+        docker inspect --format \
+            '{{range .Mounts}}{{if eq .Destination "/victoria-logs-data"}}{{.Name}}|{{.RW}}{{end}}{{end}}' \
+            sal-resource-manager-victorialogs
+    )"
+    [[ "$victorialogs_mount" == \
+        "sal-resource-manager_victorialogs-data|true" ]] ||
+        fail "Unexpected VictoriaLogs data mount: '$victorialogs_mount'."
+    log "Prometheus, Grafana, VictoriaLogs, and Vector are running."
+}
+
 main() {
     [[ "${EUID}" -eq 0 ]] || fail "Remote configuration must run as root."
     [[ -f "$SOURCE_DIR/compose.yaml" ]] || fail "compose.yaml was not uploaded."
     [[ -f "$SOURCE_DIR/prometheus.yml" ]] ||
         fail "prometheus.yml was not uploaded."
+    [[ -f "$SOURCE_DIR/vector.yaml" ]] ||
+        fail "vector.yaml was not uploaded."
     [[ -f "$SOURCE_DIR/grafana-datasources.yml" ]] ||
         fail "grafana-datasources.yml was not uploaded."
     [[ -f "$SOURCE_DIR/grafana-dashboards.yml" ]] ||
@@ -390,14 +459,21 @@ main() {
     require_command install
     check_docker
     ensure_compose
+    ensure_swap
     install_configuration
     ensure_openssl
     configure_webhook_certificate
     configure_firewall
     login_to_ghcr
+    pull_images
+    if [[ "$PREPARE_ONLY" == "true" ]]; then
+        log "Server preparation completed without starting services."
+        return
+    fi
     apply_compose
     verify_application
     verify_storage
+    verify_auxiliary_services
     log "Server configuration is current."
 }
 

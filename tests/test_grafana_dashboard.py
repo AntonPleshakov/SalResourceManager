@@ -165,9 +165,10 @@ def test_prometheus_scrapes_grafana_and_private_node_exporter() -> None:
     assert "grafana:3000" in prometheus
     assert "9100:9100" not in compose
     assert "node-exporter:9100:9100" not in compose
-    assert "pull bot node-exporter prometheus grafana" in (
+    remote_script = (
         PROJECT_DIR / "infra/configure_server/remote.sh"
     ).read_text(encoding="utf-8")
+    assert "victorialogs vector" in remote_script
 
 
 def test_grafana_uses_a_separate_restricted_config() -> None:
@@ -203,3 +204,28 @@ def test_server_configuration_allows_grafana_through_ufw() -> None:
     ).read_text(encoding="utf-8")
 
     assert "ufw allow 3000/tcp" in remote_script
+
+
+def test_victorialogs_is_bounded_and_available_in_grafana() -> None:
+    compose = (PROJECT_DIR / "compose.yaml").read_text(encoding="utf-8")
+    vector = (PROJECT_DIR / "config/vector.yaml").read_text(encoding="utf-8")
+    datasources = (
+        PROJECT_DIR / "config/grafana/datasources.yml"
+    ).read_text(encoding="utf-8")
+
+    assert "amir20/dozzle" not in compose
+    assert "victoriametrics/victoria-logs:v1.52.0" in compose
+    assert "-retentionPeriod=7d" in compose
+    assert "-retention.maxDiskSpaceUsageBytes=1GiB" in compose
+    assert "victoriametrics-logs-datasource@0.32.0" in compose
+    assert "- /var/run/docker.sock:/var/run/docker.sock:ro" in compose
+    assert "type: docker_logs" in vector
+    assert "when_full: drop_newest" in vector
+    assert "type: victoriametrics-logs-datasource" in datasources
+
+
+def test_prometheus_has_a_disk_size_limit() -> None:
+    compose = (PROJECT_DIR / "compose.yaml").read_text(encoding="utf-8")
+
+    assert "--storage.tsdb.retention.time=15d" in compose
+    assert "--storage.tsdb.retention.size=1GB" in compose

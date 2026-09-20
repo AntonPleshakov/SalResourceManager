@@ -35,7 +35,8 @@ docker compose logs -f bot
 
 Grafana: `http://<server-ip>:3000`. Prometheus:
 `http://127.0.0.1:9090`. SQLite data is stored in `data/`; migration rules are
-in [`db/README.md`](db/README.md).
+in [`db/README.md`](db/README.md). Container logs are available from the
+VictoriaLogs data source in Grafana Explore.
 
 ## Clans
 

@@ -134,6 +134,12 @@ def test_remote_script_is_uploaded_executed_and_cleaned_up(monkeypatch):
         and call[0][-1].endswith(f":{remote_dir}/prometheus.yml")
         for call in calls
     )
+    assert any(
+        call[0][0] == "scp"
+        and call[0][-2] == str(configure_settings.VECTOR_CONFIG_FILE)
+        and call[0][-1].endswith(f":{remote_dir}/vector.yaml")
+        for call in calls
+    )
     for source, remote_name in (
         (
             configure_settings.GRAFANA_DATASOURCES_CONFIG_FILE,
@@ -172,3 +178,37 @@ def test_remote_script_installs_oauth_token_in_application_config():
     assert '"$SOURCE_DIR/google_oauth_token.json"' in remote_script
     assert '"$APP_DIR/config/google_oauth_token.json"' in remote_script
     assert "gapi_service_file.json" not in remote_script
+
+
+def test_prepare_only_does_not_start_remote_services(monkeypatch):
+    settings = make_settings(prepare_only=True)
+    calls = []
+
+    monkeypatch.setattr(transport, "require_local_prerequisites", lambda _: None)
+    monkeypatch.setattr(
+        transport.uuid,
+        "uuid4",
+        lambda: type("Uuid", (), {"hex": "fixed"})(),
+    )
+    monkeypatch.setattr(
+        transport,
+        "run_command",
+        lambda command, **kwargs: calls.append((command, kwargs)),
+    )
+
+    transport.configure_server(settings)
+
+    apply_command = calls[-2][0][-1]
+    assert "PREPARE_ONLY=true bash" in apply_command
+    assert "sudo -n PREPARE_ONLY=true bash" in apply_command
+
+
+def test_remote_configuration_creates_swap_only_when_missing():
+    remote_script = configure_settings.REMOTE_SCRIPT_FILE.read_text(
+        encoding="utf-8"
+    )
+
+    assert 'SWAP_SIZE_MIB="1024"' in remote_script
+    assert "swapon --show=NAME --noheadings" in remote_script
+    assert "mkswap \"$SWAP_FILE\"" in remote_script
+    assert "'/swapfile none swap sw 0 0'" in remote_script

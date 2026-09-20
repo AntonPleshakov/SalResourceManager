@@ -2,7 +2,7 @@
 
 set -Eeuo pipefail
 
-PUBLIC_IP="${1:?Public IPv4 address is required}"
+PUBLIC_HOST="${1:?Public IPv4 address or DNS name is required}"
 CERTIFICATE_PATH="${2:?Certificate path is required}"
 PRIVATE_KEY_PATH="${3:?Private key path is required}"
 OWNER="${4:-10001}"
@@ -28,10 +28,23 @@ validate_ipv4() {
     done
 }
 
+validate_hostname() {
+    local hostname="$1"
+    local label
+    local labels
+
+    [[ ${#hostname} -le 253 ]] || return 1
+    [[ "$hostname" == *.* ]] || return 1
+    IFS='.' read -r -a labels <<<"$hostname"
+    for label in "${labels[@]}"; do
+        [[ "$label" =~ ^[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?$ ]] ||
+            return 1
+    done
+}
+
 certificate_is_current() {
     local certificate_public_key
     local private_public_key
-    local san_addresses
 
     [[ -s "$CERTIFICATE_PATH" && -s "$PRIVATE_KEY_PATH" ]] || return 1
     openssl x509 \
@@ -39,15 +52,13 @@ certificate_is_current() {
         -noout \
         -in "$CERTIFICATE_PATH" >/dev/null 2>&1 || return 1
 
-    san_addresses="$(
-        openssl x509 \
-            -in "$CERTIFICATE_PATH" \
-            -noout \
-            -ext subjectAltName 2>/dev/null |
-            grep -oE 'IP Address:[0-9.]+' |
-            cut -d: -f2
-    )" || return 1
-    grep -Fxq "$PUBLIC_IP" <<<"$san_addresses" || return 1
+    if [[ "$SAN_TYPE" == "IP" ]]; then
+        openssl x509 -in "$CERTIFICATE_PATH" -noout \
+            -checkip "$PUBLIC_HOST" >/dev/null 2>&1 || return 1
+    else
+        openssl x509 -in "$CERTIFICATE_PATH" -noout \
+            -checkhost "$PUBLIC_HOST" >/dev/null 2>&1 || return 1
+    fi
 
     certificate_public_key="$(
         openssl x509 -in "$CERTIFICATE_PATH" -pubkey -noout 2>/dev/null
@@ -58,7 +69,13 @@ certificate_is_current() {
     [[ "$certificate_public_key" == "$private_public_key" ]]
 }
 
-validate_ipv4 "$PUBLIC_IP" || fail "Invalid public IPv4 address: $PUBLIC_IP"
+if validate_ipv4 "$PUBLIC_HOST"; then
+    SAN_TYPE="IP"
+elif validate_hostname "$PUBLIC_HOST"; then
+    SAN_TYPE="DNS"
+else
+    fail "Invalid public IPv4 address or DNS name: $PUBLIC_HOST"
+fi
 command -v openssl >/dev/null 2>&1 || fail "OpenSSL is required."
 [[ "$VALIDITY_DAYS" =~ ^[1-9][0-9]*$ ]] || fail "Invalid validity period."
 [[ "$RENEW_BEFORE_SECONDS" =~ ^[0-9]+$ ]] || fail "Invalid renewal window."
@@ -94,8 +111,8 @@ openssl req \
     -days "$VALIDITY_DAYS" \
     -keyout "$TEMP_PRIVATE_KEY" \
     -out "$TEMP_CERTIFICATE" \
-    -subj "/CN=$PUBLIC_IP" \
-    -addext "subjectAltName=IP:$PUBLIC_IP" \
+    -subj "/CN=$PUBLIC_HOST" \
+    -addext "subjectAltName=$SAN_TYPE:$PUBLIC_HOST" \
     >/dev/null 2>&1
 
 openssl x509 -in "$TEMP_CERTIFICATE" -noout >/dev/null 2>&1 ||

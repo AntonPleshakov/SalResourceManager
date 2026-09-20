@@ -28,8 +28,8 @@ services:
     logging:
       driver: local
       options:
-        max-size: "10m"
-        max-file: "3"
+        max-size: "5m"
+        max-file: "2"
 
   node-exporter:
     image: quay.io/prometheus/node-exporter:v1.11.1
@@ -60,8 +60,8 @@ services:
     logging:
       driver: local
       options:
-        max-size: "10m"
-        max-file: "3"
+        max-size: "5m"
+        max-file: "2"
 
   prometheus:
     image: prom/prometheus:v3.5.0
@@ -72,6 +72,7 @@ services:
       - --config.file=/etc/prometheus/prometheus.yml
       - --storage.tsdb.path=/prometheus
       - --storage.tsdb.retention.time=15d
+      - --storage.tsdb.retention.size=1GB
 
     ports:
       - "127.0.0.1:9090:9090"
@@ -86,8 +87,8 @@ services:
     logging:
       driver: local
       options:
-        max-size: "10m"
-        max-file: "3"
+        max-size: "5m"
+        max-file: "2"
 
   grafana:
     image: grafana/grafana:13.1.1
@@ -105,7 +106,7 @@ services:
       GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
       GF_ANALYTICS_CHECK_FOR_PLUGIN_UPDATES: "false"
       GF_METRICS_ENABLED: "true"
-      GF_PLUGINS_PREINSTALL_DISABLED: "true"
+      GF_PLUGINS_PREINSTALL: victoriametrics-logs-datasource@0.32.0
       GF_UNIFIED_ALERTING_ENABLED: "false"
       GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /etc/grafana/dashboards/sal-resource-manager.json
 
@@ -126,9 +127,56 @@ services:
     logging:
       driver: local
       options:
-        max-size: "10m"
-        max-file: "3"
+        max-size: "5m"
+        max-file: "2"
+
+  victorialogs:
+    image: docker.io/victoriametrics/victoria-logs:v1.52.0
+    container_name: sal-resource-manager-victorialogs
+    restart: unless-stopped
+
+    command:
+      - -storageDataPath=/victoria-logs-data
+      - -retentionPeriod=7d
+      - -retention.maxDiskSpaceUsageBytes=1GiB
+
+    volumes:
+      - victorialogs-data:/victoria-logs-data
+
+    expose:
+      - "9428"
+
+    mem_limit: 192m
+    cpus: 0.25
+
+    logging:
+      driver: local
+      options:
+        max-size: "5m"
+        max-file: "2"
+
+  vector:
+    image: timberio/vector:0.55.0-alpine
+    container_name: sal-resource-manager-vector
+    restart: unless-stopped
+
+    depends_on:
+      - victorialogs
+
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./config/vector.yaml:/etc/vector/vector.yaml:ro
+
+    mem_limit: 128m
+    cpus: 0.25
+
+    logging:
+      driver: local
+      options:
+        max-size: "5m"
+        max-file: "2"
 
 volumes:
   grafana-data:
   prometheus-data:
+  victorialogs-data:

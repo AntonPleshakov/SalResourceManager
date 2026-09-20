@@ -18,6 +18,7 @@ from .settings import (
     PROMETHEUS_CONFIG_FILE,
     REMOTE_SCRIPT_FILE,
     Settings,
+    VECTOR_CONFIG_FILE,
     require_local_prerequisites,
 )
 
@@ -83,6 +84,7 @@ def _cleanup_remote_files(
         "generate-webhook-certificate.sh",
         "compose.yaml",
         "prometheus.yml",
+        "vector.yaml",
         "grafana-datasources.yml",
         "grafana-dashboards.yml",
         "grafana-dashboard.json",
@@ -119,6 +121,7 @@ def configure_server(settings: Settings) -> None:
             (CERTIFICATE_SCRIPT_FILE, "generate-webhook-certificate.sh"),
             (PROJECT_DIR / "compose.yaml", "compose.yaml"),
             (PROMETHEUS_CONFIG_FILE, "prometheus.yml"),
+            (VECTOR_CONFIG_FILE, "vector.yaml"),
             (GRAFANA_DATASOURCES_CONFIG_FILE, "grafana-datasources.yml"),
             (GRAFANA_DASHBOARDS_CONFIG_FILE, "grafana-dashboards.yml"),
             (GRAFANA_DASHBOARD_FILE, "grafana-dashboard.json"),
@@ -136,11 +139,14 @@ def configure_server(settings: Settings) -> None:
 
         log("Applying the desired state on the server...")
         remote_script = f"{quoted_dir}/configure-remote.sh"
+        prepare_environment = (
+            "PREPARE_ONLY=true " if settings.prepare_only else ""
+        )
         remote_apply = (
             'if [ "$(id -u)" -eq 0 ]; then '
-            f"bash {remote_script} {quoted_dir}; "
+            f"{prepare_environment}bash {remote_script} {quoted_dir}; "
             "else "
-            f"sudo -n bash {remote_script} {quoted_dir}; "
+            f"sudo -n {prepare_environment}bash {remote_script} {quoted_dir}; "
             "fi"
         )
         run_command(ssh_command(settings, remote_apply))
