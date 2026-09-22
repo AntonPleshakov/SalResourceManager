@@ -287,8 +287,8 @@ def test_logs_are_readable_without_losing_original_details() -> None:
     assert panel["options"]["enableLogDetails"] is True
     assert "copy _msg as original" in query
     assert query.index('${search:raw}') < query.index("copy _msg as original")
+    assert 'unpack_json if (_msg:~"^\\\\s*[{]")' in query
     assert "format '[<service>] <_msg>' as _msg" in query
-    assert 'unpack_json if (_msg:~"^\\s*[{]") fields (level, msg, message)' in query
     assert 'unpack_logfmt if (_msg:~"^(logger|ts|time|timestamp|level)="' in query
     assert "format '<parsed_msg>' as _msg skip_empty_results" in query
     assert "format '<parsed_message>' as _msg skip_empty_results" in query
