@@ -10,16 +10,37 @@
   "panels": [
     {
       "datasource": {"type": "victoriametrics-logs-datasource", "uid": "victorialogs"},
+      "description": "Число записей по распознанному уровню за выбранный период. Панель использует те же фильтры сервиса, уровня и поиска, что и лента ниже.",
+      "fieldConfig": {"defaults": {"color": {"fixedColor": "blue", "mode": "fixed"}, "decimals": 0, "displayName": "${__field.labels.level}", "min": 0, "unit": "short"}, "overrides": [{"matcher": {"id": "byRegexp", "options": ".*(ERROR|error|CRITICAL|critical|FATAL|fatal|PANIC|panic).*"}, "properties": [{"id": "color", "value": {"fixedColor": "red", "mode": "fixed"}}]}, {"matcher": {"id": "byRegexp", "options": ".*(WARN|warn|WARNING|warning).*"}, "properties": [{"id": "color", "value": {"fixedColor": "orange", "mode": "fixed"}}]}, {"matcher": {"id": "byRegexp", "options": ".*(UNKNOWN|unknown).*"}, "properties": [{"id": "color", "value": {"fixedColor": "purple", "mode": "fixed"}}]}]},
+      "gridPos": {"h": 5, "w": 24, "x": 0, "y": 0},
+      "id": 1,
+      "options": {"displayMode": "basic", "orientation": "horizontal", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}},
+      "targets": [{"datasource": {"type": "victoriametrics-logs-datasource", "uid": "victorialogs"}, "expr": "container_name:~\"${container:raw}\" AND _msg:~\"${search:raw}\" | unpack_json if (_msg:~\"^\\\\s*[{]\") fields (level, msg, message) result_prefix \"parsed_\" | unpack_logfmt if (_msg:~\"^(logger|ts|time|timestamp|level)=\" AND parsed_level:\"\" AND parsed_msg:\"\" AND parsed_message:\"\") fields (level, msg, message) result_prefix \"parsed_\" | extract_regexp '(?s)^[0-9]{2}/[0-9]{2} [0-9:]{8} (?P<parsed_level>[A-Z]+) (?P<logger>[^ ]+) (?P<source>[^ ]+) [|] (?P<parsed_message>.*)$' keep_original_fields | extract_regexp '(?s)^[0-9]{4}-[0-9T:.Z+-]+[\\t ]+(?P<parsed_level>info|warn|error|fatal|panic|debug|trace)[\\t ]+(?P<source>[^\\t ]+)[\\t ]+(?P<parsed_message>.*)$' keep_original_fields | extract_regexp '(?s)^(?P<parsed_level>INFO|WARNING|ERROR|CRITICAL):[ ]+(?P<parsed_message>.*)$' keep_original_fields | format '<parsed_level>' as level skip_empty_results | format if (level:\"\") 'unknown' as level | filter ${level:raw} | stats by (level) count() as logs", "queryType": "stats", "editorMode": "code", "refId": "A"}],
+      "title": "Логи по уровням",
+      "type": "bargauge"
+    },
+    {
+      "datasource": {"type": "victoriametrics-logs-datasource", "uid": "victorialogs"},
+      "description": "Последние успешно завершённые handlers за выбранный период: пользователь, длительность, тип события и handler. Технические ID намеренно не выводятся. Для записей до добавления имени пользователя показывается «неизвестно».",
+      "gridPos": {"h": 9, "w": 24, "x": 0, "y": 5},
+      "id": 3,
+      "options": {"dedupStrategy": "none", "enableLogDetails": false, "prettifyLogMessage": false, "showCommonLabels": false, "showLabels": false, "showLogAttributes": false, "showTime": true, "showLevel": false, "showControls": true, "syntaxHighlighting": false, "sortOrder": "Descending", "wrapLogMessage": false},
+      "targets": [{"datasource": {"type": "victoriametrics-logs-datasource", "uid": "victorialogs"}, "expr": "container_name:\"sal-resource-manager\" AND _msg:~\"Telegram handler finished\" | extract_regexp '(?s)^[0-9]{2}/[0-9]{2} [0-9:]{8} [A-Z]+ [^ ]+ [^ ]+ [|] (?P<handler_message>Telegram handler finished .*)$' keep_original_fields | format '<handler_message>' as _msg skip_empty_results | extract_regexp '(?s)^Telegram handler finished event_type=(?P<event_type>[^ ]+) handler=(?P<handler>[^ ]+) result=(?P<result>[^ ]+) duration_seconds=(?P<duration_seconds>[0-9.]+) user_id=(?P<user_id>[0-9]+).*' keep_original_fields | extract_regexp '(?s) requester=(?P<requester>.*)$' keep_original_fields | filter result:completed | join by (user_id) (_time:7d container_name:\"sal-resource-manager\" AND _msg:~\"user_id=[0-9]+.*username=[^ ]+\" | extract_regexp '(?s)^[0-9]{2}/[0-9]{2} [0-9:]{8} [A-Z]+ [^ ]+ [^ ]+ [|] (?P<joined_message>.*)$' keep_original_fields | format '<joined_message>' as _msg skip_empty_results | extract_regexp '(?s)user_id=(?P<user_id>[0-9]+).*username=(?P<known_requester>[^ ]+)' keep_original_fields | filter user_id:!\"\" AND known_requester:!\"\" | last 1 by (_time) partition by (user_id) | fields user_id, known_requester) | coalesce (requester, known_requester) default \"неизвестно\" as requester | format '<requester> · <duration_seconds> с · <event_type> · <handler>' as _msg | delete handler_message, joined_message, event_type, handler, result, duration_seconds, requester, known_requester, user_id, chat_id, update_id, error_type", "queryType": "instant", "editorMode": "code", "packJson": false, "maxLines": 200, "refId": "A"}],
+      "title": "Завершённые handlers",
+      "type": "logs"
+    },
+    {
+      "datasource": {"type": "victoriametrics-logs-datasource", "uid": "victorialogs"},
       "description": "По умолчанию показаны логи приложения без debug и trace. В строке — сервис и сообщение; исходная запись доступна в поле original в деталях. Поиск работает по полному исходному тексту. Записи без распознанного уровня также видны.",
-      "gridPos": {"h": 25, "w": 24, "x": 0, "y": 0},
+      "gridPos": {"h": 20, "w": 24, "x": 0, "y": 14},
       "id": 2,
       "options": {"dedupStrategy": "none", "enableLogDetails": true, "prettifyLogMessage": false, "showCommonLabels": false, "showLabels": false, "showLogAttributes": false, "showTime": true, "showLevel": true, "showControls": true, "syntaxHighlighting": false, "sortOrder": "Descending", "wrapLogMessage": true},
-      "targets": [{"datasource": {"type": "victoriametrics-logs-datasource", "uid": "victorialogs"}, "expr": "container_name:~\"${container:raw}\" AND _msg:~\"${search:raw}\" | copy _msg as original | unpack_json if (_msg:~\"^\\\\s*[{]\") fields (level, msg, message) result_prefix \"parsed_\" | unpack_logfmt if (_msg:~\"^(logger|ts|time|timestamp|level)=\" AND parsed_level:\"\" AND parsed_msg:\"\" AND parsed_message:\"\") fields (level, msg, message) result_prefix \"parsed_\" | extract_regexp '(?s)^[0-9]{2}/[0-9]{2} [0-9:]{8} (?P<parsed_level>[A-Z]+) (?P<logger>[^ ]+) (?P<source>[^ ]+) [|] (?P<parsed_message>.*)$' keep_original_fields | extract_regexp '(?s)^[0-9]{4}-[0-9T:.Z+-]+[\\t ]+(?P<parsed_level>info|warn|error|fatal|panic|debug|trace)[\\t ]+(?P<source>[^\\t ]+)[\\t ]+(?P<parsed_message>.*)$' keep_original_fields | format '<parsed_level>' as level skip_empty_results | format if (level:\"\") 'unknown' as level | filter ${level:raw} | format '<parsed_message>' as _msg skip_empty_results | format '<parsed_msg>' as _msg skip_empty_results | copy container_name as service | replace_regexp ('^sal-resource-manager-?', '') at service | format if (service:\"\") 'bot' as service | format '[<service>] <_msg>' as _msg | delete parsed_level, parsed_msg, parsed_message", "queryType": "instant", "editorMode": "code", "packJson": false, "maxLines": 1000, "refId": "A"}],
+      "targets": [{"datasource": {"type": "victoriametrics-logs-datasource", "uid": "victorialogs"}, "expr": "container_name:~\"${container:raw}\" AND _msg:~\"${search:raw}\" | copy _msg as original | unpack_json if (_msg:~\"^\\\\s*[{]\") fields (level, msg, message) result_prefix \"parsed_\" | unpack_logfmt if (_msg:~\"^(logger|ts|time|timestamp|level)=\" AND parsed_level:\"\" AND parsed_msg:\"\" AND parsed_message:\"\") fields (level, msg, message) result_prefix \"parsed_\" | extract_regexp '(?s)^[0-9]{2}/[0-9]{2} [0-9:]{8} (?P<parsed_level>[A-Z]+) (?P<logger>[^ ]+) (?P<source>[^ ]+) [|] (?P<parsed_message>.*)$' keep_original_fields | extract_regexp '(?s)^[0-9]{4}-[0-9T:.Z+-]+[\\t ]+(?P<parsed_level>info|warn|error|fatal|panic|debug|trace)[\\t ]+(?P<source>[^\\t ]+)[\\t ]+(?P<parsed_message>.*)$' keep_original_fields | extract_regexp '(?s)^(?P<parsed_level>INFO|WARNING|ERROR|CRITICAL):[ ]+(?P<parsed_message>.*)$' keep_original_fields | format '<parsed_level>' as level skip_empty_results | format if (level:\"\") 'unknown' as level | filter ${level:raw} | format '<parsed_message>' as _msg skip_empty_results | format '<parsed_msg>' as _msg skip_empty_results | copy container_name as service | replace_regexp ('^sal-resource-manager-?', '') at service | format if (service:\"\") 'bot' as service | format '[<service>] <_msg>' as _msg | delete parsed_level, parsed_msg, parsed_message", "queryType": "instant", "editorMode": "code", "packJson": false, "maxLines": 1000, "refId": "A"}],
       "title": "Логи",
       "type": "logs"
     }
   ],
-  "refresh": "30s",
+  "refresh": "2m",
   "schemaVersion": 42,
   "tags": ["sal-resource-manager", "logs", "victorialogs"],
   "templating": {
@@ -34,6 +55,6 @@
   "timezone": "browser",
   "title": "Sal Resource Manager — Логи",
   "uid": "sal-resource-manager-logs",
-  "version": 3,
+  "version": 5,
   "weekStart": ""
 }

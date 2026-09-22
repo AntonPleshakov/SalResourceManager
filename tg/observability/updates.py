@@ -14,6 +14,16 @@ def chat_type(update: Update) -> str:
     return update.chat.type
 
 
+def requester_name(update: Update) -> str:
+    user = update.from_user
+    if user is None:
+        return "unknown"
+    display_name = " ".join(
+        part for part in (user.first_name, user.last_name) if part
+    )
+    return user.username or display_name or "unknown"
+
+
 def log_context(update: Update) -> tuple[object, object, object]:
     user_id = None if update.from_user is None else update.from_user.id
     if isinstance(update, CallbackQuery):

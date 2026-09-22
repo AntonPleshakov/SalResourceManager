@@ -233,7 +233,7 @@ def test_registered_handler_metrics_include_action_duration_and_log(
     log_info.assert_called_once_with(
         "Telegram handler finished event_type=%s handler=%s "
         "result=%s duration_seconds=%.3f user_id=%s chat_id=%s "
-        "update_id=%s error_type=%s",
+        "update_id=%s error_type=%s requester=%s",
         "message",
         action,
         "completed",
@@ -242,6 +242,7 @@ def test_registered_handler_metrics_include_action_duration_and_log(
         42,
         1,
         "none",
+        "tester",
     )
 
 
@@ -275,7 +276,7 @@ def test_failed_callback_handler_logs_result_and_exception(monkeypatch) -> None:
     log_info.assert_called_once_with(
         "Telegram handler finished event_type=%s handler=%s "
         "result=%s duration_seconds=%.3f user_id=%s chat_id=%s "
-        "update_id=%s error_type=%s",
+        "update_id=%s error_type=%s requester=%s",
         "callback_query",
         action,
         "failed",
@@ -284,6 +285,7 @@ def test_failed_callback_handler_logs_result_and_exception(monkeypatch) -> None:
         42,
         "callback-1",
         "RuntimeError",
+        "tester",
     )
 
 

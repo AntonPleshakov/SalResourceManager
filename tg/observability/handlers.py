@@ -8,7 +8,7 @@ from tg.observability.definitions import (
     HANDLER_ACTION_KEY,
     ApplicationMetrics,
 )
-from tg.observability.updates import log_context
+from tg.observability.updates import log_context, requester_name
 
 
 def _handler_action(handler: Callable) -> str:
@@ -76,7 +76,7 @@ def _instrument_handler(
             logger.info(
                 "Telegram handler finished event_type=%s handler=%s "
                 "result=%s duration_seconds=%.3f user_id=%s chat_id=%s "
-                "update_id=%s error_type=%s",
+                "update_id=%s error_type=%s requester=%s",
                 event_type,
                 action,
                 result,
@@ -85,6 +85,7 @@ def _instrument_handler(
                 chat_id,
                 update_id,
                 error_type,
+                requester_name(update),
             )
 
     instrumented.__name__ = (

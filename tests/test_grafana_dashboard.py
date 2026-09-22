@@ -83,6 +83,17 @@ def test_user_dashboard_uses_actionable_prometheus_metrics() -> None:
         assert metric not in queries
     assert "reqps" not in json.dumps(dashboard)
     assert "* 60" in queries
+    assert dashboard["refresh"] == "2m"
+    assert "increase(srm_handler_calls_total[15m])" in queries
+    assert "max_over_time(srm_last_resource_update_timestamp_seconds[15d])" in queries
+    assert "srm_handler_duration_seconds_count[$__range]" in queries
+    assert ">= 5" in queries
+    action_panel = next(
+        panel
+        for panel in dashboard["panels"]
+        if panel["title"] == "Полезные действия за 15 минут"
+    )
+    assert action_panel["options"]["legend"]["calcs"] == ["max"]
     assert dashboard["templating"]["list"][0]["name"] == "slow_threshold"
     assert 'le="$slow_threshold"' in queries
     assert "by (le, handler)" in queries
@@ -97,7 +108,7 @@ def test_user_dashboard_uses_actionable_prometheus_metrics() -> None:
     )
 
 
-def test_system_dashboard_uses_process_limits_and_server_metrics() -> None:
+def test_system_dashboard_uses_process_and_server_metrics() -> None:
     dashboard = json.loads(SYSTEM_DASHBOARD_FILE.read_text(encoding="utf-8"))
     queries = _queries(dashboard)
 
@@ -121,8 +132,18 @@ def test_system_dashboard_uses_process_limits_and_server_metrics() -> None:
         "node_load15",
     ):
         assert metric in queries
-    assert "268435456" in queries
-    assert "vector(0.5)" in queries
+    assert "268435456" not in queries
+    assert "/ 0.5" in queries
+    assert "sum(srm_handlers_in_progress) or vector(0)" in queries
+    load_panel = next(
+        panel for panel in dashboard["panels"]
+        if panel["title"] == "Нагрузка на CPU"
+    )
+    assert (
+        load_panel["fieldConfig"]["defaults"]["custom"]
+        ["scaleDistribution"]["type"]
+        == "symlog"
+    )
 
     memory_panels = [
         panel
@@ -136,11 +157,10 @@ def test_system_dashboard_uses_process_limits_and_server_metrics() -> None:
         if "process_cpu_seconds_total"
         in "\n".join(target["expr"] for target in panel.get("targets", []))
     ]
-    assert [panel["title"] for panel in memory_panels] == [
-        "Память: бот, Prometheus и Grafana"
-    ]
+    assert [panel["title"] for panel in memory_panels] == ["RSS процессов"]
+    assert memory_panels[0]["fieldConfig"]["defaults"]["unit"] == "bytes"
     assert [panel["title"] for panel in cpu_panels] == [
-        "CPU: бот, Prometheus и Grafana"
+        "CPU от лимита контейнера"
     ]
     assert any(
         panel["title"] == "NVMe: хранилище сервера"
@@ -154,8 +174,8 @@ def test_system_dashboard_uses_process_limits_and_server_metrics() -> None:
         assert len(matching_panels) == 1
         return matching_panels[0]["gridPos"]["y"]
 
-    assert panel_y("Память: бот, Prometheus и Grafana") == 5
-    assert panel_y("CPU: бот, Prometheus и Grafana") == 5
+    assert panel_y("RSS процессов") == 5
+    assert panel_y("CPU от лимита контейнера") == 5
     assert panel_y("NVMe: хранилище сервера") == 14
     assert panel_y("Uptime процесса") > panel_y("NVMe: хранилище сервера")
 
@@ -259,24 +279,60 @@ def test_logs_dashboard_uses_victorialogs_and_is_provisioned() -> None:
     queries = _queries(dashboard)
 
     assert dashboard["uid"] == "sal-resource-manager-logs"
-    assert [panel["title"] for panel in dashboard["panels"]] == ["Логи"]
+    assert [panel["title"] for panel in dashboard["panels"]] == [
+        "Логи по уровням",
+        "Завершённые handlers",
+        "Логи",
+    ]
     assert all(
         panel["datasource"]["uid"] == "victorialogs"
         for panel in dashboard["panels"]
     )
     assert "container_name" in queries
     assert "_msg" in queries
+    assert "stats by (level) count() as logs" in queries
+    summary_panel = dashboard["panels"][0]
+    assert summary_panel["targets"][0]["queryType"] == "stats"
+    assert summary_panel["fieldConfig"]["defaults"]["displayName"] == (
+        "${__field.labels.level}"
+    )
+    assert all(
+        "(?i)" not in override["matcher"]["options"]
+        for override in summary_panel["fieldConfig"]["overrides"]
+    )
     assert [variable["name"] for variable in dashboard["templating"]["list"]] == [
         "container",
         "level",
         "search",
     ]
     assert "sal-resource-manager-logs.json:/etc/grafana/dashboards/" in compose
+    assert dashboard["refresh"] == "2m"
+
+    completed_panel = next(
+        panel for panel in dashboard["panels"]
+        if panel["title"] == "Завершённые handlers"
+    )
+    completed_query = completed_panel["targets"][0]["expr"]
+    assert completed_panel["options"]["enableLogDetails"] is False
+    assert completed_panel["options"]["showLevel"] is False
+    assert "filter result:completed" in completed_query
+    assert "join by (user_id)" in completed_query
+    assert "last 1 by (_time) partition by (user_id)" in completed_query
+    assert "coalesce (requester, known_requester)" in completed_query
+    assert "<requester> · <duration_seconds> с · <event_type> · <handler>" in (
+        completed_query
+    )
+    assert "неизвестно" in completed_query
+    display_format = completed_query.rsplit(" | format '", 1)[1].split(
+        "' as _msg", 1
+    )[0]
+    assert "id" not in display_format
+    assert "copy _msg as original" not in completed_query
 
 
 def test_logs_are_readable_without_losing_original_details() -> None:
     dashboard = json.loads(LOGS_DASHBOARD_FILE.read_text(encoding="utf-8"))
-    panel = dashboard["panels"][0]
+    panel = next(panel for panel in dashboard["panels"] if panel["title"] == "Логи")
     target = panel["targets"][0]
     query = target["expr"]
 
@@ -332,7 +388,11 @@ def test_logs_default_filter_preserves_info_errors_and_unknown_levels() -> None:
 
 def test_logs_extract_plaintext_level_and_message_without_losing_tracebacks() -> None:
     dashboard = json.loads(LOGS_DASHBOARD_FILE.read_text(encoding="utf-8"))
-    patterns = re.findall(r"extract_regexp '([^']+)'", _queries(dashboard))
+    panel = next(panel for panel in dashboard["panels"] if panel["title"] == "Логи")
+    patterns = re.findall(
+        r"extract_regexp '([^']+)'",
+        panel["targets"][0]["expr"],
+    )
     cases = [
         (
             "20/09 15:35:04 INFO SalResourcesManager handlers:12 | Updated 3 accounts",
@@ -349,6 +409,10 @@ def test_logs_extract_plaintext_level_and_message_without_losing_tracebacks() ->
         (
             "2026-09-20T15:35:04.749Z\tinfo\tVictoriaLogs/main.go:12\tstarted server",
             "info", "started server",
+        ),
+        (
+            "INFO:     Application startup complete.",
+            "INFO", "Application startup complete.",
         ),
     ]
     for line, level, message in cases:
