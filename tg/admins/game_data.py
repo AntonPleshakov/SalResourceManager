@@ -39,6 +39,7 @@ _IDENTITY_COLUMNS = 2
 _MAX_TABLE_COLUMNS = 8
 _MAX_RICH_MESSAGE_BYTES = 30_000
 _MAX_RICH_MESSAGE_BLOCKS = 500
+_PREVIEW_PAGE_SIZE = 10
 
 
 def _table_column_groups(column_count: int) -> list[list[int]]:
@@ -86,6 +87,8 @@ def _render_game_data_html(
     headers: Sequence[str],
     rows: Sequence[Sequence[str]],
     total_rows: int,
+    page: int,
+    total_pages: int,
 ) -> str:
     column_groups = _table_column_groups(len(headers))
     updated = format_last_update_time(updated_at)
@@ -96,7 +99,8 @@ def _render_game_data_html(
     parts = [
         "<h2>Игровые данные</h2>",
         f"<p>Клан: <b>{escape(clan_title)}</b>. "
-        f"Аккаунтов: {total_rows}.</p>",
+        f"Аккаунтов: {total_rows}. "
+        f"Страница: {page + 1} из {total_pages}.</p>",
     ]
     if not rows:
         if total_rows:
@@ -127,8 +131,16 @@ def build_game_data_message(
     clan_title: str,
     users: Iterable[UserData],
     updated_at: datetime | None,
+    page: int = 0,
 ) -> InputRichMessage:
-    report_rows = GameDataReport.build_rows(users)
+    users = list(users)
+    total_rows = len(users)
+    total_pages = max(1, (total_rows + _PREVIEW_PAGE_SIZE - 1) // _PREVIEW_PAGE_SIZE)
+    page = min(max(page, 0), total_pages - 1)
+    visible_users = users[
+        page * _PREVIEW_PAGE_SIZE : (page + 1) * _PREVIEW_PAGE_SIZE
+    ]
+    report_rows = GameDataReport.build_rows(visible_users)
     headers, rows = report_rows[0], report_rows[1:]
     column_groups = _table_column_groups(len(headers))
     non_row_blocks = 4 + len(column_groups)
@@ -142,7 +154,9 @@ def build_game_data_message(
         updated_at,
         headers,
         visible_rows,
-        len(rows),
+        total_rows,
+        page,
+        total_pages,
     )
     while visible_rows and len(html.encode("utf-8")) > _MAX_RICH_MESSAGE_BYTES:
         visible_rows.pop()
@@ -151,18 +165,42 @@ def build_game_data_message(
             updated_at,
             headers,
             visible_rows,
-            len(rows),
+            total_rows,
+            page,
+            total_pages,
         )
     return InputRichMessage(html=html, skip_entity_detection=True)
 
 
-def _game_data_keyboard(group_id: int, url: str) -> InlineKeyboardMarkup:
+def _game_data_keyboard(
+    group_id: int,
+    url: str,
+    page: int,
+    total_pages: int,
+) -> InlineKeyboardMarkup:
     keyboard = InlineKeyboardMarkup(row_width=1)
     keyboard.add(InlineKeyboardButton("📊 Открыть Google Таблицу", url=url))
+    page_buttons = []
+    if page > 0:
+        page_buttons.append(
+            Button(
+                "⬅️ Предыдущая",
+                f"admins/game_data/page/{page - 1}",
+            ).inline()
+        )
+    if page + 1 < total_pages:
+        page_buttons.append(
+            Button(
+                "Следующая ➡️",
+                f"admins/game_data/page/{page + 1}",
+            ).inline()
+        )
+    if page_buttons:
+        keyboard.row(*page_buttons)
     keyboard.add(
         Button(
             "🔄 Обновить данные",
-            f"{_GOOGLE_EXPORT_BUTTON}/{group_id}",
+            f"{_GOOGLE_EXPORT_BUTTON}/{group_id}/{page}",
         ).inline()
     )
     keyboard.add(
@@ -186,8 +224,11 @@ def _show_game_data_screen(
     group_id: int,
     clan_title: str,
     spreadsheet_url: str,
+    page: int = 0,
 ) -> None:
     users = get_user_data_db().get_clan_users(group_id)
+    total_pages = max(1, (len(users) + _PREVIEW_PAGE_SIZE - 1) // _PREVIEW_PAGE_SIZE)
+    page = min(max(page, 0), total_pages - 1)
     bot.edit_message_text(
         chat_id=chat_id,
         message_id=message_id,
@@ -195,8 +236,14 @@ def _show_game_data_screen(
             clan_title,
             users,
             _spreadsheet_updated_at(group_id),
+            page,
         ),
-        reply_markup=_game_data_keyboard(group_id, spreadsheet_url),
+        reply_markup=_game_data_keyboard(
+            group_id,
+            spreadsheet_url,
+            page,
+            total_pages,
+        ),
     )
 
 
@@ -275,7 +322,7 @@ def _export_group_data(
     )
 
 
-def show_game_data(context: ClanAdminContext) -> None:
+def _show_game_data_page(context: ClanAdminContext, page: int) -> None:
     callback_query = context.update
     bot = context.bot
     user_id, chat_id, message_id = get_ids(callback_query)
@@ -313,7 +360,20 @@ def show_game_data(context: ClanAdminContext) -> None:
         context.group.group_id,
         context.group.title,
         spreadsheet_url,
+        page,
     )
+
+
+def show_game_data(context: ClanAdminContext) -> None:
+    _show_game_data_page(context, 0)
+
+
+def show_game_data_page(context: ClanAdminContext) -> None:
+    try:
+        page = max(0, int(context.update.data.rsplit("/", maxsplit=1)[-1]))
+    except ValueError:
+        page = 0
+    _show_game_data_page(context, page)
 
 
 def connect_google_account(context: ClanAdminContext) -> None:
@@ -434,6 +494,10 @@ def export_game_data(context: ClanAdminContext) -> None:
     result = "failed"
     spreadsheet_url = None
     try:
+        page = max(0, int(callback_query.data.rsplit("/", maxsplit=1)[-1]))
+    except ValueError:
+        page = 0
+    try:
         group_id = context.group.group_id
         admins = get_admins_db()
         require_admin_access(bot, user_id, group_id, admins)
@@ -460,6 +524,7 @@ def export_game_data(context: ClanAdminContext) -> None:
                 context.group.group_id,
                 context.group.title,
                 spreadsheet_url,
+                page,
             )
         bot.answer_callback_query(
             callback_query.id,
@@ -481,6 +546,7 @@ def export_game_data(context: ClanAdminContext) -> None:
                 context.group.group_id,
                 context.group.title,
                 spreadsheet_url,
+                page,
             )
         bot.answer_callback_query(
             callback_query.id,
@@ -507,6 +573,7 @@ def export_game_data(context: ClanAdminContext) -> None:
         context.group.group_id,
         context.group.title,
         spreadsheet_url,
+        page,
     )
     bot.answer_callback_query(
         callback_query.id,
@@ -522,6 +589,11 @@ def register_handlers(bot: TeleBot) -> None:
         clan=ActiveClan(),
     )
     handlers.clan_admin_callback(
+        show_game_data_page,
+        button=r"admins/game_data/page/[0-9]+",
+        clan=ActiveClan(),
+    )
+    handlers.clan_admin_callback(
         connect_google_account,
         button=rf"{_GOOGLE_CONNECT_BUTTON}/-?[0-9]+",
         clan=ClanFromCallback(),
@@ -533,6 +605,6 @@ def register_handlers(bot: TeleBot) -> None:
     )
     handlers.clan_admin_callback(
         export_game_data,
-        button=rf"{_GOOGLE_EXPORT_BUTTON}/-?[0-9]+",
-        clan=ClanFromCallback(),
+        button=rf"{_GOOGLE_EXPORT_BUTTON}/-?[0-9]+/[0-9]+",
+        clan=ClanFromCallback(segment=-2),
     )

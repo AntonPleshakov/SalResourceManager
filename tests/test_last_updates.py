@@ -20,6 +20,7 @@ from tg.admins.resource_status import (
     player_war_points,
     players,
     players_by_points,
+    players_page,
     remove_player,
 )
 from tg.utils import format_points
@@ -131,10 +132,10 @@ def test_players_report_includes_points_actions_and_both_sort_orders(monkeypatch
     )
     assert f"Очки войны: {format_points(high_score_points)}" in by_points
     assert callback_data(by_updates) == [
-        "admins/players/war/1/updates",
-        "admins/players/remove/1/updates",
-        "admins/players/war/2/updates",
-        "admins/players/remove/2/updates",
+        "admins/players/war/1/0/updates",
+        "admins/players/remove/1/0/updates",
+        "admins/players/war/2/0/updates",
+        "admins/players/remove/2/0/updates",
     ]
 
 
@@ -174,13 +175,64 @@ def test_players_navigation_and_account_report(monkeypatch):
 
     player_war_points(
         clan_admin_context(
-            make_callback("admins/players/war/7/points"), bot
+            make_callback("admins/players/war/7/0/points"), bot
         )
     )
     assert "<h2>Калькулятор очков войны</h2>" in bot.edits[-1]
     assert "Аккаунт: <b>Hero</b>" in bot.edits[-1]
     assert callback_data(bot.edits[-1]) == [
+        "admins/players/page/0/points",
+        "home",
+    ]
+
+
+def test_players_list_is_paginated_by_ten_accounts(monkeypatch):
+    users = [
+        UserData(
+            account_id=index,
+            user_id=100 + index,
+            username=f"player-{index:02d}",
+            tag=f"Hero {index:02d}",
+        )
+        for index in range(12)
+    ]
+    database = FakeUserDataDB(users)
+    monkeypatch.setattr(
+        "tg.admins.resource_status.get_user_data_db", lambda: database
+    )
+    monkeypatch.setattr(
+        "tg.admins.resource_status.get_access_group_db",
+        lambda: FakeAccessGroupDB(),
+    )
+    bot = FakeBot()
+
+    players(clan_admin_context(make_callback("admins/players"), bot))
+
+    first_page_buttons = callback_data(bot.edits[-1])
+    assert len(
+        [button for button in first_page_buttons if "/war/" in button]
+    ) == 10
+    assert first_page_buttons[-4:] == [
+        "admins/players/page/1/updates",
         "admins/players/points",
+        "admins",
+        "home",
+    ]
+
+    players_page(
+        clan_admin_context(
+            make_callback("admins/players/page/1/updates"), bot
+        )
+    )
+
+    second_page_buttons = callback_data(bot.edits[-1])
+    assert len(
+        [button for button in second_page_buttons if "/war/" in button]
+    ) == 2
+    assert second_page_buttons[-4:] == [
+        "admins/players/page/0/updates",
+        "admins/players/points",
+        "admins",
         "home",
     ]
 
@@ -212,21 +264,21 @@ def test_remove_player_requires_confirmation_and_detaches_selected_account(
 
     confirm_remove_player(
         clan_admin_context(
-            make_callback("admins/players/remove/7/updates"), bot
+            make_callback("admins/players/remove/7/0/updates"), bot
         )
     )
 
     assert database.detached == []
     assert "Убрать аккаунт из клана?" in bot.edits[-1]
     assert callback_data(bot.edits[-1]) == [
-        "admins/players/remove/confirm/7/updates",
-        "admins/players",
+        "admins/players/remove/confirm/7/0/updates",
+        "admins/players/page/0/updates",
         "home",
     ]
 
     remove_player(
         clan_admin_context(
-            make_callback("admins/players/remove/confirm/7/updates"), bot
+            make_callback("admins/players/remove/confirm/7/0/updates"), bot
         )
     )
 

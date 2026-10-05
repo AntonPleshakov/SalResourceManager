@@ -29,6 +29,7 @@ from tg.utils import (
 
 
 MAX_RICH_MESSAGE_LENGTH = 30_000
+PLAYERS_PAGE_SIZE = 10
 PlayerSort = Literal["updates", "points"]
 
 
@@ -79,6 +80,8 @@ def build_players_report(
     calculator: WarPointsCalculator,
     *,
     sort: PlayerSort = "updates",
+    page: int = 0,
+    page_size: int = PLAYERS_PAGE_SIZE,
 ) -> str:
     users_with_points = [(user, _war_points(user, calculator)) for user in users]
     if sort == "points":
@@ -98,8 +101,14 @@ def build_players_report(
             reverse=True,
         )
 
+    total_users = len(users_with_points)
+    total_pages = max(1, (total_users + page_size - 1) // page_size)
+    page = min(max(page, 0), total_pages - 1)
+    page_users = users_with_points[
+        page * page_size : (page + 1) * page_size
+    ]
     user_blocks = []
-    for user, points in users_with_points:
+    for user, points in page_users:
         account_id = user.account_id.value
         user_blocks.append(
             "".join(
@@ -113,11 +122,11 @@ def build_players_report(
                         (
                             callback_button(
                                 "⚔️ Посмотреть очки войны",
-                                f"admins/players/war/{account_id}/{sort}",
+                                f"admins/players/war/{account_id}/{page}/{sort}",
                             ),
                             callback_button(
                                 "🚫 Убрать из клана",
-                                f"admins/players/remove/{account_id}/{sort}",
+                                f"admins/players/remove/{account_id}/{page}/{sort}",
                                 style="danger",
                             ),
                         )
@@ -129,7 +138,8 @@ def build_players_report(
     header = "".join(
         (
             heading("Игроки клана"),
-            highlight_metric("Всего аккаунтов", str(len(users_with_points))),
+            highlight_metric("Всего аккаунтов", str(total_users)),
+            highlight_metric("Страница", f"{page + 1} из {total_pages}"),
         )
     )
     if not user_blocks:
@@ -156,14 +166,31 @@ def _split_report(report: str) -> List[str]:
     return chunks
 
 
-def _parse_account_action(callback_data: str) -> tuple[int, PlayerSort]:
+def _parse_account_action(
+    callback_data: str,
+) -> tuple[int, int, PlayerSort]:
     parts = callback_data.split("/")
     try:
-        account_id = int(parts[-2])
+        account_id = int(parts[-3])
+        page = max(0, int(parts[-2]))
     except (IndexError, ValueError) as error:
         raise ValueError("Игровой аккаунт не найден") from error
     sort: PlayerSort = "points" if parts[-1] == "points" else "updates"
-    return account_id, sort
+    return account_id, page, sort
+
+
+def _parse_players_page(callback_data: str) -> tuple[int, PlayerSort]:
+    parts = callback_data.split("/")
+    try:
+        page = max(0, int(parts[-2]))
+    except (IndexError, ValueError) as error:
+        raise ValueError("Страница не найдена") from error
+    sort: PlayerSort = "points" if parts[-1] == "points" else "updates"
+    return page, sort
+
+
+def _players_page_callback(page: int, sort: PlayerSort) -> str:
+    return f"admins/players/page/{page}/{sort}"
 
 
 def _find_clan_account(
@@ -179,12 +206,16 @@ def _find_clan_account(
     )
 
 
-def _show_players(context: ClanAdminContext, sort: PlayerSort) -> None:
+def _show_players(
+    context: ClanAdminContext, sort: PlayerSort, page: int = 0
+) -> None:
     callback_query = context.update
     bot = context.bot
     user_id, chat_id, message_id = get_ids(callback_query)
     database = get_user_data_db()
     users = database.get_clan_users(context.group.group_id)
+    total_pages = max(1, (len(users) + PLAYERS_PAGE_SIZE - 1) // PLAYERS_PAGE_SIZE)
+    page = min(max(page, 0), total_pages - 1)
     technologies = get_access_group_db().get_clan_technologies(
         context.group.group_id
     )
@@ -192,6 +223,7 @@ def _show_players(context: ClanAdminContext, sort: PlayerSort) -> None:
         users,
         WarPointsCalculator(technologies),
         sort=sort,
+        page=page,
     )
     chunks = _split_report(report)
     sort_button = button_row(
@@ -211,16 +243,37 @@ def _show_players(context: ClanAdminContext, sort: PlayerSort) -> None:
             ),
         )
     )
+    page_buttons = []
+    if page > 0:
+        page_buttons.append(
+            callback_button(
+                "⬅️ Предыдущая",
+                _players_page_callback(page - 1, sort),
+            )
+        )
+    if page + 1 < total_pages:
+        page_buttons.append(
+            callback_button(
+                "Следующая ➡️",
+                _players_page_callback(page + 1, sort),
+            )
+        )
+    pagination = button_row(page_buttons) if page_buttons else ""
     navigation = "".join(
-        (sort_button, back_button("⬅️ Админ-панель", "admins"))
+        (
+            pagination,
+            sort_button,
+            back_button("⬅️ Админ-панель", "admins"),
+        )
     )
 
     logger.info(
-        "Clan players requested by user_id=%s username=%s users=%d sort=%s",
+        "Clan players requested by user_id=%s username=%s users=%d sort=%s page=%d",
         user_id,
         get_username(callback_query),
         len(users),
         sort,
+        page,
     )
     first_message = input_rich_message(
         (chunks[0], navigation if len(chunks) == 1 else "")
@@ -248,9 +301,14 @@ def players_by_points(context: ClanAdminContext) -> None:
     _show_players(context, "points")
 
 
+def players_page(context: ClanAdminContext) -> None:
+    page, sort = _parse_players_page(context.update.data)
+    _show_players(context, sort, page)
+
+
 def player_war_points(context: ClanAdminContext) -> None:
     callback_query = context.update
-    account_id, sort = _parse_account_action(callback_query.data)
+    account_id, page, sort = _parse_account_action(callback_query.data)
     user = _find_clan_account(context, account_id)
     if user is None:
         context.bot.answer_callback_query(
@@ -271,9 +329,7 @@ def player_war_points(context: ClanAdminContext) -> None:
                 _personal_war_points_text(user, technologies),
                 back_button(
                     "⬅️ Игроки клана",
-                    "admins/players/points"
-                    if sort == "points"
-                    else "admins/players",
+                    _players_page_callback(page, sort),
                 ),
             )
         ),
@@ -282,7 +338,7 @@ def player_war_points(context: ClanAdminContext) -> None:
 
 def confirm_remove_player(context: ClanAdminContext) -> None:
     callback_query = context.update
-    account_id, sort = _parse_account_action(callback_query.data)
+    account_id, page, sort = _parse_account_action(callback_query.data)
     user = _find_clan_account(context, account_id)
     if user is None:
         context.bot.answer_callback_query(
@@ -308,11 +364,9 @@ def confirm_remove_player(context: ClanAdminContext) -> None:
                 "учитываться в списках и расчётах клана.</p>",
                 confirmation_buttons(
                     "Убрать из клана",
-                    f"admins/players/remove/confirm/{account_id}/{sort}",
+                    f"admins/players/remove/confirm/{account_id}/{page}/{sort}",
                     "⬅️ Игроки клана",
-                    "admins/players/points"
-                    if sort == "points"
-                    else "admins/players",
+                    _players_page_callback(page, sort),
                     destructive=True,
                 ),
             )
@@ -322,7 +376,7 @@ def confirm_remove_player(context: ClanAdminContext) -> None:
 
 def remove_player(context: ClanAdminContext) -> None:
     callback_query = context.update
-    account_id, sort = _parse_account_action(callback_query.data)
+    account_id, page, sort = _parse_account_action(callback_query.data)
     user = _find_clan_account(context, account_id)
     if user is None:
         context.bot.answer_callback_query(
@@ -345,7 +399,7 @@ def remove_player(context: ClanAdminContext) -> None:
         account_id,
         context.group.group_id,
     )
-    _show_players(context, sort)
+    _show_players(context, sort, page)
 
 
 def register_handlers(bot: TeleBot) -> None:
@@ -362,17 +416,22 @@ def register_handlers(bot: TeleBot) -> None:
         clan=ActiveClan(),
     )
     handlers.clan_admin_callback(
+        players_page,
+        button=r"admins/players/page/[0-9]+/(updates|points)",
+        clan=ActiveClan(),
+    )
+    handlers.clan_admin_callback(
         player_war_points,
-        button=r"admins/players/war/[0-9]+/(updates|points)",
+        button=r"admins/players/war/[0-9]+/[0-9]+/(updates|points)",
         clan=ActiveClan(),
     )
     handlers.clan_admin_callback(
         confirm_remove_player,
-        button=r"admins/players/remove/[0-9]+/(updates|points)",
+        button=r"admins/players/remove/[0-9]+/[0-9]+/(updates|points)",
         clan=ActiveClan(),
     )
     handlers.clan_admin_callback(
         remove_player,
-        button=r"admins/players/remove/confirm/[0-9]+/(updates|points)",
+        button=r"admins/players/remove/confirm/[0-9]+/[0-9]+/(updates|points)",
         clan=ActiveClan(),
     )

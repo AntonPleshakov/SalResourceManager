@@ -31,6 +31,7 @@ from tg.admins.game_data import (
     connect_google_account,
     export_game_data,
     show_game_data,
+    show_game_data_page,
 )
 from tg.metrics import ApplicationMetrics
 from tests.handler_context import admin_context, clan_admin_context
@@ -737,7 +738,60 @@ def test_game_data_callback_shows_preview_and_all_google_actions(monkeypatch):
         "https://docs.google.test/report"
     )
     assert callback_data(bot.edits[-1][1]["reply_markup"]) == [
-        "admins/game_data/google/-100123",
+        "admins/game_data/google/-100123/0",
+        "admins/game_data/google/connect/-100123",
+        "admins",
+    ]
+
+
+def test_game_data_preview_is_paginated_by_ten_accounts(monkeypatch):
+    users = [
+        UserData(
+            account_id=index,
+            user_id=index,
+            username=f"preview-user-{index:02d}",
+            tag=f"Hero {index:02d}",
+        )
+        for index in range(12)
+    ]
+
+    class FakeReport:
+        @staticmethod
+        def build_rows(report_users):
+            return GameDataReport.build_rows(report_users)
+
+        def prepare(self, group_id, clan_title):
+            return "https://docs.google.test/report"
+
+        def get_modified_time(self, group_id):
+            return datetime(2026, 10, 5, 15, 42, tzinfo=timezone.utc)
+
+    monkeypatch.setattr("tg.admins.game_data.GameDataReport", FakeReport)
+    monkeypatch.setattr(
+        "tg.admins.game_data.get_user_data_db",
+        lambda: type(
+            "Users", (), {"get_clan_users": lambda _, clan_id: users}
+        )(),
+    )
+    monkeypatch.setattr(
+        "tg.admins.game_data.get_access_group_db", lambda: FakeGroups()
+    )
+    bot = FakeBot()
+
+    show_game_data_page(
+        clan_admin_context(
+            make_callback("admins/game_data/page/1"), bot
+        )
+    )
+
+    rich_message = bot.edits[-1][1]["rich_message"]
+    assert "Страница: 2 из 2" in rich_message.html
+    assert "preview-user-10" in rich_message.html
+    assert "preview-user-11" in rich_message.html
+    assert "preview-user-00" not in rich_message.html
+    assert callback_data(bot.edits[-1][1]["reply_markup"]) == [
+        "admins/game_data/page/0",
+        "admins/game_data/google/-100123/1",
         "admins/game_data/google/connect/-100123",
         "admins",
     ]
@@ -813,7 +867,7 @@ def test_google_export_callback_exports_and_shows_url(monkeypatch):
     markup = bot.edits[-1][1]["reply_markup"]
     assert markup.keyboard[0][0].url == "https://docs.google.test/report"
     assert callback_data(markup) == [
-        "admins/game_data/google/-100123",
+        "admins/game_data/google/-100123/0",
         "admins/game_data/google/connect/-100123",
         "admins",
     ]
