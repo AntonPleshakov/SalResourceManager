@@ -121,6 +121,9 @@ class FakeGroups:
     def __init__(self, spreadsheet_id="spreadsheet-123"):
         self.spreadsheet_id = spreadsheet_id
 
+    def get_group(self, group_id):
+        return AccessGroup(group_id, "Test clan")
+
     def get_spreadsheet_id(self, group_id):
         return self.spreadsheet_id
 
@@ -382,6 +385,32 @@ def test_report_prepares_closed_clan_spreadsheet_without_exporting_data():
     assert worksheet.values is None
 
 
+def test_report_reads_last_modified_time_from_google_drive():
+    drive = FakeDriveSession(
+        [FakeHTTPResponse({"modifiedTime": "2026-10-05T15:42:30Z"})]
+    )
+
+    modified_at = GameDataReport(
+        groups=FakeGroups(), drive_session=drive
+    ).get_modified_time(-100123)
+
+    assert modified_at == datetime(
+        2026, 10, 5, 15, 42, 30, tzinfo=timezone.utc
+    )
+    assert drive.gets == [
+        (
+            "https://www.googleapis.com/drive/v3/files/spreadsheet-123",
+            {
+                "params": {
+                    "fields": "modifiedTime",
+                    "supportsAllDrives": "true",
+                },
+                "timeout": 10,
+            },
+        )
+    ]
+
+
 def test_report_lists_only_direct_recent_access_proposals():
     drive = FakeDriveSession(
         [
@@ -605,7 +634,7 @@ def test_admin_menu_without_current_clans_hides_admin_actions(
     connection.close()
 
 
-def test_game_data_rich_message_contains_native_tables_and_escaped_values():
+def test_game_data_rich_message_contains_preview_and_last_update(monkeypatch):
     user = UserData(
         account_id=7,
         user_id=42,
@@ -613,12 +642,24 @@ def test_game_data_rich_message_contains_native_tables_and_escaped_values():
         tag="Leader",
         pets=9,
     )
+    monkeypatch.setattr(
+        "common.datetime_utils.now",
+        lambda: datetime(2026, 10, 5, 20, tzinfo=timezone.utc),
+    )
 
-    message = build_game_data_message("Clan <One>", [user])
+    message = build_game_data_message(
+        "Clan <One>",
+        [user],
+        datetime(2026, 10, 5, 15, 42, tzinfo=timezone.utc),
+    )
 
     assert "<h2>Игровые данные</h2>" in message.html
     assert "Clan &lt;One&gt;" in message.html
     assert "player&lt;&amp;" in message.html
+    assert "сегодня (05.10.2026), 18:42 МСК" in message.html
+    assert message.html.index("<table") < message.html.index(
+        "Последнее обновление Google Таблицы"
+    )
     table_count = message.html.count("<table bordered striped compact>")
     assert table_count > 2
     assert f"Поля 1 из {table_count}" in message.html
@@ -641,16 +682,32 @@ def test_game_data_rich_message_limits_large_preview():
         for index in range(300)
     ]
 
-    message = build_game_data_message("Large clan", users)
+    message = build_game_data_message("Large clan", users, None)
 
     assert len(message.html.encode("utf-8")) <= 30_000
     assert "Показано" in message.html
     assert "из 300 аккаунтов" in message.html
     assert "В Google экспортируются все данные" in message.html
+    assert "<b>никогда</b>" in message.html
 
 
-def test_game_data_callback_shows_table_before_export(monkeypatch):
+def test_game_data_callback_shows_preview_and_all_google_actions(monkeypatch):
     users = [UserData(user_id=42, username="player")]
+    groups = FakeGroups()
+
+    class FakeReport:
+        @staticmethod
+        def build_rows(report_users):
+            return GameDataReport.build_rows(report_users)
+
+        def prepare(self, group_id, clan_title):
+            assert (group_id, clan_title) == (-100123, "Test clan")
+            return "https://docs.google.test/report"
+
+        def get_modified_time(self, group_id):
+            return datetime(2026, 10, 5, 15, 42, tzinfo=timezone.utc)
+
+    monkeypatch.setattr("tg.admins.game_data.GameDataReport", FakeReport)
     monkeypatch.setattr(
         "tg.admins.game_data.get_user_data_db",
         lambda: type(
@@ -662,16 +719,24 @@ def test_game_data_callback_shows_table_before_export(monkeypatch):
             },
         )(),
     )
+    monkeypatch.setattr(
+        "tg.admins.game_data.get_access_group_db", lambda: groups
+    )
     bot = FakeBot()
     callback = make_callback()
 
     show_game_data(clan_admin_context(callback, bot))
 
-    assert bot.edits[0][0] == ()
-    rich_message = bot.edits[0][1]["rich_message"]
+    assert "Формируем предпросмотр" in bot.edits[0][0][0]
+    assert bot.edits[-1][0] == ()
+    rich_message = bot.edits[-1][1]["rich_message"]
     assert "<table bordered striped compact>" in rich_message.html
     assert "player" in rich_message.html
-    assert callback_data(bot.edits[0][1]["reply_markup"]) == [
+    assert "18:42 МСК" in rich_message.html
+    assert bot.edits[-1][1]["reply_markup"].keyboard[0][0].url == (
+        "https://docs.google.test/report"
+    )
+    assert callback_data(bot.edits[-1][1]["reply_markup"]) == [
         "admins/game_data/google/-100123",
         "admins/game_data/google/connect/-100123",
         "admins",
@@ -681,8 +746,19 @@ def test_game_data_callback_shows_table_before_export(monkeypatch):
 def test_google_export_callback_exports_and_shows_url(monkeypatch):
     users = [UserData(user_id=42, username="player")]
     exported = []
+    groups = FakeGroups()
 
     class FakeReport:
+        @staticmethod
+        def build_rows(report_users):
+            return GameDataReport.build_rows(report_users)
+
+        def prepare(self, group_id, clan_title):
+            return "https://docs.google.test/report"
+
+        def get_modified_time(self, group_id):
+            return datetime(2026, 10, 5, 15, 42, tzinfo=timezone.utc)
+
         def export(self, group_id, clan_title, google_email, report_users):
             assert (group_id, clan_title, google_email) == (
                 -100123,
@@ -706,11 +782,7 @@ def test_google_export_callback_exports_and_shows_url(monkeypatch):
     )
     monkeypatch.setattr(
         "tg.admins.game_data.get_access_group_db",
-        lambda: type(
-            "Groups",
-            (),
-            {"get_group": lambda _, group_id: AccessGroup(group_id, "Test clan")},
-        )(),
+        lambda: groups,
     )
     monkeypatch.setattr(
         "tg.admins.game_data.get_admins_db",
@@ -737,9 +809,17 @@ def test_google_export_callback_exports_and_shows_url(monkeypatch):
     export_game_data(clan_admin_context(callback, bot))
 
     assert exported == users
-    markup = bot.markup_edits[0][1]["reply_markup"]
+    assert "Обновляем Google Таблицу" in bot.edits[0][0][0]
+    markup = bot.edits[-1][1]["reply_markup"]
     assert markup.keyboard[0][0].url == "https://docs.google.test/report"
-    assert callback_data(markup) == ["admins/game_data", "admins"]
+    assert callback_data(markup) == [
+        "admins/game_data/google/-100123",
+        "admins/game_data/google/connect/-100123",
+        "admins",
+    ]
+    assert "Последнее обновление Google Таблицы" in (
+        bot.edits[-1][1]["rich_message"].html
+    )
     assert bot.answers[0][0] == (
         "callback-1",
         "Данные экспортированы в Google.",
@@ -853,6 +933,16 @@ def test_drive_access_request_saves_email_approves_reader_and_exports(
     approved = []
 
     class FakeReport:
+        @staticmethod
+        def build_rows(report_users):
+            return GameDataReport.build_rows(report_users)
+
+        def prepare(self, group_id, clan_title):
+            return "https://docs.google.test/clan-report"
+
+        def get_modified_time(self, group_id):
+            return datetime(2026, 10, 5, 15, 42, tzinfo=timezone.utc)
+
         def get_access_proposals(self, group_id, created_after):
             assert (group_id, created_after) == (-100123, 1_000)
             return [GoogleAccessProposal("proposal-1", "admin@example.com")]
@@ -875,6 +965,15 @@ def test_drive_access_request_saves_email_approves_reader_and_exports(
         ),
     )
     monkeypatch.setattr("tg.admins.game_data.get_admins_db", lambda: admins)
+    monkeypatch.setattr(
+        "tg.admins.game_data.get_access_group_db", lambda: groups
+    )
+    monkeypatch.setattr(
+        "tg.admins.game_data.get_user_data_db",
+        lambda: type(
+            "Users", (), {"get_clan_users": lambda _, group_id: []}
+        )(),
+    )
     bot = FakeBot()
 
     callback = make_callback("admins/game_data/google/check/-100123")
@@ -892,7 +991,8 @@ def test_drive_access_request_saves_email_approves_reader_and_exports(
             "admin@example.com",
         )
     ]
-    assert bot.markup_edits[-1][1]["reply_markup"].keyboard[0][0].url == (
+    assert "Обновляем Google Таблицу" in bot.edits[0][0][0]
+    assert bot.edits[-1][1]["reply_markup"].keyboard[0][0].url == (
         "https://docs.google.test/clan-report"
     )
     connection.close()
@@ -911,6 +1011,16 @@ def test_drive_request_for_new_email_revokes_previous_access_first(
     revoked = []
 
     class FakeReport:
+        @staticmethod
+        def build_rows(report_users):
+            return GameDataReport.build_rows(report_users)
+
+        def prepare(self, group_id, clan_title):
+            return "https://docs.google.test/clan-report"
+
+        def get_modified_time(self, group_id):
+            return datetime(2026, 10, 5, 15, 42, tzinfo=timezone.utc)
+
         def get_access_proposals(self, group_id, created_after):
             return [GoogleAccessProposal("proposal-1", "new@example.com")]
 
@@ -925,6 +1035,15 @@ def test_drive_request_for_new_email_revokes_previous_access_first(
 
     monkeypatch.setattr("tg.admins.game_data.GameDataReport", FakeReport)
     monkeypatch.setattr("tg.admins.game_data.get_admins_db", lambda: admins)
+    monkeypatch.setattr(
+        "tg.admins.game_data.get_access_group_db", lambda: groups
+    )
+    monkeypatch.setattr(
+        "tg.admins.game_data.get_user_data_db",
+        lambda: type(
+            "Users", (), {"get_clan_users": lambda _, group_id: []}
+        )(),
+    )
     monkeypatch.setattr(
         "tg.admins.game_data._export_group_data",
         lambda *args: "https://docs.google.test/clan-report",
@@ -942,7 +1061,19 @@ def test_drive_request_for_new_email_revokes_previous_access_first(
 
 
 def test_google_export_callback_reports_failure(monkeypatch):
+    groups = FakeGroups()
+
     class BrokenReport:
+        @staticmethod
+        def build_rows(report_users):
+            return GameDataReport.build_rows(report_users)
+
+        def prepare(self, group_id, clan_title):
+            return "https://docs.google.test/report"
+
+        def get_modified_time(self, group_id):
+            return datetime(2026, 10, 5, 15, 42, tzinfo=timezone.utc)
+
         def export(self, group_id, clan_title, google_email, users):
             raise RuntimeError("Google unavailable")
 
@@ -955,11 +1086,7 @@ def test_google_export_callback_reports_failure(monkeypatch):
     )
     monkeypatch.setattr(
         "tg.admins.game_data.get_access_group_db",
-        lambda: type(
-            "Groups",
-            (),
-            {"get_group": lambda _, group_id: AccessGroup(group_id, "Test clan")},
-        )(),
+        lambda: groups,
     )
     monkeypatch.setattr(
         "tg.admins.game_data.get_admins_db",
@@ -980,6 +1107,10 @@ def test_google_export_callback_reports_failure(monkeypatch):
     export_game_data(clan_admin_context(callback, bot))
 
     assert bot.markup_edits == []
+    assert "Обновляем Google Таблицу" in bot.edits[0][0][0]
+    assert bot.edits[-1][1]["reply_markup"].keyboard[0][0].url == (
+        "https://docs.google.test/report"
+    )
     assert bot.answers[0][0][0] == "callback-1"
     assert "Не удалось экспортировать" in bot.answers[0][0][1]
     assert bot.answers[0][1]["show_alert"]

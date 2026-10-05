@@ -1,5 +1,6 @@
 """Administrative game-data report export."""
 
+from datetime import datetime
 from html import escape
 from time import monotonic, time
 from typing import Iterable, Sequence
@@ -12,6 +13,7 @@ from telebot.types import (
     InputRichMessage,
 )
 
+from common.datetime_utils import format_last_update_time
 from db.initializer import get_access_group_db, get_admins_db, get_user_data_db
 from logger.app_logger import logger
 from reports.game_data import GameDataReport
@@ -80,23 +82,31 @@ def _render_table(
 
 def _render_game_data_html(
     clan_title: str,
+    updated_at: datetime | None,
     headers: Sequence[str],
     rows: Sequence[Sequence[str]],
     total_rows: int,
 ) -> str:
     column_groups = _table_column_groups(len(headers))
+    updated = format_last_update_time(updated_at)
+    update_status = (
+        "<p>Последнее обновление Google Таблицы:<br>"
+        f"<b>{escape(updated)}</b></p>"
+    )
     parts = [
         "<h2>Игровые данные</h2>",
-        f"<p>Клан: <b>{escape(clan_title)}</b>. Аккаунтов: {total_rows}.</p>",
+        f"<p>Клан: <b>{escape(clan_title)}</b>. "
+        f"Аккаунтов: {total_rows}.</p>",
     ]
     if not rows:
         if total_rows:
             parts.append(
                 "<p>Предпросмотр не помещается в сообщение. "
-                "Экспортируйте полные данные в Google.</p>"
+                "В Google Таблицу выгружаются полные данные.</p>"
             )
         else:
             parts.append("<p>В клане пока нет игровых аккаунтов.</p>")
+        parts.append(update_status)
         return "".join(parts)
 
     for index, columns in enumerate(column_groups, start=1):
@@ -109,37 +119,49 @@ def _render_game_data_html(
             "В Google экспортируются все данные."
             "</footer>"
         )
+    parts.append(update_status)
     return "".join(parts)
 
 
 def build_game_data_message(
-    clan_title: str, users: Iterable[UserData]
+    clan_title: str,
+    users: Iterable[UserData],
+    updated_at: datetime | None,
 ) -> InputRichMessage:
     report_rows = GameDataReport.build_rows(users)
     headers, rows = report_rows[0], report_rows[1:]
     column_groups = _table_column_groups(len(headers))
-    non_row_blocks = 3 + len(column_groups)
+    non_row_blocks = 4 + len(column_groups)
     max_rows = max(
         0,
         (_MAX_RICH_MESSAGE_BLOCKS - non_row_blocks) // len(column_groups) - 1,
     )
     visible_rows = rows[:max_rows]
     html = _render_game_data_html(
-        clan_title, headers, visible_rows, len(rows)
+        clan_title,
+        updated_at,
+        headers,
+        visible_rows,
+        len(rows),
     )
     while visible_rows and len(html.encode("utf-8")) > _MAX_RICH_MESSAGE_BYTES:
         visible_rows.pop()
         html = _render_game_data_html(
-            clan_title, headers, visible_rows, len(rows)
+            clan_title,
+            updated_at,
+            headers,
+            visible_rows,
+            len(rows),
         )
     return InputRichMessage(html=html, skip_entity_detection=True)
 
 
-def _preview_keyboard(group_id: int) -> InlineKeyboardMarkup:
+def _game_data_keyboard(group_id: int, url: str) -> InlineKeyboardMarkup:
     keyboard = InlineKeyboardMarkup(row_width=1)
+    keyboard.add(InlineKeyboardButton("📊 Открыть Google Таблицу", url=url))
     keyboard.add(
         Button(
-            "📤 Экспортировать в Google",
+            "🔄 Обновить данные",
             f"{_GOOGLE_EXPORT_BUTTON}/{group_id}",
         ).inline()
     )
@@ -153,12 +175,47 @@ def _preview_keyboard(group_id: int) -> InlineKeyboardMarkup:
     return keyboard
 
 
-def _exported_keyboard(url: str) -> InlineKeyboardMarkup:
-    keyboard = InlineKeyboardMarkup(row_width=1)
-    keyboard.add(InlineKeyboardButton("📊 Открыть Google Таблицу", url=url))
-    keyboard.add(Button("🔄 Обновить данные", "admins/game_data").inline())
-    keyboard.add(Button("⬅️ Назад в админ-панель", "admins").inline())
-    return keyboard
+def _spreadsheet_updated_at(group_id: int) -> datetime | None:
+    return GameDataReport().get_modified_time(group_id)
+
+
+def _show_game_data_screen(
+    bot: TeleBot,
+    chat_id: int,
+    message_id: int,
+    group_id: int,
+    clan_title: str,
+    spreadsheet_url: str,
+) -> None:
+    users = get_user_data_db().get_clan_users(group_id)
+    bot.edit_message_text(
+        chat_id=chat_id,
+        message_id=message_id,
+        rich_message=build_game_data_message(
+            clan_title,
+            users,
+            _spreadsheet_updated_at(group_id),
+        ),
+        reply_markup=_game_data_keyboard(group_id, spreadsheet_url),
+    )
+
+
+def _show_export_waiting(bot: TeleBot, chat_id: int, message_id: int) -> None:
+    bot.edit_message_text(
+        "<b>Обновляем Google Таблицу…</b>\n\n"
+        "Пожалуйста, подождите. Это может занять некоторое время.",
+        chat_id,
+        message_id,
+    )
+
+
+def _show_preview_waiting(bot: TeleBot, chat_id: int, message_id: int) -> None:
+    bot.edit_message_text(
+        "<b>Формируем предпросмотр…</b>\n\n"
+        "Пожалуйста, подождите. Это может занять некоторое время.",
+        chat_id,
+        message_id,
+    )
 
 
 def _request_google_access(
@@ -227,13 +284,15 @@ def show_game_data(context: ClanAdminContext) -> None:
         user_id,
         get_username(callback_query),
     )
+    _show_preview_waiting(bot, chat_id, message_id)
     try:
-        database = get_user_data_db()
-        users = database.get_clan_users(context.group.group_id)
-        rich_message = build_game_data_message(context.group.title, users)
+        spreadsheet_url = GameDataReport().prepare(
+            context.group.group_id,
+            context.group.title,
+        )
     except Exception as error:
         logger.exception(
-            "Unable to build game data preview for user_id=%s: %s",
+            "Unable to prepare game data screen for user_id=%s: %s",
             user_id,
             error,
         )
@@ -247,11 +306,13 @@ def show_game_data(context: ClanAdminContext) -> None:
         )
         return
 
-    bot.edit_message_text(
-        chat_id=chat_id,
-        message_id=message_id,
-        rich_message=rich_message,
-        reply_markup=_preview_keyboard(context.group.group_id),
+    _show_game_data_screen(
+        bot,
+        chat_id,
+        message_id,
+        context.group.group_id,
+        context.group.title,
+        spreadsheet_url,
     )
 
 
@@ -277,6 +338,7 @@ def check_google_access_request(context: ClanAdminContext) -> None:
     callback_query = context.update
     bot = context.bot
     user_id, chat_id, message_id = get_ids(callback_query)
+    spreadsheet_url = None
     try:
         group_id = context.group.group_id
         admins = get_admins_db()
@@ -302,8 +364,21 @@ def check_google_access_request(context: ClanAdminContext) -> None:
             user_id, group_id, proposal.email
         )
         report.approve_access(group_id, proposal.proposal_id)
-        url = _export_group_data(bot, user_id, group_id, proposal.email)
+        spreadsheet_url = report.prepare(group_id, context.group.title)
+        _show_export_waiting(bot, chat_id, message_id)
+        spreadsheet_url = _export_group_data(
+            bot, user_id, group_id, proposal.email
+        )
     except (AdminAccessError, ValueError) as error:
+        if spreadsheet_url is not None:
+            _show_game_data_screen(
+                bot,
+                chat_id,
+                message_id,
+                context.group.group_id,
+                context.group.title,
+                spreadsheet_url,
+            )
         bot.answer_callback_query(
             callback_query.id,
             str(error),
@@ -316,6 +391,15 @@ def check_google_access_request(context: ClanAdminContext) -> None:
             user_id,
             type(error).__name__,
         )
+        if spreadsheet_url is not None:
+            _show_game_data_screen(
+                bot,
+                chat_id,
+                message_id,
+                context.group.group_id,
+                context.group.title,
+                spreadsheet_url,
+            )
         bot.answer_callback_query(
             callback_query.id,
             "Не удалось проверить запрос доступа. Попробуйте ещё раз позже.",
@@ -323,10 +407,13 @@ def check_google_access_request(context: ClanAdminContext) -> None:
         )
         return
 
-    bot.edit_message_reply_markup(
+    _show_game_data_screen(
+        bot,
         chat_id,
         message_id,
-        reply_markup=_exported_keyboard(url),
+        context.group.group_id,
+        context.group.title,
+        spreadsheet_url,
     )
     bot.answer_callback_query(
         callback_query.id,
@@ -345,9 +432,11 @@ def export_game_data(context: ClanAdminContext) -> None:
     )
     started_at = monotonic()
     result = "failed"
+    spreadsheet_url = None
     try:
         group_id = context.group.group_id
         admins = get_admins_db()
+        require_admin_access(bot, user_id, group_id, admins)
         google_email = admins.get_clan_admin_google_email(user_id, group_id)
         if google_email is None:
             result = "access_request_required"
@@ -355,8 +444,23 @@ def export_game_data(context: ClanAdminContext) -> None:
                 callback_query, bot, group_id, admins
             )
             return
-        url = _export_group_data(bot, user_id, group_id, google_email)
+        spreadsheet_url = GameDataReport().prepare(
+            group_id, context.group.title
+        )
+        _show_export_waiting(bot, chat_id, message_id)
+        spreadsheet_url = _export_group_data(
+            bot, user_id, group_id, google_email
+        )
     except (AdminAccessError, ValueError):
+        if spreadsheet_url is not None:
+            _show_game_data_screen(
+                bot,
+                chat_id,
+                message_id,
+                context.group.group_id,
+                context.group.title,
+                spreadsheet_url,
+            )
         bot.answer_callback_query(
             callback_query.id,
             "Нет прав администратора выбранного клана.",
@@ -369,9 +473,19 @@ def export_game_data(context: ClanAdminContext) -> None:
             user_id,
             error,
         )
+        if spreadsheet_url is not None:
+            _show_game_data_screen(
+                bot,
+                chat_id,
+                message_id,
+                context.group.group_id,
+                context.group.title,
+                spreadsheet_url,
+            )
         bot.answer_callback_query(
             callback_query.id,
-            "Не удалось экспортировать данные в Google. Попробуйте ещё раз позже.",
+            "Не удалось экспортировать данные в Google. "
+            "Попробуйте ещё раз позже.",
             show_alert=True,
         )
         return
@@ -386,10 +500,13 @@ def export_game_data(context: ClanAdminContext) -> None:
             monotonic() - started_at
         )
 
-    bot.edit_message_reply_markup(
+    _show_game_data_screen(
+        bot,
         chat_id,
         message_id,
-        reply_markup=_exported_keyboard(url),
+        context.group.group_id,
+        context.group.title,
+        spreadsheet_url,
     )
     bot.answer_callback_query(
         callback_query.id,

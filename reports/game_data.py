@@ -122,6 +122,23 @@ class GameDataReport:
     def prepare(self, group_id: int, clan_title: str) -> str:
         return self._open_or_create_spreadsheet(group_id, clan_title).url
 
+    def get_modified_time(self, group_id: int) -> datetime:
+        spreadsheet_id = self._group_database().get_spreadsheet_id(group_id)
+        if spreadsheet_id is None:
+            raise ValueError("Для клана ещё не создана Google Таблица")
+        response = self._drive_session().get(
+            f"{_DRIVE_API_BASE_URL}/{quote(spreadsheet_id, safe='')}",
+            params={"fields": "modifiedTime", "supportsAllDrives": "true"},
+            timeout=10,
+        )
+        response.raise_for_status()
+        modified_time = response.json().get("modifiedTime")
+        if not modified_time:
+            raise ValueError("Google не вернул время изменения таблицы")
+        return datetime.fromisoformat(
+            str(modified_time).replace("Z", "+00:00")
+        )
+
     def get_access_proposals(
         self,
         group_id: int,

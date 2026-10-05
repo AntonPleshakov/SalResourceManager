@@ -39,6 +39,19 @@ def format_last_update(updated_on: date | None) -> str:
     return f"{relative} ({formatted_date})"
 
 
+def format_last_update_time(updated_at: datetime | None) -> str:
+    if updated_at is None:
+        return "никогда"
+    if updated_at.tzinfo is None:
+        moscow_time = updated_at.replace(tzinfo=MOSCOW_TIMEZONE)
+    else:
+        moscow_time = updated_at.astimezone(MOSCOW_TIMEZONE)
+    return (
+        f"{format_last_update(moscow_time.date())}, "
+        f"{moscow_time.strftime('%H:%M')} МСК"
+    )
+
+
 def week_started_on(reference: datetime) -> date:
     shifted_reference = reference - timedelta(hours=WEEK_START_HOUR)
     return shifted_reference.date() - timedelta(
