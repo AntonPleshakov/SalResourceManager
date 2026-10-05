@@ -11,3 +11,4 @@ data/
 certs/
 *.db.backup*
 __pycache__/
+assets/

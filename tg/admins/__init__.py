@@ -101,7 +101,7 @@ def _show_admins_main_menu(
         heading("Игроки", level=3),
         button_row(
             (
-                callback_button("👥 Обновления", "admins/last_updates"),
+                callback_button("👥 Игроки", "admins/players"),
                 callback_button("📊 Игровые данные", "admins/game_data"),
             )
         ),
