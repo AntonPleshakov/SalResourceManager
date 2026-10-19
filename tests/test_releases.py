@@ -107,12 +107,14 @@ def test_user_sees_every_release_published_after_last_seen_version():
         "1.7.0",
         "1.8.0",
         "1.9.0",
+        "1.10.0",
     ]
 
 
-def test_latest_release_is_version_1_9_0():
-    assert CURRENT_VERSION == "1.9.0"
-    assert [release.version for release in unseen_releases("1.8.0")] == ["1.9.0"]
+def test_latest_release_is_version_1_10_0():
+    assert CURRENT_VERSION == "1.10.0"
+    assert RELEASES[-1].released_on == date(2026, 10, 20)
+    assert [release.version for release in unseen_releases("1.9.0")] == ["1.10.0"]
 
 
 def test_release_notes_contain_version_changes_and_date(monkeypatch):
