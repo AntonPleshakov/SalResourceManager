@@ -122,6 +122,10 @@ def validate_editable_field_value(field_name: str, value: int) -> int:
         raise ValueError(
             "Снижение стоимости призыва маунта должно быть от 0 до 25%"
         )
+    if field_name == "extra_egg_chance" and not 0 <= value <= 50:
+        raise ValueError(
+            "Дополнительный шанс на яйцо должен быть от 0 до 50%"
+        )
     if field_name == "extra_mount_chance" and not 0 <= value <= 50:
         raise ValueError(
             "Шанс на дополнительного маунта должен быть от 0 до 50%"

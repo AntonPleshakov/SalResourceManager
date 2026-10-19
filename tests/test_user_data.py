@@ -395,6 +395,23 @@ def test_database_rejects_excessive_mount_summon_cost_reduction(tmp_path):
     connection.close()
 
 
+def test_extra_egg_chance_limits(tmp_path):
+    connection = Database(tmp_path / "database.db")
+    database = UserDataDB(connection)
+
+    for value in (0, 50):
+        assert parse_editable_field_value("extra_egg_chance", str(value)) == value
+        updated = database.set_value(42, "tester", "extra_egg_chance", value)
+        assert updated.extra_egg_chance.value == value
+
+    with pytest.raises(ValueError, match="от 0 до 50%"):
+        parse_editable_field_value("extra_egg_chance", "51")
+    with pytest.raises(ValueError, match="от 0 до 50%"):
+        database.set_value(42, "tester", "extra_egg_chance", 51)
+    assert database.get_user(42).extra_egg_chance.value == 50
+    connection.close()
+
+
 def test_database_rejects_excessive_extra_mount_chance(tmp_path):
     connection = Database(tmp_path / "database.db")
     database = UserDataDB(connection)
@@ -815,6 +832,9 @@ def test_parse_thousand_based_resource_value_rejects_invalid_input():
 
 
 def test_value_input_hints_show_actual_limits():
+    assert _value_input_hint(EDITABLE_FIELDS["extra_egg_chance"]) == (
+        "Введите целое число от 0 до 50 (%)."
+    )
     assert _value_input_hint(EDITABLE_FIELDS["forge_level"]) == (
         "Введите целое число от 1 до 35."
     )

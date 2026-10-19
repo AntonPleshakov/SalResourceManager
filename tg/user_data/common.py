@@ -337,6 +337,8 @@ def build_section_menu(
             )
         )
     )
+    if section in {"resources", "technologies"}:
+        parts.append(button_row((callback_button("📷 Заполнить по скриншотам", "screenshot/start"),)))
     if section == "resources":
         parts.append(
             details(
@@ -438,7 +440,7 @@ def value_input_hint(field: ResourceField) -> str:
         "mount_summon_cost",
     }:
         return "Введите целое число от 0 до 25 (%)."
-    if field.name == "extra_mount_chance":
+    if field.name in {"extra_egg_chance", "extra_mount_chance"}:
         return "Введите целое число от 0 до 50 (%)."
     if field.name in THOUSAND_INPUT_FIELDS:
         return (

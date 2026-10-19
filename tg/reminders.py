@@ -132,7 +132,8 @@ def _account_buttons(user: UserData, field_names: Set[str], index: int) -> str:
                 style="primary",
             )
         )
-    return button_row(buttons) if buttons else ""
+    buttons.append(callback_button("📷 Заполнить по скриншотам", f"screenshot/start/{account_id}"))
+    return button_row(buttons)
 
 
 def _reminder_buttons(
@@ -159,6 +160,9 @@ def _reminder_buttons(
                 callback_button("🔬 Технологии", "technologies"),
             )
         )
+    )
+    parts.append(
+        button_row((callback_button("📷 Заполнить по скриншотам", "screenshot/start"),))
     )
     parts.append(
         button_row((callback_button("🐾 Питомцы", "pets"),))

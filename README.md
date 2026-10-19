@@ -15,6 +15,11 @@ JSON at `config/google_oauth_client.json`, and run the authorization command
 from [`infra/README.md`](infra/README.md) once to create
 `config/google_oauth_token.json`. See the same document for server deployment.
 
+Screenshot input runs locally without API keys. Docker includes Tesseract;
+for local runs install Tesseract with `eng`, `rus`, and `deu` language data and add it
+to `PATH` (or set `TESSERACT_CMD` to its executable). Technology screenshots
+support Russian, English, and German; resource icons do not depend on the game language.
+
 ## Run
 
 Local debug mode uses Telegram long polling, so it does not require a public

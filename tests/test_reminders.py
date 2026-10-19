@@ -79,6 +79,8 @@ def test_reminder_has_embedded_navigation_buttons():
     html = _reminder_buttons({"extra_mount_chance", "hammers"})
 
     assert 'data="user_data/fill/tracked/3,10"' in html
+    assert 'data="screenshot/start"' in html
+    assert "📷 Заполнить по скриншотам" in html
     assert 'data="resources"' in html
     assert 'data="technologies"' in html
     assert 'data="pets"' in html
@@ -194,6 +196,8 @@ def test_reminder_combines_multiple_accounts_into_one_message(monkeypatch):
     assert "<h3>Beta</h3>" in html
     assert 'data="accounts/select/resources/11"' in html
     assert 'data="accounts/select/resources/22"' in html
+    assert 'data="screenshot/start/11"' in html
+    assert 'data="screenshot/start/22"' in html
     assert 'data="home"' in html
     assert (
         html.index("<h3>Alpha</h3>")
