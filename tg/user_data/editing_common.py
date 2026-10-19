@@ -220,7 +220,7 @@ def format_field_value(
         and Decimal(displayed_value) >= Decimal("1000")
     ):
         return format_points(Decimal(displayed_value))
-    return displayed_value
+    return user_data_resources.format_technology_value(field.name, value)
 
 
 def format_field_input_value(

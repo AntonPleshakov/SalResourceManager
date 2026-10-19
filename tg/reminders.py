@@ -15,6 +15,8 @@ from resources.user_data import (
     TECHNOLOGY_FIELDS,
     TRACKED_FIELDS,
     UserData,
+    TECHNOLOGY_MAXIMUMS,
+    format_technology_value,
 )
 from tg.metrics import APPLICATION_METRICS, ApplicationMetrics
 from tg.rich import button_row, callback_button, input_rich_message
@@ -76,7 +78,10 @@ def _account_reminder_block(
 ) -> str:
     tag = str(user.tag.value).strip() or f"Аккаунт {index}"
     fields = "".join(
-        f"<li>{escape(field.title)}</li>"
+        f"<li>{escape(field.title)}"
+        + (f": {format_technology_value(field.name, user.get_value(field.name))}"
+           if field.name in TECHNOLOGY_MAXIMUMS else "")
+        + "</li>"
         for field in TRACKED_FIELDS
         if field.name in field_names
     )

@@ -6,7 +6,7 @@ from resources.egg_levels import (
     format_hatch_batch_count,
 )
 from resources.clan_technologies import ClanTechnologies
-from resources.user_data import UserData
+from resources.user_data import UserData, format_technology_value
 from resources.war_rules.details import ActivityDetails, format_calculation_number
 
 
@@ -94,7 +94,7 @@ def explain_pet_points(
         repeatable_points=daily_hatching_points,
         inputs=(
             f"Скорлупа: {format_calculation_number(user.shells.value)}",
-            f"Дополнительный шанс яйца: {user.extra_egg_chance.value}%",
+            f"Дополнительный шанс яйца: {format_technology_value('extra_egg_chance', user.extra_egg_chance.value)}",
             f"Питомцы и яйца для объединения: "
             f"{format_calculation_number(user.pets.value)}",
             f"Яиц в одном пакете: {eggs_per_batch}",

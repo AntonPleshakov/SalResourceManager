@@ -20,6 +20,8 @@ from resources.user_data import (
     GameAccount,
     ResourceField,
     UserData,
+    format_technology_value,
+    is_max_technology,
 )
 import tg.user_data as user_data
 from tg.clans import (
@@ -261,6 +263,8 @@ def get_active_user_or_prompt(
 
 
 def _field_update_details(user: UserData, field: ResourceField) -> str:
+    if is_max_technology(field.name, user.get_value(field.name)):
+        return ""
     updated_on = user.get_updated_on(field.name)
     if updated_on is None:
         return "<br><b>⚠️ Не обновлялось</b>"
@@ -275,7 +279,12 @@ def _section_freshness(user: UserData, fields: Sequence[ResourceField]) -> str:
     if not tracked_fields:
         return ""
     cutoff = week_started_on(now())
-    current = user.fields_updated_count_since(tracked_fields, cutoff)
+    current = sum(
+        is_max_technology(field.name, user.get_value(field.name))
+        or (user.get_updated_on(field.name) is not None
+            and user.get_updated_on(field.name) >= cutoff)
+        for field in tracked_fields
+    )
     return highlight_metric(
         "Актуально с понедельника",
         f"{current} из {len(tracked_fields)}",
@@ -303,6 +312,7 @@ def build_section_menu(
         value = user.get_value(field.name)
         if field in RESOURCE_FIELDS and Decimal(value) >= Decimal("1000"):
             value = format_points(Decimal(value))
+        value = format_technology_value(field.name, value)
         field_details = ""
         if field in TRACKED_FIELDS:
             field_details = _field_update_details(user, field)

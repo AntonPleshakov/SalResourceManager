@@ -1,6 +1,6 @@
 from decimal import Decimal
 from resources.clan_technologies import ClanTechnologies
-from resources.user_data import UserData
+from resources.user_data import UserData, format_technology_value
 from resources.war_rules.details import ActivityDetails, format_calculation_number
 from resources.war_rules.mount_packages import summon_packages as _summon_packages
 
@@ -61,8 +61,8 @@ def explain_mount_points(
         repeatable_points=Decimal("0"),
         inputs=(
             f"Ключи маунтов: {format_calculation_number(user.mount_keys.value)}",
-            f"Снижение стоимости призыва: {user.mount_summon_cost.value}%",
-            f"Шанс дополнительного маунта: {user.extra_mount_chance.value}%",
+            f"Снижение стоимости призыва: {format_technology_value('mount_summon_cost', user.mount_summon_cost.value)}",
+            f"Шанс дополнительного маунта: {format_technology_value('extra_mount_chance', user.extra_mount_chance.value)}",
             f"Необъединённые маунты: "
             f"{format_calculation_number(user.unmerged_mounts.value)}",
         ),

@@ -77,6 +77,32 @@ THOUSAND_INPUT_FIELDS = frozenset(
 )
 
 
+TECHNOLOGY_MAXIMUMS = {
+    "extra_egg_chance": 50,
+    "skill_summon_cost": 25,
+    "mount_summon_cost": 25,
+    "extra_mount_chance": 50,
+    "free_equipment_chance": 25,
+}
+
+
+def is_max_technology(field_name: str, value: int | str) -> bool:
+    maximum = TECHNOLOGY_MAXIMUMS.get(field_name)
+    return maximum is not None and int(value) >= maximum
+
+
+def format_technology_value(field_name: str, value: int | str) -> str:
+    maximum = TECHNOLOGY_MAXIMUMS.get(field_name)
+    if maximum is None:
+        return str(value)
+    numeric_value = int(value)
+    level = (
+        "Max" if is_max_technology(field_name, numeric_value)
+        else f"T{min(5, numeric_value * 5 // maximum + 1)}"
+    )
+    return f"{value}% ({level})"
+
+
 def validate_editable_field_value(field_name: str, value: int) -> int:
     if field_name not in EDITABLE_FIELDS:
         raise ValueError(f"Показатель не найден: {field_name}")

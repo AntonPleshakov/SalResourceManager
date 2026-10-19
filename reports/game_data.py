@@ -18,7 +18,9 @@ from config.config import getconf
 from db.access_group import AccessGroupDB
 from db.initializer import get_access_group_db
 from logger.app_logger import logger
-from resources.user_data import UPDATED_AT_FIELDS, UserData
+from resources.user_data import (
+    UPDATED_AT_FIELDS, UserData, format_technology_value, is_max_technology,
+)
 
 
 _PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -253,8 +255,10 @@ class GameDataReport:
         for parameter_name, parameter in user.params().items():
             if parameter_name in _ID_FIELDS | _UPDATE_FIELDS:
                 continue
-            value = parameter.value_repr()
-            if parameter_name in UPDATED_AT_FIELDS:
+            value = format_technology_value(parameter_name, parameter.value_repr())
+            if parameter_name in UPDATED_AT_FIELDS and not is_max_technology(
+                parameter_name, parameter.value
+            ):
                 updated_on = format_last_update(
                     user.get_updated_on(parameter_name)
                 )

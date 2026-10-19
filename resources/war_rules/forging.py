@@ -2,7 +2,7 @@ from decimal import Decimal
 from typing import List, Sequence
 
 from resources.clan_technologies import ClanTechnologies
-from resources.user_data import UserData
+from resources.user_data import UserData, format_technology_value
 from resources.war_rules.details import ActivityDetails, format_calculation_number
 
 FORGE_WEAPON_CHANCES: List[List[Decimal]] = [
@@ -87,7 +87,7 @@ def explain_forging_points(
             f"Молотки: {format_calculation_number(user.hammers.value)}",
             f"Уровень кузницы: {user.forge_level.value}",
             f"Шанс бесплатно создать снаряжение: "
-            f"{format_calculation_number(free_chance)}%",
+            f"{format_technology_value('free_equipment_chance', free_chance)}",
         ),
         calculations=(
             f"Ожидаемые создания снаряжения: "

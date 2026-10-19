@@ -5,7 +5,7 @@ from telebot import TeleBot
 from telebot.types import InputRichMessage
 
 from logger.app_logger import logger
-from resources.user_data import UserData
+from resources.user_data import UserData, is_max_technology
 from tg.metrics import ApplicationMetrics
 from tg.utils import format_user_identity
 
@@ -21,7 +21,8 @@ def missing_account_fields(
             {
                 resource_name
                 for resource_name in required_names
-                if user.get_updated_on(resource_name) != reminder_date
+                if not is_max_technology(resource_name, user.get_value(resource_name))
+                and user.get_updated_on(resource_name) != reminder_date
             },
         )
         for user in accounts

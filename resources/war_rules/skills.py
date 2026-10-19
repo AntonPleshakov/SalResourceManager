@@ -2,7 +2,7 @@ from decimal import Decimal
 from typing import Tuple
 
 from resources.clan_technologies import ClanTechnologies
-from resources.user_data import UserData
+from resources.user_data import UserData, format_technology_value
 from resources.war_rules.details import ActivityDetails, format_calculation_number
 
 
@@ -64,7 +64,7 @@ def explain_skill_points(
         repeatable_points=Decimal("0"),
         inputs=(
             f"Билетики навыков: {format_calculation_number(tickets)}",
-            f"Снижение стоимости призыва: {format_calculation_number(discount)}%",
+            f"Снижение стоимости призыва: {format_technology_value('skill_summon_cost', discount)}",
         ),
         calculations=(
             f"Цена призыва: {format_calculation_number(SKILL_BASE_TICKET_COST)} × "
