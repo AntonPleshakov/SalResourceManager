@@ -76,7 +76,7 @@ class FakeUserDataDB:
     def get_active_account(self, user_id):
         if self.user is None or self.user.user_id.value != user_id:
             return None
-        return SimpleNamespace(clan_id=-100123)
+        return SimpleNamespace(clan_id=-100123, account_id=self.user.account_id.value)
 
     def get_clan_user_ids(self, clan_id):
         return []
@@ -141,7 +141,7 @@ def test_war_points_menu_contains_both_calculations():
 
     text, _, _, markup = bot.edited[0]
     assert "Очки войны" in text
-    assert callback_data(text) == ["war_calculator", "war", "home"]
+    assert callback_data(text) == ["war_calculator", "war", "war_top", "home"]
     assert markup is None
 
 
@@ -390,3 +390,65 @@ def test_personal_war_calculator_prompts_when_data_is_missing(monkeypatch):
         "home",
     ]
     assert markup is None
+
+
+def test_clan_top_and_personal_position_share_ranking(monkeypatch):
+    from tg.war.public import clan_war_top
+
+    users = [
+        UserData(user_id=42, account_id=1, username="current", tag="<Первый>", hammers=100),
+        UserData(user_id=43, account_id=2, username="other<&", tag="Лидер", hammers=500),
+        UserData(user_id=44, account_id=3, tag="Равный", hammers=500),
+        UserData(user_id=42, account_id=4, username="current", tag="Другой аккаунт", hammers=50),
+    ]
+    database = FakeUserDataDB(users[0])
+    database.get_clan_users = lambda clan_id: users if clan_id == -100123 else []
+    monkeypatch.setattr("tg.war.get_user_data_db", lambda: database)
+    bot = FakeBot()
+
+    clan_war_top(make_callback(data="war_top"), bot)
+    text = bot.edited[-1][0]
+    assert text.index("Лидер") < text.index("&lt;Первый&gt;")
+    assert "<td>1</td><td>Лидер</td>" in text
+    assert "<td>1</td><td>Равный</td>" in text
+    assert "<th>Telegram</th>" in text
+    assert "<td><b>3</b></td><td><b>👉 &lt;Первый&gt; (вы)</b></td>" in text
+    assert "<td><b>@current</b></td>" in text
+    assert "<td>@other&lt;&amp;</td>" in text
+    assert "<td>Равный</td><td>—</td>" in text
+    assert "<td><b>👉 Другой аккаунт (вы)</b></td><td><b>@current</b></td>" in text
+    assert text.count("(вы)") == 2
+    assert "war_menu" in rich_callback_data(text)
+
+    personal_war_points(make_callback(), bot)
+    text = bot.edited[-1][0]
+    assert "Место в рейтинге клана: 3 из 4" in text
+    assert text.index("Место в рейтинге") < text.index("Итог за войну")
+
+
+def test_clan_top_paginates_and_handles_empty_clan(monkeypatch):
+    from tg.war.public import clan_war_top
+
+    database = FakeUserDataDB(UserData(user_id=42))
+    users = [UserData(user_id=i, account_id=i, tag=f"Игрок {i}") for i in range(21)]
+    database.get_clan_users = lambda clan_id: users
+    monkeypatch.setattr("tg.war.get_user_data_db", lambda: database)
+    bot = FakeBot()
+    clan_war_top(make_callback(data="war_top"), bot)
+    assert "war_top/1" in rich_callback_data(bot.edited[-1][0])
+    clan_war_top(make_callback(data="war_top/1"), bot)
+    assert "war_top/0" in rich_callback_data(bot.edited[-1][0])
+    assert "war_top/2" not in rich_callback_data(bot.edited[-1][0])
+    users.clear()
+    clan_war_top(make_callback(data="war_top"), bot)
+    assert "Аккаунтов пока нет" in bot.edited[-1][0]
+
+
+def test_clan_top_requires_account(monkeypatch):
+    from tg.war.public import clan_war_top
+
+    monkeypatch.setattr("tg.war.get_user_data_db", lambda: FakeUserDataDB())
+    bot = FakeBot()
+    clan_war_top(make_callback(data="war_top"), bot)
+    assert bot.answers
+    assert not bot.edited

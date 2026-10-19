@@ -16,6 +16,8 @@ from tg.handlers import HandlerRegistry
 from tg.metrics import observe_score_calculation
 from tg.rich import (
     back_button,
+    button_row,
+    callback_button,
     details,
     edit_rich_message,
     heading,
@@ -26,6 +28,7 @@ from tg.rich import (
 from tg.user_data.common import prompt_for_account_clan
 from tg.utils import format_points, get_ids, get_username
 from tg.war.supplementary import flasks_summary
+from tg.war.ranking import clan_ranking
 
 
 def _war_week_started_on(reference: datetime) -> date:
@@ -215,8 +218,62 @@ def public_war_points(callback_query: CallbackQuery, bot: TeleBot) -> None:
     )
 
 
+def clan_war_top(callback_query: CallbackQuery, bot: TeleBot) -> None:
+    user_id, chat_id, message_id = get_ids(callback_query)
+    account = war.get_user_data_db().get_active_account(user_id)
+    if account is None:
+        bot.answer_callback_query(
+            callback_query.id, "Сначала создайте игровой аккаунт", show_alert=True
+        )
+        return
+    if account.clan_id is None:
+        prompt_for_account_clan(callback_query, bot, account.account_id)
+        return
+    ranking = clan_ranking(account.clan_id, _clan_technologies(account.clan_id))
+    page = int(callback_query.data.split("/")[1]) if "/" in callback_query.data else 0
+    page = min(page, max(0, (len(ranking) - 1) // 20))
+    rows = []
+    for rank, user, points in ranking[page * 20:(page + 1) * 20]:
+        identity = str(user.tag.value or user.username.value or user.user_id.value)
+        is_current = user.user_id.value == user_id
+        username = str(user.username.value or "").lstrip("@")
+        telegram = escape(f"@{username}") if username else "—"
+        player = escape(identity)
+        place = str(rank)
+        if is_current:
+            place = f"<b>{place}</b>"
+            player = f"<b>👉 {player} (вы)</b>"
+            telegram = f"<b>{telegram}</b>"
+        rows.append(
+            f"<tr><td>{place}</td><td>{player}</td><td>{telegram}</td>"
+            f'<td align="right"><b>{format_points(points)}</b></td></tr>'
+        )
+    parts = [
+        heading("Топ игроков клана по очкам войны"),
+        f"<footer>Клан: {escape(getattr(account, 'clan_title', '') or str(account.clan_id))}</footer>",
+        "<p>Итог по очкам войны за сохраненные ресурсы и технологии клана. "
+        "При равных очках место одинаковое.</p>",
+        '<table bordered compact><tr><th>Место</th><th>Игрок</th><th>Telegram</th><th>Очки</th></tr>',
+        *rows,
+        "</table>" if rows else "</table><p>Аккаунтов пока нет.</p>",
+    ]
+    buttons = []
+    if page:
+        buttons.append(callback_button("⬅️ Назад", f"war_top/{page - 1}"))
+    if (page + 1) * 20 < len(ranking):
+        buttons.append(callback_button("Далее ➡️", f"war_top/{page + 1}"))
+    if buttons:
+        parts.append(button_row(tuple(buttons)))
+    parts.append(back_button("⬅️ Очки войны", "war_menu"))
+    edit_rich_message(bot, chat_id, message_id, input_rich_message(parts))
+
+
 def register_handlers(bot: TeleBot) -> None:
     HandlerRegistry(bot).private_callback(
         public_war_points,
         button="war",
+    )
+
+    HandlerRegistry(bot).private_callback(
+        clan_war_top, button=r"war_top(?:/[0-9]+)?",
     )

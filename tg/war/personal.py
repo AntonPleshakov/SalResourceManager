@@ -27,11 +27,13 @@ from tg.rich import (
 )
 from tg.utils import format_points, get_ids, get_username
 from tg.war.supplementary import flasks_summary
+from tg.war.ranking import clan_ranking
 
 
 def _personal_war_points_text(
     user: UserData,
     clan_technologies: ClanTechnologies | None = None,
+    position: str = "",
 ) -> str:
     logger.info("Calculating personal war points user_id=%s", user.user_id.value)
     with observe_score_calculation("personal_summary"):
@@ -64,6 +66,7 @@ def _personal_war_points_text(
         (
             heading("Калькулятор очков войны"),
             account_context(str(user.tag.value)),
+            position,
             highlight_metric("Итог за войну", format_points(report.total)),
             flasks_summary("Колбы аккаунта", user.flasks.value),
             heading("По дням", level=3),
@@ -267,8 +270,19 @@ def personal_war_points(callback_query: CallbackQuery, bot: TeleBot) -> None:
         )
         return
 
+    technologies = _active_clan_technologies(user_id)
+    account = war.get_user_data_db().get_active_account(user_id)
+    position = ""
+    if account is not None and account.clan_id is not None:
+        ranking = clan_ranking(account.clan_id, technologies)
+        for rank, candidate, _ in ranking:
+            if (candidate.account_id.value, candidate.user_id.value) == (
+                user.account_id.value, user.user_id.value
+            ):
+                position = f"<p><b>Место в рейтинге клана: {rank} из {len(ranking)}</b></p>"
+                break
     parts = [
-        _personal_war_points_text(user, _active_clan_technologies(user_id)),
+        _personal_war_points_text(user, technologies, position),
         button_row(
             (
                 callback_button(

@@ -55,6 +55,7 @@ def war_menu(callback_query: CallbackQuery, bot: TeleBot) -> None:
                         callback_button("👥 Общие", "war"),
                     )
                 ),
+                button_row((callback_button("🏆 Топ игроков клана", "war_top"),)),
                 back_button("⬅️ Главное меню", "home"),
             )
         ),
