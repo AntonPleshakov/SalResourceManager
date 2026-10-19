@@ -101,13 +101,18 @@ def show_home_menu(
                             else "primary"
                         ),
                     ),
-                    callback_button("🔬 Технологии", "technologies"),
                 )
             ),
             button_row(
                 (
+                    callback_button("🔬 Технологии", "technologies"),
                     callback_button("🐾 Питомцы", "pets"),
+                )
+            ),
+            button_row(
+                (
                     callback_button("⚔️ Очки войны", "war_menu"),
+                    callback_button("✨ Вознесение", "ascension"),
                 )
             ),
             button_row(

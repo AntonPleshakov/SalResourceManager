@@ -7,6 +7,7 @@ from telebot.types import (
 )
 
 from tg import admins
+from tg import ascension
 from tg import group_registration
 from tg import releases
 from tg import user_data
@@ -92,6 +93,7 @@ def register_handlers(bot: TeleBot):
     group_registration.register_handlers(bot)
     user_data.register_handlers(bot)
     war.register_handlers(bot)
+    ascension.register_handlers(bot)
     releases.register_handlers(bot)
     admins.register_handlers(bot)
     handlers.private_message(

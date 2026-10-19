@@ -128,6 +128,7 @@ def test_home_contains_single_war_points_menu(monkeypatch):
     assert "accounts" in buttons
     assert "pets" in buttons
     assert "war_menu" in buttons
+    assert "ascension" in buttons
     assert "releases" in buttons
     assert "war_calculator" not in buttons
     assert "war" not in buttons
