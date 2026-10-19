@@ -108,6 +108,30 @@ def test_user_dashboard_uses_actionable_prometheus_metrics() -> None:
     )
 
 
+def test_screenshot_and_input_source_widgets_use_selected_period() -> None:
+    dashboard = json.loads(DASHBOARD_FILE.read_text(encoding="utf-8"))
+    panels = {panel["title"]: panel for panel in dashboard["panels"]}
+    screenshots = panels["Обработанные скриншоты за период"]
+    sources = panels["Ручной ввод и скриншоты за период"]
+    assert screenshots["type"] == "stat"
+    assert "sum(increase(srm_screenshots_processed_total[$__range]))" in screenshots["targets"][0]["expr"]
+    assert sources["type"] == "piechart"
+    assert "percent" in sources["options"]["displayLabels"]
+    for source, target in zip(("manual", "screenshot"), sources["targets"]):
+        assert f'srm_resource_inputs_total{{source="{source}"}}[$__range]' in target["expr"]
+    for panel in (screenshots, sources):
+        assert all(target["instant"] and not target["range"] for target in panel["targets"])
+    rectangles = [panel["gridPos"] for panel in dashboard["panels"]]
+    for index, first in enumerate(rectangles):
+        for second in rectangles[index + 1:]:
+            assert (
+                first["x"] + first["w"] <= second["x"]
+                or second["x"] + second["w"] <= first["x"]
+                or first["y"] + first["h"] <= second["y"]
+                or second["y"] + second["h"] <= first["y"]
+            )
+
+
 def test_system_dashboard_uses_process_and_server_metrics() -> None:
     dashboard = json.loads(SYSTEM_DASHBOARD_FILE.read_text(encoding="utf-8"))
     queries = _queries(dashboard)

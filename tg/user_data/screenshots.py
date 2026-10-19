@@ -16,9 +16,10 @@ from resources.screenshot_input import (
     recognize_screenshot, validate_value,
 )
 from resources.user_data import EDITABLE_FIELDS, parse_editable_field_value
+from resources.screenshot_storage import save_screenshot
 import tg.user_data as user_data
 from tg.handlers import HandlerRegistry
-from tg.metrics import record_resource_update
+from tg.metrics import record_resource_update, record_screenshot_processed
 from tg.message_updates import is_message_not_modified
 from tg.rich import (
     account_context, back_button, button_row, callback_button,
@@ -54,7 +55,9 @@ def _load(update, bot, *, check_callback=True):
         session = data.get(_KEY)
         if not isinstance(session, dict):
             return None
-        session = {**session, "values": dict(session.get("values", {}))}
+        session = {**session, "values": dict(session.get("values", {})),
+                   "sources": dict(session.get("sources", {})),
+                   "input_sources": dict(session.get("input_sources", {}))}
     if check_callback and isinstance(update, CallbackQuery):
         if update.data.split("/")[1] != session["token"]:
             bot.answer_callback_query(update.id, "Это устаревший просмотр. Используйте последний.")
@@ -228,26 +231,40 @@ def receive_screenshot(message: Message, bot: TeleBot) -> None:
     if file.file_size and file.file_size > MAX_IMAGE_BYTES:
         _record_upload_error(message, bot, session, "Превышен размер вложения (10 МБ).")
         return
+    screenshot_path = None
     try:
         telegram_file = bot.get_file(file.file_id)
         if telegram_file.file_size and telegram_file.file_size > MAX_IMAGE_BYTES:
             raise ScreenshotError("Отправьте изображение размером до 10 МБ.")
         image = bot.download_file(telegram_file.file_path)
+        screenshot_path = save_screenshot(image, telegram_file.file_path)
         _delete_input(message, bot)
         values = recognize_screenshot(image)
     except ScreenshotError as error:
+        if screenshot_path is not None:
+            record_screenshot_processed("failed")
+        logger.warning("Screenshot recognition failed user_id=%s screenshot_path=%s",
+                       message.from_user.id, screenshot_path)
         _record_upload_error(message, bot, session, str(error))
         return
     except Exception as error:
+        if screenshot_path is not None:
+            record_screenshot_processed("failed")
         # Telegram exceptions may contain file URLs/tokens: never log their text.
-        logger.warning("Screenshot download/recognition failed user_id=%s type=%s",
-                       message.from_user.id, type(error).__name__)
+        logger.warning("Screenshot download/recognition failed user_id=%s type=%s screenshot_path=%s",
+                       message.from_user.id, type(error).__name__, screenshot_path)
         _record_upload_error(message, bot, session, "Ошибка обработки вложения. Попробуйте загрузить повторно.")
         return
+    record_screenshot_processed("found" if values else "empty")
+    if not values:
+        logger.warning("No screenshot values found user_id=%s screenshot_path=%s",
+                       message.from_user.id, screenshot_path)
     latest = _load(message, bot)
     if latest is None or latest["token"] != session["token"]:
         return
     session["values"].update(values)
+    session["sources"].update({name: screenshot_path for name in values})
+    session["input_sources"].update({name: "screenshot" for name in values})
     if not values:
         _add_screenshot_notice(session, "подходящие значения не найдены.")
     _show(message, bot, session)
@@ -282,6 +299,13 @@ def correct_reading(message: Message, bot: TeleBot) -> None:
     except ValueError as error:
         _update_review(message, bot, session, str(error))
         return
+    if value != session["values"][name]:
+        session["input_sources"][name] = "manual"
+        logger.warning(
+            "Screenshot value corrected user_id=%s field=%s old_value=%s new_value=%s screenshot_path=%s",
+            message.from_user.id, name, session["values"][name], value,
+            session["sources"].get(name),
+        )
     session["values"][name] = value
     _show(message, bot, session, "Значение исправлено; ещё не сохранено.")
 
@@ -291,7 +315,10 @@ def drop_reading(update: CallbackQuery, bot: TeleBot) -> None:
     session = _load(update, bot)
     if session is None:
         return
-    session["values"].pop(update.data.split("/")[-1], None)
+    name = update.data.split("/")[-1]
+    session["values"].pop(name, None)
+    session["sources"].pop(name, None)
+    session["input_sources"].pop(name, None)
     _show(update, bot, session, "Показатель исключён из сохранения.")
     bot.answer_callback_query(update.id)
 
@@ -316,7 +343,10 @@ def save_readings(update: CallbackQuery, bot: TeleBot) -> None:
         return
     bot.delete_state(get_ids(update)[0])
     for name in values:
-        record_resource_update(VALUE_EDIT_SECTIONS[name], name)
+        record_resource_update(
+            VALUE_EDIT_SECTIONS[name], name,
+            source=session["input_sources"].get(name, "screenshot"),
+        )
     _edit_view(update, bot, session, _finish_message(session, f"✅ Сохранено показателей: {len(values)}."))
     bot.answer_callback_query(update.id)
 

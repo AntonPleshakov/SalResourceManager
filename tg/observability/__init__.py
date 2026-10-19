@@ -9,7 +9,9 @@ from tg.observability.definitions import (
     METRICS_PORT,
     ApplicationMetrics,
 )
-from tg.observability.domain import observe_score_calculation, record_resource_update
+from tg.observability.domain import (
+    observe_score_calculation, record_resource_update, record_screenshot_processed,
+)
 from tg.observability.handlers import instrument_registered_handlers
 from tg.observability.middleware import (
     TelegramMetricsMiddleware,
@@ -30,6 +32,7 @@ __all__ = [
     "instrument_registered_handlers",
     "observe_score_calculation",
     "record_resource_update",
+    "record_screenshot_processed",
     "register_player_account_metrics",
     "start_metrics_server",
 ]

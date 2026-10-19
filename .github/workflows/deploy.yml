@@ -14,8 +14,14 @@ jobs:
       contents: read
 
     steps:
+      - name: Check out release configuration
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+
       - name: Deploy
         env:
+          BOT_IMAGE: ghcr.io/antonpleshakov/salresourcemanager:sha-${{ github.sha }}
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
           DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
           DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
@@ -26,19 +32,19 @@ jobs:
           mkdir -p "$HOME/.ssh"
           printf '%s\n' "$DEPLOY_SSH_PRIVATE_KEY" > "$HOME/.ssh/deploy_key"
           printf '%s\n' "$DEPLOY_SSH_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          printf '%s\n' "$BOT_IMAGE" > release-image.txt
+          tar -czf - config/grafana/*.json config/grafana/*.yml infra/deploy.sh release-image.txt | \
           ssh -i "$HOME/.ssh/deploy_key" \
             -p "${DEPLOY_PORT:-22}" \
             -o BatchMode=yes \
             -o ConnectTimeout=15 \
             "${DEPLOY_USER}@${DEPLOY_HOST}" \
-            'if [ "$(id -u)" -eq 0 ]; then
-               cd /opt/sal-resource-manager &&
-               docker compose pull bot &&
-               docker compose up -d --force-recreate bot &&
-               docker image prune -f
+            'set -eu
+             release_dir=$(mktemp -d /tmp/sal-resource-manager-deploy.XXXXXXXX)
+             trap '\''rm -rf "$release_dir"'\'' EXIT
+             tar -xzf - -C "$release_dir"
+             if [ "$(id -u)" -eq 0 ]; then
+               sh "$release_dir/infra/deploy.sh" "$release_dir"
              else
-               sudo -n sh -c "cd /opt/sal-resource-manager &&
-                 docker compose pull bot &&
-                 docker compose up -d --force-recreate bot &&
-                 docker image prune -f"
+               sudo -n sh "$release_dir/infra/deploy.sh" "$release_dir"
              fi'

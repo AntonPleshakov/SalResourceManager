@@ -193,6 +193,23 @@ class ApplicationMetrics:
             "Successful player resource updates.",
             ("category", "field"),
         )
+        self.resource_inputs = _counter(
+            registry,
+            "srm_resource_inputs_total",
+            "Successfully saved field values by input source; corrected readings are manual.",
+            ("category", "source"),
+        )
+        for category in ("resources", "technologies", "pets"):
+            for source in ("manual", "screenshot"):
+                self.resource_inputs.labels(category=category, source=source)
+        self.screenshots_processed = _counter(
+            registry,
+            "srm_screenshots_processed_total",
+            "Downloaded screenshots processed by recognition outcome.",
+            ("result",),
+        )
+        for result in ("found", "empty", "failed"):
+            self.screenshots_processed.labels(result=result)
         self.last_resource_update_timestamp = _gauge(
             registry,
             "srm_last_resource_update_timestamp_seconds",

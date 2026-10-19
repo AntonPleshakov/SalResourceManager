@@ -13,6 +13,7 @@ from tg.metrics import (
     instrument_registered_handlers,
     observe_score_calculation,
     record_resource_update,
+    record_screenshot_processed,
     register_player_account_metrics,
     start_metrics_server,
     TelegramMetricsMiddleware,
@@ -324,6 +325,34 @@ def test_resource_updates_record_category_field_and_timestamp() -> None:
     assert registry.get_sample_value(
         "srm_last_resource_update_timestamp_seconds", labels
     ) == 300
+
+
+def test_resource_inputs_count_saved_fields_by_source() -> None:
+    registry = CollectorRegistry()
+    metrics = ApplicationMetrics(registry)
+    for category in ("resources", "technologies", "pets"):
+        for source in ("manual", "screenshot"):
+            assert registry.get_sample_value(
+                "srm_resource_inputs_total", {"category": category, "source": source},
+            ) == 0
+    record_resource_update("resources", "hammers", metrics)
+    record_resource_update("resources", "shells", metrics, source="screenshot")
+    record_resource_update("resources", "hammers", metrics, source="screenshot")
+    assert registry.get_sample_value(
+        "srm_resource_inputs_total", {"category": "resources", "source": "manual"},
+    ) == 1
+    assert registry.get_sample_value(
+        "srm_resource_inputs_total", {"category": "resources", "source": "screenshot"},
+    ) == 2
+
+
+def test_screenshot_outcomes_start_at_zero_and_count_independently() -> None:
+    registry = CollectorRegistry()
+    metrics = ApplicationMetrics(registry)
+    for result in ("found", "empty", "failed"):
+        assert registry.get_sample_value("srm_screenshots_processed_total", {"result": result}) == 0
+        record_screenshot_processed(result, metrics)
+        assert registry.get_sample_value("srm_screenshots_processed_total", {"result": result}) == 1
 
 
 def test_score_calculations_record_result_and_duration() -> None:

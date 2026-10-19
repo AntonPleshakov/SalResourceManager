@@ -1,8 +1,10 @@
 from pathlib import Path
+from functools import partial
 from types import SimpleNamespace
 from unittest.mock import Mock
 
 import pytest
+from prometheus_client import CollectorRegistry
 from telebot import TeleBot
 from telebot.apihelper import ApiTelegramException
 from telebot.storage import StateMemoryStorage
@@ -16,7 +18,9 @@ from db.access_group import AccessGroupDB
 from db.database import Database
 from db.user_data import UserDataDB
 from resources.screenshot_input import MAX_IMAGE_BYTES, ScreenshotError
+from resources import screenshot_storage
 from tg.user_data import screenshots
+from tg.metrics import ApplicationMetrics, record_resource_update, record_screenshot_processed
 
 
 def message(text="", *, photo=False):
@@ -40,6 +44,7 @@ def review_callback(bot, action, name=""):
 
 @pytest.fixture
 def context(tmp_path, monkeypatch):
+    monkeypatch.setattr(screenshot_storage, "SCREENSHOT_DIRECTORY", tmp_path / "screenshots")
     database = Database(tmp_path / "accounts.db")
     AccessGroupDB(database).add_group(-100123, "Clan")
     users = UserDataDB(database)
@@ -60,6 +65,15 @@ def context(tmp_path, monkeypatch):
     bot.delete_message = Mock()
     screenshots.start_screenshot(callback("screenshot/start"), bot)
     return bot, users, account
+
+
+@pytest.fixture
+def input_metrics(context, monkeypatch):
+    registry = CollectorRegistry()
+    metrics = ApplicationMetrics(registry)
+    monkeypatch.setattr(screenshots, "record_resource_update", partial(record_resource_update, metrics=metrics))
+    monkeypatch.setattr(screenshots, "record_screenshot_processed", partial(record_screenshot_processed, metrics=metrics))
+    return registry
 
 
 def test_preview_correction_and_confirmation_save_only_found_values(context):
@@ -314,3 +328,117 @@ def test_correction_errors_and_confirmation_edit_the_original_message(context):
     assert all(call.kwargs["message_id"] == 1 for call in bot.edit_message_text.call_args_list)
     bot.send_message.assert_not_called()
     bot.send_rich_message.assert_not_called()
+
+
+def test_empty_screenshot_is_saved_before_recognition_and_logged(context, monkeypatch):
+    bot, _, _ = context
+    log = Mock()
+    monkeypatch.setattr(screenshots, "logger", log)
+
+    def recognize(image):
+        saved, = screenshot_storage.SCREENSHOT_DIRECTORY.iterdir()
+        assert saved.read_bytes() == image == b"image"
+        return {}
+
+    monkeypatch.setattr(screenshots, "recognize_screenshot", recognize)
+    screenshots.receive_screenshot(message(photo=True), bot)
+    saved, = screenshot_storage.SCREENSHOT_DIRECTORY.iterdir()
+    log.warning.assert_called_once_with(
+        "No screenshot values found user_id=%s screenshot_path=%s", 42, str(saved),
+    )
+
+
+@pytest.mark.parametrize("replacement", [{"hammers": 200000}, {"shells": 300}, {}])
+def test_correction_logs_source_of_latest_reading(context, monkeypatch, replacement):
+    bot, _, _ = context
+    screenshots.receive_screenshot(message(photo=True), bot)
+    first, = screenshot_storage.SCREENSHOT_DIRECTORY.iterdir()
+    monkeypatch.setattr(screenshots, "recognize_screenshot", lambda _: replacement)
+    screenshots.receive_screenshot(message(photo=True), bot)
+    latest = max(screenshot_storage.SCREENSHOT_DIRECTORY.iterdir())
+    log = Mock()
+    monkeypatch.setattr(screenshots, "logger", log)
+    screenshots.edit_reading(review_callback(bot, "edit", "hammers"), bot)
+    screenshots.correct_reading(message("ошибка"), bot)
+    old_value = replacement.get("hammers", 194691)
+    screenshots.correct_reading(message(str(old_value)), bot)
+    log.warning.assert_not_called()
+    screenshots.edit_reading(review_callback(bot, "edit", "hammers"), bot)
+    screenshots.correct_reading(message("195к"), bot)
+    log.warning.assert_called_once_with(
+        "Screenshot value corrected user_id=%s field=%s old_value=%s new_value=%s screenshot_path=%s",
+        42, "hammers", old_value, 195000,
+        str(latest if "hammers" in replacement else first),
+    )
+
+
+def test_unreadable_screenshot_is_retained_and_logged(context, monkeypatch):
+    bot, _, _ = context
+    log = Mock()
+    monkeypatch.setattr(screenshots, "logger", log)
+
+    def failed(_):
+        raise ScreenshotError("Ошибка чтения")
+
+    monkeypatch.setattr(screenshots, "recognize_screenshot", failed)
+    screenshots.receive_screenshot(message(photo=True), bot)
+    saved, = screenshot_storage.SCREENSHOT_DIRECTORY.iterdir()
+    assert saved.read_bytes() == b"image"
+    log.warning.assert_called_once_with(
+        "Screenshot recognition failed user_id=%s screenshot_path=%s", 42, str(saved),
+    )
+
+
+@pytest.mark.parametrize("corrected,replaced", [(False, False), (True, False), (True, True)])
+def test_saved_screenshot_metrics_use_final_source_and_exclude_dropped_fields(
+    context, input_metrics, monkeypatch, corrected, replaced,
+):
+    bot, _, _ = context
+    monkeypatch.setattr(screenshots, "recognize_screenshot", lambda _: {"hammers": 100, "shells": 200})
+    screenshots.receive_screenshot(message(photo=True), bot)
+    screenshots.edit_reading(review_callback(bot, "edit", "hammers"), bot)
+    screenshots.correct_reading(message("101" if corrected else "100"), bot)
+    if replaced:
+        monkeypatch.setattr(screenshots, "recognize_screenshot", lambda _: {"hammers": 300})
+        screenshots.receive_screenshot(message(photo=True), bot)
+    screenshots.drop_reading(review_callback(bot, "drop", "shells"), bot)
+    labels = {"category": "resources", "source": "manual"}
+    assert input_metrics.get_sample_value("srm_resource_inputs_total", labels) == 0
+    assert input_metrics.get_sample_value("srm_resource_inputs_total", {**labels, "source": "screenshot"}) == 0
+    save = review_callback(bot, "save")
+    screenshots.save_readings(save, bot)
+    screenshots.save_readings(save, bot)
+    manual = int(corrected and not replaced)
+    assert input_metrics.get_sample_value("srm_resource_inputs_total", labels) == manual
+    assert input_metrics.get_sample_value("srm_resource_inputs_total", {**labels, "source": "screenshot"}) == 1 - manual
+
+
+def test_screenshot_metrics_count_recognition_outcomes(context, input_metrics, monkeypatch):
+    bot, _, _ = context
+    screenshots.receive_screenshot(message(photo=True), bot)
+    monkeypatch.setattr(screenshots, "recognize_screenshot", lambda _: {})
+    screenshots.receive_screenshot(message(photo=True), bot)
+
+    def failed(_):
+        raise ScreenshotError("Ошибка чтения")
+
+    monkeypatch.setattr(screenshots, "recognize_screenshot", failed)
+    screenshots.receive_screenshot(message(photo=True), bot)
+    oversized = message(photo=True)
+    oversized.photo[-1].file_size = MAX_IMAGE_BYTES + 1
+    screenshots.receive_screenshot(oversized, bot)
+    bot.download_file.side_effect = RuntimeError("download failed")
+    screenshots.receive_screenshot(message(photo=True), bot)
+    for result in ("found", "empty", "failed"):
+        assert input_metrics.get_sample_value("srm_screenshots_processed_total", {"result": result}) == 1
+
+
+def test_failed_save_does_not_count_screenshot_values(context, input_metrics, monkeypatch):
+    bot, users, _ = context
+    screenshots.receive_screenshot(message(photo=True), bot)
+    monkeypatch.setattr(users, "set_values", Mock(side_effect=ValueError("unavailable")))
+    screenshots.save_readings(review_callback(bot, "save"), bot)
+    for source in ("manual", "screenshot"):
+        assert input_metrics.get_sample_value(
+            "srm_resource_inputs_total", {"category": "resources", "source": source},
+        ) == 0

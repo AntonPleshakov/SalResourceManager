@@ -11,6 +11,7 @@ from tg.observability import (
     instrument_registered_handlers,
     observe_score_calculation,
     record_resource_update,
+    record_screenshot_processed,
     register_player_account_metrics,
     start_metrics_server,
 )
@@ -27,6 +28,7 @@ __all__ = [
     "instrument_registered_handlers",
     "observe_score_calculation",
     "record_resource_update",
+    "record_screenshot_processed",
     "register_player_account_metrics",
     "start_metrics_server",
 ]

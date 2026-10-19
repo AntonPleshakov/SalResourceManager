@@ -10,10 +10,20 @@ def record_resource_update(
     field: str,
     metrics: ApplicationMetrics = APPLICATION_METRICS,
     wall_clock: Callable[[], float] = time,
+    *,
+    source: str = "manual",
 ) -> None:
     labels = {"category": category, "field": field}
     metrics.resource_updates.labels(**labels).inc()
+    metrics.resource_inputs.labels(category=category, source=source).inc()
     metrics.last_resource_update_timestamp.labels(**labels).set(wall_clock())
+
+
+def record_screenshot_processed(
+    result: str,
+    metrics: ApplicationMetrics = APPLICATION_METRICS,
+) -> None:
+    metrics.screenshots_processed.labels(result=result).inc()
 
 
 @contextmanager
