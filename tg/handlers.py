@@ -159,7 +159,7 @@ def _deny_policy_access(
         "reason=%s",
         user_id,
         get_username(update),
-        type(error).__name__,
+        repr(error),
     )
     if isinstance(update, CallbackQuery):
         bot.answer_callback_query(update.id, text, show_alert=True)

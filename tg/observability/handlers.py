@@ -8,7 +8,7 @@ from tg.observability.definitions import (
     HANDLER_ACTION_KEY,
     ApplicationMetrics,
 )
-from tg.observability.updates import log_context, requester_name
+from tg.observability.updates import input_description, log_context, requester_name
 
 
 def _handler_action(handler: Callable) -> str:
@@ -57,6 +57,14 @@ def _instrument_handler(
         metrics.handlers_in_progress.labels(**labels).inc()
         result = "failed"
         error_type = "none"
+        error_reason = "none"
+        user_id, chat_id, update_id = log_context(update)
+        submitted_input = input_description(update)
+        logger.debug(
+            "Telegram handler started event_type=%s handler=%s user_id=%s "
+            "chat_id=%s update_id=%s input=%s",
+            event_type, action, user_id, chat_id, update_id, submitted_input,
+        )
         try:
             handler_result = handler(
                 update,
@@ -66,6 +74,7 @@ def _instrument_handler(
             return handler_result
         except BaseException as error:
             error_type = type(error).__name__
+            error_reason = ascii(str(error))
             raise
         finally:
             duration = max(0.0, clock() - started_at)
@@ -73,10 +82,11 @@ def _instrument_handler(
             metrics.handler_calls.labels(**labels, result=result).inc()
             metrics.handler_duration.labels(**labels).observe(duration)
             user_id, chat_id, update_id = log_context(update)
-            logger.info(
+            log_result = logger.warning if result == "failed" else logger.info
+            log_result(
                 "Telegram handler finished event_type=%s handler=%s "
                 "result=%s duration_seconds=%.3f user_id=%s chat_id=%s "
-                "update_id=%s error_type=%s requester=%s",
+                "update_id=%s error_type=%s input=%s reason=%s requester=%s",
                 event_type,
                 action,
                 result,
@@ -85,6 +95,8 @@ def _instrument_handler(
                 chat_id,
                 update_id,
                 error_type,
+                submitted_input,
+                error_reason,
                 requester_name(update),
             )
 

@@ -358,11 +358,30 @@ def change_hatch_batch_count(callback_query: CallbackQuery, bot: TeleBot) -> Non
         )
         return
     current = getattr(user, level.batch_field_name).value
+    updated = max(0, current + delta)
+    logger.info(
+        "Hatch batch change requested user_id=%s username=%s account_id=%s "
+        "field=%s current=%s delta=%s requested=%s",
+        user_id, username, user.account_id.value,
+        level.batch_field_name, current, delta, updated,
+    )
+    if updated == current:
+        logger.warning(
+            "Hatch batch change rejected user_id=%s account_id=%s field=%s "
+            "current=%s delta=%s reason=minimum_reached result=unchanged",
+            user_id, user.account_id.value, level.batch_field_name, current, delta,
+        )
+        bot.answer_callback_query(
+            callback_query.id,
+            "Количество пакетов уже равно нулю. Уменьшить его нельзя.",
+            show_alert=True,
+        )
+        return
     user_data.get_user_data_db().set_value(
         user_id,
         username,
         level.batch_field_name,
-        max(0, current + delta),
+        updated,
         account_id=user.account_id.value,
     )
     record_resource_update("pets", level.batch_field_name)

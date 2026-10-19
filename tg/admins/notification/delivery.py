@@ -54,7 +54,8 @@ def send_standard(bot: TeleBot, plan: StandardNotificationPlan) -> BroadcastResu
         )
 
     result = _broadcast(plan.recipients, deliver, log_failure)
-    logger.info(
+    log_result = logger.warning if result.failed else logger.info
+    log_result(
         "Standard admin notification sent=%s failed=%s skipped=%s",
         result.sent,
         result.failed,
@@ -80,10 +81,11 @@ def send_group(
         bot.send_message(group_id, message, disable_notification=False)
 
     def log_failure(_: str, error: Exception) -> None:
-        logger.warning("Unable to send custom admin notification: %s", error)
+        logger.warning("Unable to send custom admin notification group_id=%s reason=%r", group_id, str(error))
 
     result = _broadcast(messages, deliver, log_failure)
-    logger.info(
+    log_result = logger.warning if result.failed else logger.info
+    log_result(
         "Custom admin notification sent=%s failed=%s",
         result.sent,
         result.failed,
@@ -117,7 +119,8 @@ def send_private(
         )
 
     result = _broadcast(grouped_users.items(), deliver, log_failure)
-    logger.info(
+    log_result = logger.warning if result.failed else logger.info
+    log_result(
         "Custom private notification sent=%s failed=%s",
         result.sent,
         result.failed,

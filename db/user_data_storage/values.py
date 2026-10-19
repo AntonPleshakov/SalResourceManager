@@ -61,11 +61,18 @@ class UserDataValues:
                 raise ValueError("Игровой аккаунт не найден")
             user = self.get_or_create(user_id, username, tag, clan_id)
         user.username.value = username
+        previous_values = {name: getattr(user, name).value for name in values}
         for field_name, value in values.items():
             user.set_value(field_name, value)
             if field_name in UPDATED_AT_FIELDS:
                 user.mark_updated(field_name, field_updated_on)
         self._save_user(user)
+        logger.info(
+            "DB: values saved user_id=%s username=%s account_id=%s "
+            "previous_values=%r values=%r updated_on=%s result=saved",
+            user_id, username, user.account_id.value,
+            previous_values, values, field_updated_on,
+        )
         return user
 
     def set_value(
@@ -87,11 +94,5 @@ class UserDataValues:
             tag=tag,
             account_id=account_id,
             clan_id=clan_id,
-        )
-        logger.info(
-            "DB: updated user_id=%s account_id=%s field=%s",
-            user_id,
-            user.account_id.value,
-            field_name,
         )
         return user

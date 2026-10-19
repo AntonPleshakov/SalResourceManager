@@ -154,7 +154,7 @@ def del_admin_approved(context: ClanAdminContext) -> None:
             "Unable to revoke admin access target_id=%s group_id=%s: %s",
             admin_id,
             group_id,
-            type(error).__name__,
+            repr(error),
         )
         bot.answer_callback_query(
             callback_query.id,

@@ -116,12 +116,17 @@ def _parse_fill_value(
             message.text,
         )
     except ValueError as error:
-        logger.info(
-            "Invalid section input user_id=%s username=%s section=%s field=%s",
+        logger.warning(
+            "Invalid section input user_id=%s username=%s section=%s field=%s "
+            "account_id=%s step=%s input=%s reason=%r",
             message.from_user.id,
             get_username(message),
             context.state.section,
             field.name,
+            context.state.account_id,
+            context.state.index,
+            ascii(message.text),
+            str(error),
         )
         _show_fill_error(message, bot, context, error)
         return None
@@ -149,12 +154,16 @@ def _persist_fill_value(
     except ValueError as error:
         logger.warning(
             "Rejected user data value user_id=%s username=%s section=%s "
-            "field=%s reason=%s",
+            "field=%s account_id=%s step=%s value=%s input=%s reason=%r",
             user_id,
             get_username(message),
             context.state.section,
             field.name,
-            error,
+            context.state.account_id,
+            context.state.index,
+            value,
+            ascii(message.text),
+            str(error),
         )
         _show_fill_error(message, bot, context, error)
         return None

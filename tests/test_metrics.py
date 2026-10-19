@@ -211,6 +211,7 @@ def test_registered_handler_metrics_include_action_duration_and_log(
     )
     data = {}
     message = make_message()
+    message.text = "1\u202f200\n"
 
     bot.message_handlers[0]["function"](message, data, bot)
 
@@ -233,7 +234,7 @@ def test_registered_handler_metrics_include_action_duration_and_log(
     log_info.assert_called_once_with(
         "Telegram handler finished event_type=%s handler=%s "
         "result=%s duration_seconds=%.3f user_id=%s chat_id=%s "
-        "update_id=%s error_type=%s requester=%s",
+        "update_id=%s error_type=%s input=%s reason=%s requester=%s",
         "message",
         action,
         "completed",
@@ -241,6 +242,8 @@ def test_registered_handler_metrics_include_action_duration_and_log(
         42,
         42,
         1,
+        "none",
+        "'1\\u202f200\\n'",
         "none",
         "tester",
     )
@@ -259,8 +262,10 @@ def test_failed_callback_handler_logs_result_and_exception(monkeypatch) -> None:
         callback_query_handlers = [{"function": failed_callback}]
 
     bot = FakeBot()
+    log_warning = Mock()
     log_info = Mock()
     monkeypatch.setattr("tg.metrics.logger.info", log_info)
+    monkeypatch.setattr("tg.metrics.logger.warning", log_warning)
     instrument_registered_handlers(
         bot,
         metrics,
@@ -273,10 +278,11 @@ def test_failed_callback_handler_logs_result_and_exception(monkeypatch) -> None:
         )
 
     action = f"{__name__}.failed_callback"
-    log_info.assert_called_once_with(
+    log_info.assert_not_called()
+    log_warning.assert_called_once_with(
         "Telegram handler finished event_type=%s handler=%s "
         "result=%s duration_seconds=%.3f user_id=%s chat_id=%s "
-        "update_id=%s error_type=%s requester=%s",
+        "update_id=%s error_type=%s input=%s reason=%s requester=%s",
         "callback_query",
         action,
         "failed",
@@ -285,6 +291,8 @@ def test_failed_callback_handler_logs_result_and_exception(monkeypatch) -> None:
         42,
         "callback-1",
         "RuntimeError",
+        "'resources'",
+        "'failed'",
         "tester",
     )
 

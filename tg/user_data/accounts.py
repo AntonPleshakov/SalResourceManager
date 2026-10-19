@@ -48,7 +48,7 @@ def _get_group_tag(bot: TeleBot, user_id: int, group_id: int) -> str | None:
         logger.warning(
             "Unable to get group tag for user_id=%s: %s",
             user_id,
-            type(error).__name__,
+            repr(error),
         )
         return None
 

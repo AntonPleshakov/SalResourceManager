@@ -6,6 +6,7 @@ import resources.user_data as user_data_resources
 from logger.app_logger import logger
 import tg.user_data as user_data
 from tg.metrics import record_resource_update
+from tg.message_updates import edit_validation_message
 from tg.user_data.common import (
     edit_menu_message,
     get_active_user_or_prompt,
@@ -92,7 +93,8 @@ def _reply_value_error(
     escaped_error = formatting.escape_html(str(error))
     keyboard = InlineKeyboardMarkup(row_width=1)
     keyboard.add(Button("✖️ Отмена", state.section).inline())
-    bot.edit_message_text(
+    edit_validation_message(
+        bot,
         f"⚠️ <b>Не удалось сохранить «{state.field.title}»</b>\n\n"
         f"{escaped_error}.\n\n"
         f"Отправьте новое значение.{hint}",
@@ -111,11 +113,15 @@ def _parse_value(
             message.text,
         )
     except ValueError as error:
-        logger.info(
-            "Invalid user data input user_id=%s username=%s field=%s",
+        logger.warning(
+            "Invalid user data input user_id=%s username=%s field=%s "
+            "account_id=%s input=%s reason=%r",
             message.from_user.id,
             get_username(message),
             state.field_name,
+            state.account_id,
+            ascii(message.text),
+            str(error),
         )
         _reply_value_error(message, bot, state, error, show_hint=True)
         return None
@@ -140,11 +146,15 @@ def _persist_value(
         return updated_user
     except ValueError as error:
         logger.warning(
-            "Rejected user data value user_id=%s username=%s field=%s reason=%s",
+            "Rejected user data value user_id=%s username=%s field=%s "
+            "account_id=%s value=%s input=%s reason=%r",
             user_id,
             get_username(message),
             state.field_name,
-            error,
+            state.account_id,
+            value,
+            ascii(message.text),
+            str(error),
         )
         _reply_value_error(message, bot, state, error)
         return None

@@ -270,3 +270,26 @@ def test_daily_batch_editor_changes_each_level_independently(monkeypatch):
         ("pets", "hatch_batches_ultimate"),
     ]
     assert "Всего в день: <b>2</b>" in bot.edited[-1][0]
+
+
+def test_batch_minus_at_zero_explains_limit_without_saving_or_editing(monkeypatch):
+    database = configure(monkeypatch)
+    database.user.hatch_batches_legendary.value = 0
+    bot = FakeBot()
+    updates = []
+    monkeypatch.setattr(
+        "tg.user_data.pets.record_resource_update",
+        lambda category, field: updates.append((category, field)),
+    )
+
+    def unexpected_save(*args, **kwargs):
+        raise AssertionError("An unchanged value must not be saved")
+
+    monkeypatch.setattr(database, "set_value", unexpected_save)
+    change_hatch_batch_count(make_callback("pets/batches/4/minus"), bot)
+
+    assert database.user.hatch_batches_legendary.value == 0
+    assert updates == []
+    assert bot.edited == []
+    assert "нулю" in bot.answers[-1][0][1]
+    assert bot.answers[-1][1]["show_alert"] is True

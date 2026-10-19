@@ -11,6 +11,7 @@ from tg.user_data.editing_common import (
     format_field_input_value,
 )
 from tg.utils import Button, get_ids
+from tg.message_updates import edit_validation_message
 
 
 Update = Message | CallbackQuery
@@ -73,6 +74,13 @@ def show_fill_step(
     notice: str = "",
 ) -> None:
     chat_id = get_ids(update)[1]
+    if error:
+        edit_validation_message(
+            bot, fill_prompt(context, error, notice), chat_id,
+            context.state.prompt_message_id,
+            reply_markup=fill_keyboard(context.state),
+        )
+        return
     bot.edit_message_text(
         fill_prompt(context, error, notice),
         chat_id,

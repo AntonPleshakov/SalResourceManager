@@ -23,6 +23,7 @@ from tg.metrics import (
     TelegramMetricsMiddleware,
 )
 from tg.middleware import NoOpPostProcessMiddleware, NoOpPreProcessMiddleware
+from tg.message_updates import is_message_not_modified
 from tg.polling import serve_polling
 from tg.reminders import ReminderScheduler
 from tg.scheduling import AdminReconciliationScheduler
@@ -60,7 +61,11 @@ class AlwaysAnswerCallbackQueryMiddleware(NoOpPostProcessMiddleware):
         try:
             self._bot.answer_callback_query(message.id)
         except telebot.apihelper.ApiTelegramException as error:
-            logger.info("Unable to answer callback query: %s", error)
+            logger.warning(
+                "Unable to answer callback query user_id=%s callback_id=%s "
+                "data=%r reason=%r",
+                message.from_user.id, message.id, message.data, str(error),
+            )
         return None
 
 class UserFacingErrorMiddleware(NoOpPreProcessMiddleware):
@@ -75,17 +80,20 @@ class UserFacingErrorMiddleware(NoOpPreProcessMiddleware):
         _: dict,
         exception: BaseException | None,
     ) -> None:
-        if exception is None:
+        if exception is None or is_message_not_modified(exception):
             return
 
         user_id, chat_id = get_ids(update)[:2]
         keyboard = InlineKeyboardMarkup(row_width=1)
         keyboard.add(Button("Вернуться в меню", "home").inline())
+        text = (
+            "Не удалось выполнить действие из-за неожиданной ошибки. "
+            "Вернитесь в меню и попробуйте снова."
+        )
         try:
             self._bot.send_message(
                 chat_id,
-                "Не удалось выполнить действие из-за неожиданной ошибки. "
-                "Вернитесь в меню и попробуйте снова.",
+                text,
                 reply_markup=keyboard,
             )
         except Exception as notification_error:
@@ -98,6 +106,13 @@ class UserFacingErrorMiddleware(NoOpPreProcessMiddleware):
 
 class BotExceptionHandler(ExceptionHandler):
     def handle(self, exception: BaseException):
+        if is_message_not_modified(exception):
+            logger.warning(
+                "Telegram message unchanged action=review_ux reason=%r",
+                str(exception),
+                exc_info=True,
+            )
+            return True
         logger.exception("Telegram update processing exception: %s", exception)
         return True
 

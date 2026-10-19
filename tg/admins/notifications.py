@@ -282,7 +282,7 @@ def receive_custom_notification_text(context: ClanAdminContext) -> None:
     user_id, chat_id = get_ids(message)[:2]
     text = (message.text or "").strip()
     if not text:
-        logger.info(
+        logger.warning(
             "Empty custom notification submitted by admin_id=%s username=%s",
             message.from_user.id,
             get_username(message),
@@ -290,7 +290,7 @@ def receive_custom_notification_text(context: ClanAdminContext) -> None:
         bot.reply_to(message, "Текст уведомления не должен быть пустым.")
         return
     if len(text) > MAX_CUSTOM_TEXT_LENGTH:
-        logger.info(
+        logger.warning(
             "Oversized custom notification submitted by admin_id=%s username=%s length=%d",
             message.from_user.id,
             get_username(message),

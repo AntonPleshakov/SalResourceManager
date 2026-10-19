@@ -44,7 +44,7 @@ def require_admin_access(
             "Unable to verify clan admin membership user_id=%s group_id=%s: %s",
             user_id,
             group_id,
-            type(error).__name__,
+            repr(error),
         )
         raise AdminAccessCheckError(
             "Не удалось проверить участие администратора в клане"
@@ -58,7 +58,7 @@ def require_admin_access(
                 "user_id=%s group_id=%s: %s",
                 user_id,
                 group_id,
-                type(error).__name__,
+                repr(error),
             )
             raise AdminAccessCheckError(
                 "Не удалось отозвать доступ покинувшего клан администратора"

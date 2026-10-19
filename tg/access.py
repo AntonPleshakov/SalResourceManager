@@ -88,7 +88,7 @@ class GroupAccessMiddleware(NoOpPostProcessMiddleware):
                 self._bot.reply_to(update, text)
         except Exception as error:
             logger.warning(
-                "Unable to send group access denial: %s", type(error).__name__
+                "Unable to send group access denial: %s", repr(error)
             )
 
     def pre_process(

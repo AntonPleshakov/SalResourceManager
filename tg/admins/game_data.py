@@ -449,7 +449,7 @@ def check_google_access_request(context: ClanAdminContext) -> None:
         logger.exception(
             "Unable to process Google access request user_id=%s: %s",
             user_id,
-            type(error).__name__,
+            repr(error),
         )
         if spreadsheet_url is not None:
             _show_game_data_screen(

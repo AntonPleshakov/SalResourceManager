@@ -39,7 +39,7 @@ def get_user_clans(
                 "Unable to check clan membership group_id=%s user_id=%s: %s",
                 group.group_id,
                 user_id,
-                type(error).__name__,
+                repr(error),
             )
             continue
         allowed = (
@@ -68,7 +68,7 @@ def refresh_user_accounts(bot: TeleBot, user_id: int, database) -> None:
                 "user_id=%s: %s",
                 clan_id,
                 user_id,
-                type(error).__name__,
+                repr(error),
             )
             raise ClanMembershipCheckError(
                 "Не удалось проверить участие в клане"
@@ -88,7 +88,7 @@ def refresh_clan_accounts(bot: TeleBot, clan_id: int, database) -> None:
                 "user_id=%s: %s",
                 clan_id,
                 user_id,
-                type(error).__name__,
+                repr(error),
             )
             raise ClanMembershipCheckError(
                 "Не удалось проверить состав клана"
@@ -139,5 +139,5 @@ def sync_migrated_clan_titles(bot: TeleBot, groups: AccessGroupDB) -> None:
             logger.warning(
                 "Unable to initialize migrated clan title group_id=%s: %s",
                 group.group_id,
-                type(error).__name__,
+                repr(error),
             )

@@ -1,6 +1,7 @@
 from pathlib import Path
 
 from telebot.types import CallbackQuery, Chat, Message, User
+from telebot.apihelper import ApiTelegramException
 
 from config import config
 from config.config import reset_config
@@ -96,3 +97,14 @@ def test_notification_failure_does_not_raise_another_error():
     middleware = UserFacingErrorMiddleware(FakeBot(fail=True))
 
     middleware.post_process(make_message(), {}, RuntimeError("database failed"))
+
+
+def test_unchanged_message_does_not_notify_user():
+    bot = FakeBot()
+    error = ApiTelegramException(
+        "editMessageText", "error",
+        {"error_code": 400, "description": "Bad Request: message is not modified"},
+    )
+    UserFacingErrorMiddleware(bot).post_process(make_message(), {}, error)
+    assert bot.sent == []
+    assert bot.answers == []

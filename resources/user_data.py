@@ -107,8 +107,18 @@ def validate_editable_field_value(field_name: str, value: int) -> int:
     return value
 
 
+def _normalize_number(value: str) -> str:
+    return (
+        value.strip()
+        .replace(" ", "")
+        .replace("\u00a0", "")
+        .replace("\u202f", "")
+        .replace("_", "")
+    )
+
+
 def parse_non_negative_int(value: str) -> int:
-    normalized = value.strip().replace(" ", "").replace("_", "")
+    normalized = _normalize_number(value)
     if not normalized.isdigit():
         raise ValueError("Нужно ввести целое неотрицательное число")
     return int(normalized)
@@ -119,9 +129,7 @@ def parse_editable_field_value(field_name: str, value: str) -> int:
         parsed = parse_non_negative_int(value)
         return validate_editable_field_value(field_name, parsed)
 
-    normalized = (
-        value.strip().casefold().replace(" ", "").replace("_", "")
-    )
+    normalized = _normalize_number(value).casefold()
     explicit_thousands = normalized.endswith(("к", "k"))
     if explicit_thousands:
         normalized = normalized[:-1]

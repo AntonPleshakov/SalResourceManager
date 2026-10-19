@@ -47,7 +47,7 @@ def reconcile_clan_admins(
                     "user_id=%s group_id=%s: %s",
                     user_id,
                     group.group_id,
-                    type(error).__name__,
+                    repr(error),
                 )
                 continue
             if is_group_member(member):
@@ -67,7 +67,7 @@ def reconcile_clan_admins(
                     "user_id=%s group_id=%s: %s",
                     user_id,
                     group.group_id,
-                    type(error).__name__,
+                    repr(error),
                 )
                 continue
             revoked += 1
@@ -78,7 +78,8 @@ def reconcile_clan_admins(
         check_failed=check_failed,
         revoke_failed=revoke_failed,
     )
-    logger.info(
+    log_result = logger.warning if check_failed or revoke_failed else logger.info
+    log_result(
         "Clan admin reconciliation completed current=%d revoked=%d "
         "check_failed=%d revoke_failed=%d",
         result.current,
