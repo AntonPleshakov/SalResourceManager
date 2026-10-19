@@ -191,3 +191,35 @@ def test_blank_and_invalid_images(monkeypatch):
     stream = BytesIO()
     Image.new("RGB", (591, 1280), "white").save(stream, format="PNG")
     assert recognition.recognize_screenshot(stream.getvalue()) == {}
+
+
+@pytest.mark.parametrize("label", ["", "Stufe", "Nivel"])
+def test_forge_level_does_not_require_localized_button_label(label):
+    import cv2
+    import numpy as np
+
+    if not recognition.ocr_available():
+        pytest.skip("Tesseract unavailable")
+    image = cv2.imdecode(np.frombuffer((FIXTURES / "screen_02.png").read_bytes(), dtype=np.uint8), 1)
+    # Preserve only the digit 8, replacing both localized text fragments.
+    image[960:980, 400:475] = (230, 170, 0)
+    image[980:1002, 398:456] = (230, 170, 0)
+    cv2.putText(image, label, (398, 997), cv2.FONT_HERSHEY_SIMPLEX,
+                .45, (255, 255, 255), 1, cv2.LINE_AA)
+    success, encoded = cv2.imencode(".png", image)
+    assert success
+    assert recognition.recognize_screenshot(encoded.tobytes()) == EXPECTED[1]
+
+
+@pytest.mark.parametrize("readings", [
+    ["8", "9", ""], ["0", "0", "0"], ["36", "36", "36"],
+    ["8.0", "8.0", "8.0"], ["8 9", "8 9", "8 9"],
+])
+def test_forge_level_omits_ambiguous_or_invalid_readings(monkeypatch, readings):
+    import numpy as np
+
+    results = iter(readings)
+    monkeypatch.setattr(recognition, "_ocr", lambda *args, **kwargs: next(results))
+    assert recognition._read_forge_level(
+        np.full((200, 400, 3), 255, dtype=np.uint8), (100, 150, 28, 24),
+    ) is None

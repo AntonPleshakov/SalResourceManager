@@ -209,6 +209,40 @@ def _read_balance(image, position, name: str) -> int | None:
     return ranked[0]
 
 
+def _read_forge_level(image, position) -> int | None:
+    import cv2
+
+    x, y, w, h = position
+    # The blue level button is to the right of the hammer counter. Read its
+    # lower text row, which contains the level in every interface language.
+    crop = image[max(0, y - 31):y, x + 134:min(x + 245, image.shape[1])]
+    if not crop.size:
+        return None
+    gray = cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY)
+    readings: dict[int, int] = {}
+    for threshold in (180, 200, 220):
+        mask = cv2.threshold(gray, threshold, 255, cv2.THRESH_BINARY_INV)[1]
+        # Separate the trailing number from the translated label at the word gap.
+        occupied = (mask == 0).any(axis=0)
+        columns = occupied.nonzero()[0]
+        if not len(columns):
+            continue
+        start = int(columns[0])
+        for left, right in zip(columns, columns[1:]):
+            if right - left >= 5:
+                start = int(right)
+        mask = mask[:, start:int(columns[-1]) + 1]
+        mask = cv2.resize(mask, None, fx=3, fy=3, interpolation=cv2.INTER_CUBIC)
+        mask = cv2.copyMakeBorder(mask, 12, 12, 12, 12, cv2.BORDER_CONSTANT, value=255)
+        text = _ocr(mask, digits=True, psm=8)
+        if not re.fullmatch(r"[0-9]{1,2}", text):
+            continue
+        level = int(text)
+        if 1 <= level <= 35:
+            readings[level] = readings.get(level, 0) + 1
+    return next((level for level, count in readings.items() if count >= 2), None)
+
+
 def _recognize(image_bytes: bytes) -> dict[str, int]:
     import cv2
     import numpy as np
@@ -237,14 +271,9 @@ def _recognize(image_bytes: bytes) -> dict[str, int]:
         if amount is not None:
             values[name] = amount
         if name == "hammers":
-            x, y, w, h = position
-            forge = image[max(0, y - 65):y + 1, x + 130:min(x + 245, image.shape[1])]
-            forge_gray = cv2.cvtColor(forge, cv2.COLOR_BGR2GRAY)
-            forge_mask = cv2.threshold(forge_gray, 200, 255, cv2.THRESH_BINARY_INV)[1]
-            text = _ocr(cv2.resize(forge_mask, None, fx=3, fy=3))
-            match = re.search(r"(?:forge\s+level|кузниц[аы]\s+уровень|уровень\s+кузницы)\s*(\d+)", text, re.I)
-            if match and 1 <= int(match[1]) <= 35:
-                values["forge_level"] = int(match[1])
+            level = _read_forge_level(image, position)
+            if level is not None:
+                values["forge_level"] = level
     height, width = image.shape[:2]
     panel = image[int(height * .25):int(height * .77), int(width * .1):int(width * .9)]
     gray = cv2.cvtColor(panel, cv2.COLOR_BGR2GRAY)
