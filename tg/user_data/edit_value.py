@@ -8,6 +8,7 @@ import tg.user_data as user_data
 from tg.metrics import record_resource_update
 from tg.message_updates import edit_validation_message
 from tg.user_data.common import (
+    localized_field_title,
     edit_menu_message,
     get_active_user_or_prompt,
     value_input_hint,
@@ -55,7 +56,7 @@ def _show_value_prompt(
         current_user.get_value(state.field_name),
     )
     bot.edit_message_text(
-        f"<b>{state.field.title}</b>\n\n"
+        f"<b>{localized_field_title(state.field, get_ids(callback_query)[0])}</b>\n\n"
         f"{account_line(current_user.tag.value)}"
         f"Сохранено сейчас: <b>{current_value}</b>\n\n"
         "Отправьте новое значение.\n"
@@ -95,7 +96,7 @@ def _reply_value_error(
     keyboard.add(Button("✖️ Отмена", state.section).inline())
     edit_validation_message(
         bot,
-        f"⚠️ <b>Не удалось сохранить «{state.field.title}»</b>\n\n"
+        f"⚠️ <b>Не удалось сохранить «{localized_field_title(state.field, get_ids(message)[0])}»</b>\n\n"
         f"{escaped_error}.\n\n"
         f"Отправьте новое значение.{hint}",
         get_ids(message)[1],
@@ -174,7 +175,13 @@ def _open_section(
     }
     user_id, chat_id = get_ids(message)[:2]
     bot.delete_state(user_id)
-    content = menu_builders[state.section](current_user, notice)
+    if state.section == "technologies":
+        database = user_data.get_user_data_db()
+        getter = getattr(database, "get_game_language", None)
+        language = getter(user_id) if callable(getter) else "ru"
+        content = menu_builders[state.section](current_user, notice, language)
+    else:
+        content = menu_builders[state.section](current_user, notice)
     edit_menu_message(
         bot,
         chat_id,
@@ -253,7 +260,7 @@ def save_value(message: Message, bot: TeleBot) -> None:
         bot,
         state,
         current_user,
-        f"✅ {state.field.title}: <b>{displayed_value}</b> — сохранено.",
+        f"✅ {localized_field_title(state.field, get_ids(message)[0])}: <b>{displayed_value}</b> — сохранено.",
     )
 
 

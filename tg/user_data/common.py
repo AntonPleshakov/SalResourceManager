@@ -13,8 +13,10 @@ from telebot.types import (
 
 from common.datetime_utils import format_last_update, now, week_started_on
 from logger.app_logger import logger
+from resources.technology_language import field_title
 from resources.user_data import (
     RESOURCE_FIELDS,
+    TECHNOLOGY_FIELDS,
     THOUSAND_INPUT_FIELDS,
     TRACKED_FIELDS,
     GameAccount,
@@ -262,6 +264,15 @@ def get_active_user_or_prompt(
     return ensure_active_user(message, bot).user
 
 
+def localized_field_title(field: ResourceField, user_id: int) -> str:
+    if not user_id or field not in TECHNOLOGY_FIELDS:
+        return field.title
+    database = user_data.get_user_data_db()
+    getter = getattr(database, "get_game_language", None)
+    language = getter(user_id) if callable(getter) else "ru"
+    return field_title(field, language)
+
+
 def _field_update_details(user: UserData, field: ResourceField) -> str:
     if is_max_technology(field.name, user.get_value(field.name)):
         return ""
@@ -297,6 +308,7 @@ def build_section_menu(
     section: str,
     fields: Sequence[ResourceField],
     notice: str = "",
+    language: str = "ru",
 ) -> MenuContent:
     parts = []
     if notice:
@@ -318,7 +330,7 @@ def build_section_menu(
             field_details = _field_update_details(user, field)
         parts.append(
             "<p>"
-            f"{escape(field.title)}: <b>{escape(str(value))}</b>"
+            f"{escape(field_title(field, language))}: <b>{escape(str(value))}</b>"
             f"{field_details}<br>"
             f"{callback_button('✏️ Изменить', f'user_data/edit/{field.name}')}"
             "</p>"
@@ -425,7 +437,10 @@ def show_section_menu(
     if user is None:
         return
 
-    content = build_section_menu(user, title, section, fields, notice)
+    database = user_data.get_user_data_db()
+    getter = getattr(database, "get_game_language", None)
+    language = getter(user_id) if callable(getter) else "ru"
+    content = build_section_menu(user, title, section, fields, notice, language)
     deliver_menu(update, bot, content)
 
 

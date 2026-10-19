@@ -13,7 +13,7 @@ from tg.handlers import HandlerRegistry
 
 
 def build_technologies_menu(
-    user: UserData, notice: str = ""
+    user: UserData, notice: str = "", language: str = "ru"
 ) -> MenuContent:
     return build_section_menu(
         user,
@@ -21,6 +21,7 @@ def build_technologies_menu(
         "technologies",
         TECHNOLOGY_FIELDS,
         notice,
+        language,
     )
 
 

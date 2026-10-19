@@ -133,6 +133,7 @@ def prepare_home(monkeypatch):
                     "Test clan",
                 )
             ],
+            get_game_language=lambda _user_id: "ru",
             reminders_enabled=lambda _user_id: True,
             set_reminders_enabled=lambda _user_id, _enabled: None,
         ),
@@ -217,6 +218,7 @@ def test_home_shows_account_count_only_for_multiple_accounts(monkeypatch):
                     "Test clan",
                 ),
             ],
+            get_game_language=lambda _user_id: "ru",
             reminders_enabled=lambda _user_id: True,
         ),
     )
@@ -235,6 +237,9 @@ def test_home_menu_explains_scope_of_enabled_reminders(monkeypatch):
 
     navigation.home(make_message("/menu"), bot)
 
+    assert rich_buttons(bot.sent[-1][1])["settings"] == "⚙️ Настройки"
+    assert "О напоминаниях" not in bot.sent[-1][1]
+    navigation.show_settings(make_callback("settings"), bot)
     buttons = rich_buttons(bot.sent[-1][1])
     assert buttons["reminders/toggle"] == "🔕 Выключить напоминания"
     assert "Настройка влияет только на автоматическое уведомление" in bot.sent[-1][1]
@@ -250,6 +255,7 @@ def test_home_menu_leads_detached_account_to_clan_selection(monkeypatch):
                 GameAccount(1, 42, "tester", "Лидер", True)
             ],
             get_assigned_user=lambda _user_id, _account_id: None,
+            get_game_language=lambda _user_id: "ru",
             reminders_enabled=lambda _user_id: True,
         ),
     )
@@ -276,6 +282,7 @@ def test_monday_reminders_can_be_toggled_from_home_menu(monkeypatch):
                 "Test clan",
             )
         ],
+        get_game_language=lambda _user_id: "ru",
         reminders_enabled=lambda _user_id: state["enabled"],
         set_reminders_enabled=lambda _user_id, enabled: state.update(
             enabled=enabled
@@ -369,3 +376,19 @@ def test_recovery_commands_are_registered_before_scenario_handlers(monkeypatch):
     assert filters["func"](make_message("обычный текст"))
     bot.state = "active"
     assert not filters["func"](make_message("значение состояния"))
+
+
+def test_language_setting_persists_and_marks_selection(monkeypatch):
+    state = {"language": "ru"}
+    monkeypatch.setattr(navigation, "get_user_data_db", lambda: SimpleNamespace(
+        reminders_enabled=lambda _: True,
+        get_game_language=lambda _: state["language"],
+        set_game_language=lambda _, language: state.update(language=language),
+    ))
+    bot = FakeBot()
+    navigation.set_game_language(make_callback("settings/language/de"), bot)
+    assert state["language"] == "de"
+    buttons = rich_buttons(bot.sent[-1][1])
+    assert buttons["settings/language/de"] == "✅ Deutsch"
+    assert buttons["settings/language/ru"] == "Русский"
+    assert buttons["settings/language/en"] == "English"

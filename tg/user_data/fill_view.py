@@ -4,7 +4,7 @@ from telebot import TeleBot
 from telebot.types import InlineKeyboardMarkup, Message, CallbackQuery
 
 from resources.user_data import UserData
-from tg.user_data.common import value_input_hint
+from tg.user_data.common import value_input_hint, localized_field_title
 from tg.user_data.editing_common import (
     FillState,
     account_line,
@@ -38,7 +38,7 @@ def fill_prompt(
     notice_line = f"{notice}\n\n" if notice else ""
     return (
         f"{notice_line}"
-        f"<b>{field.title}</b>\n"
+        f"<b>{localized_field_title(field, context.current_user.user_id.value)}</b>\n"
         f"<i>Шаг {state.index + 1} из {len(state.fields)}</i>\n\n"
         f"{account_line(state.account_tag)}"
         f"{error_line}"

@@ -43,7 +43,6 @@ def show_home_menu(
         (account for account in accounts if account.is_active),
         None,
     )
-    reminders_enabled = database.reminders_enabled(user_id)
     get_assigned_user = getattr(database, "get_assigned_user", None)
     active_user = (
         get_assigned_user(user_id, active_account.account_id)
@@ -117,12 +116,7 @@ def show_home_menu(
             ),
             button_row(
                 (
-                    callback_button(
-                        "🔕 Выключить напоминания"
-                        if reminders_enabled
-                        else "🔔 Включить напоминания",
-                        "reminders/toggle",
-                    ),
+                    callback_button("⚙️ Настройки", "settings"),
                 )
             ),
             button_row((callback_button("🆕 Что нового", "releases"),)),
@@ -132,16 +126,7 @@ def show_home_menu(
         parts.append(
             button_row((callback_button("🛠 Админ-панель", "admins"),))
         )
-    parts.append(
-        details(
-            "О напоминаниях",
-            "<p>Настройка влияет только на автоматическое уведомление "
-            "по понедельникам и не отключает сообщения "
-            "администраторов.</p>"
-            "<p>Не выключайте уведомления от бота в Telegram, чтобы не "
-            "пропустить сообщения администраторов.</p>",
-        )
-    )
+
     deliver_rich_message(message, bot, input_rich_message(parts))
 
 
@@ -163,6 +148,49 @@ def home(message: Union[Message, CallbackQuery], bot: TeleBot) -> None:
     show_home_menu(message, bot)
 
 
+
+def show_settings(message: Union[Message, CallbackQuery], bot: TeleBot, notice: str = "") -> None:
+    user_id = get_ids(message)[0]
+    bot.delete_state(user_id)
+    database = get_user_data_db()
+    reminders_enabled = database.reminders_enabled(user_id)
+    language = database.get_game_language(user_id)
+    parts = [heading("Настройки")]
+    if notice:
+        parts.append(rich_notice(notice))
+    parts.append(button_row((callback_button(
+        "🔕 Выключить напоминания" if reminders_enabled else "🔔 Включить напоминания",
+        "reminders/toggle",
+    ),)))
+    parts.append(
+        details(
+            "О напоминаниях",
+            "<p>Настройка влияет только на автоматическое уведомление "
+            "по понедельникам и не отключает сообщения "
+            "администраторов.</p>"
+            "<p>Не выключайте уведомления от бота в Telegram, чтобы не "
+            "пропустить сообщения администраторов.</p>",
+        )
+    )
+    parts.append("<h3>Игровой язык</h3><p>Меняет только названия технологий.</p>")
+    for code, label in (("ru", "Русский"), ("en", "English"), ("de", "Deutsch")):
+        parts.append(button_row((callback_button(
+            ("✅ " if code == language else "") + label,
+            f"settings/language/{code}",
+        ),)))
+    parts.append(button_row((callback_button("⬅️ Главное меню", "home"),)))
+    deliver_rich_message(message, bot, input_rich_message(parts))
+
+
+def set_game_language(callback_query: CallbackQuery, bot: TeleBot) -> None:
+    language = callback_query.data.rsplit("/", 1)[-1]
+    if language not in {"ru", "en", "de"}:
+        bot.answer_callback_query(callback_query.id, "Неизвестный язык")
+        return
+    get_user_data_db().set_game_language(get_ids(callback_query)[0], language)
+    show_settings(callback_query, bot, "✅ Игровой язык сохранён.")
+
+
 def toggle_reminders(callback_query: CallbackQuery, bot: TeleBot) -> None:
     user_id = get_ids(callback_query)[0]
     database = get_user_data_db()
@@ -174,7 +202,7 @@ def toggle_reminders(callback_query: CallbackQuery, bot: TeleBot) -> None:
         user_id,
         get_username(callback_query),
     )
-    show_home_menu(
+    show_settings(
         callback_query,
         bot,
         "✅ Напоминания включены." if enabled else "✅ Напоминания выключены.",

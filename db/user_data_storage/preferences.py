@@ -28,6 +28,26 @@ class UserPreferences:
             user_id,
         )
 
+    def get_game_language(self, user_id: int) -> str:
+        row = self._database.fetch_one(
+            "SELECT game_language FROM telegram_users WHERE user_id = ?", (user_id,),
+        )
+        if row is None:
+            raise ValueError("Telegram user not found")
+        return row[0]
+
+    def set_game_language(self, user_id: int, language: str) -> None:
+        if language not in {"ru", "en", "de"}:
+            raise ValueError("Unknown game language")
+        changed = self._database.run_in_transaction(
+            lambda connection: connection.execute(
+                "UPDATE telegram_users SET game_language = ? WHERE user_id = ?",
+                (language, user_id),
+            ).rowcount
+        )
+        if not changed:
+            raise ValueError("Telegram user not found")
+
     def update_username(self, user_id: int, username: str) -> None:
         self._database.run_in_transaction(
             lambda connection: connection.execute(

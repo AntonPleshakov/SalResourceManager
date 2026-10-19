@@ -25,7 +25,7 @@ from tg.rich import (
     deliver_rich_message, details, edit_rich_message, heading,
     input_rich_message, notice as rich_notice,
 )
-from tg.user_data.common import get_active_user_or_prompt, get_current_accounts
+from tg.user_data.common import get_active_user_or_prompt, get_current_accounts, localized_field_title
 from tg.user_data.editing_common import VALUE_EDIT_SECTIONS
 from tg.utils import get_ids, get_username
 
@@ -91,13 +91,13 @@ def _review_message(session, notice=""):
         parts.append(rich_notice(escape(notice)))
     editing = session.get("edit")
     if editing:
-        parts.append(f"<p>Введите исправленное значение: <b>{escape(EDITABLE_FIELDS[editing].title)}</b>.</p>")
+        parts.append(f"<p>Введите исправленное значение: <b>{escape(localized_field_title(EDITABLE_FIELDS[editing], session.get('user_id', 0)))}</b>.</p>")
     elif not session["values"]:
         parts.append("<p>Отправьте скриншоты игры по одному или альбомом.</p>")
     for name in SCREENSHOT_FIELDS:
         if name not in session["values"]:
             continue
-        title = EDITABLE_FIELDS[name].title
+        title = localized_field_title(EDITABLE_FIELDS[name], session.get('user_id', 0))
         value = session["values"][name]
         suffix = "%" if name.endswith(("chance", "cost")) else ""
         displayed = f"{value:,}{suffix}".replace(",", " ")
@@ -211,7 +211,7 @@ def start_screenshot(update: CallbackQuery, bot: TeleBot) -> None:
         get_ids(update)[0]) if account.account_id == current.account_id.value)
     bot.delete_state(get_ids(update)[0])
     bot.set_state(get_ids(update)[0], ScreenshotStates.review)
-    _show(update, bot, {"account_id": current.account_id.value,
+    _show(update, bot, {"user_id": get_ids(update)[0], "account_id": current.account_id.value,
                        "clan_id": account.clan_id, "tag": str(current.tag.value),
                        "values": {}, "prompt_message_id": update.message.id})
     bot.answer_callback_query(update.id)

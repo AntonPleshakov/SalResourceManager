@@ -13,7 +13,7 @@ from tg import releases
 from tg import user_data
 from tg import war
 from tg.handlers import HandlerRegistry
-from tg.navigation import home, start, toggle_reminders
+from tg.navigation import home, start, toggle_reminders, show_settings, set_game_language
 from logger.app_logger import logger
 
 
@@ -102,6 +102,8 @@ def register_handlers(bot: TeleBot):
         predicate=_inactive_state_filter(bot),
     )
     handlers.private_callback(home, button="home")
+    handlers.private_callback(show_settings, button="settings")
+    handlers.private_callback(set_game_language, button=r"settings/language/(ru|en|de)")
     handlers.private_callback(
         toggle_reminders,
         button="reminders/toggle",

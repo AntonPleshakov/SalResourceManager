@@ -5,7 +5,7 @@ from telebot.types import CallbackQuery, InlineKeyboardMarkup, Message
 import resources.user_data as user_data_resources
 from logger.app_logger import logger
 import tg.user_data as user_data
-from tg.user_data.common import get_active_user_or_prompt
+from tg.user_data.common import get_active_user_or_prompt, localized_field_title
 from tg.user_data.editing_common import (
     EditUserDataStates,
     FILL_SECTIONS,
@@ -337,7 +337,7 @@ def save_fill_value(message: Message, bot: TeleBot) -> None:
         message,
         bot,
         FillContext(state=context.state, current_user=current_user),
-        f"✅ {field.title}: <b>{displayed_value}</b> — сохранено.",
+        f"✅ {localized_field_title(field, get_ids(message)[0])}: <b>{displayed_value}</b> — сохранено.",
         saved=True,
     )
 
