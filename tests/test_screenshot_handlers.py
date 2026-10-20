@@ -134,6 +134,164 @@ def test_preview_correction_and_confirmation_save_only_found_values(context):
     assert users.get_assigned_user(42).hammers.value == 195000
 
 
+def test_unchanged_screenshot_is_deleted_only_after_database_save(context, monkeypatch):
+    bot, users, _ = context
+    monkeypatch.setattr(screenshots, "recognize_screenshot", lambda _: {"hammers": 123, "shells": 456})
+    receive_screenshot(message(photo=True), bot)
+    with bot.retrieve_data(42) as data:
+        path = Path(data["screenshot_import"]["sources"]["hammers"])
+    original_save = users.set_values
+
+    def save(*args, **kwargs):
+        assert path.is_file()
+        return original_save(*args, **kwargs)
+
+    monkeypatch.setattr(users, "set_values", save)
+    screenshots.save_readings(review_callback(bot, "save"), bot)
+    assert not path.exists()
+    assert users.get_assigned_user(42).hammers.value == 123
+    assert users.get_assigned_user(42).shells.value == 456
+
+
+def test_database_failure_preserves_screenshot_and_review(context, monkeypatch):
+    bot, users, _ = context
+    receive_screenshot(message(photo=True), bot)
+    with bot.retrieve_data(42) as data:
+        path = Path(data["screenshot_import"]["sources"]["hammers"])
+    monkeypatch.setattr(users, "set_values", Mock(side_effect=ValueError("save failed")))
+    screenshots.save_readings(review_callback(bot, "save"), bot)
+    assert path.is_file()
+    assert bot.get_state(42) == screenshots.ScreenshotStates.review.name
+    assert users.get_assigned_user(42).hammers.value == 17
+
+
+@pytest.mark.parametrize("failed", [False, True])
+def test_problem_screenshot_keeps_original_warning_without_duplicates(context, monkeypatch, failed):
+    bot, _, _ = context
+    log = Mock()
+    monkeypatch.setattr(screenshots, "logger", log)
+
+    def recognize(_):
+        if failed:
+            raise ScreenshotError("Ошибка чтения")
+        return {}
+
+    monkeypatch.setattr(screenshots, "recognize_screenshot", recognize)
+    receive_screenshot(message(photo=True), bot)
+    with bot.retrieve_data(42) as data:
+        problem_path = next(iter(data["screenshot_import"]["screenshot_readings"]))
+    log.warning.assert_called_once()
+    assert problem_path in log.warning.call_args.args
+    monkeypatch.setattr(screenshots, "recognize_screenshot", lambda _: {"hammers": 123})
+    receive_screenshot(message(photo=True), bot)
+    screenshots.save_readings(review_callback(bot, "save"), bot)
+    assert Path(problem_path).is_file()
+    log.warning.assert_called_once()
+
+
+def test_delete_failure_keeps_file_logs_warning_and_finishes_save(context, monkeypatch):
+    bot, users, _ = context
+    receive_screenshot(message(photo=True), bot)
+    with bot.retrieve_data(42) as data:
+        path = data["screenshot_import"]["sources"]["hammers"]
+    log = Mock()
+    monkeypatch.setattr(screenshots, "logger", log)
+    monkeypatch.setattr(screenshots, "delete_screenshot", Mock(side_effect=PermissionError))
+    screenshots.save_readings(review_callback(bot, "save"), bot)
+    assert Path(path).is_file()
+    assert users.get_assigned_user(42).hammers.value == 194691
+    assert bot.get_state(42) is None
+    log.warning.assert_called_once_with(
+        "Screenshot retained user_id=%s screenshot_path=%s reason=%s", 42, path, "delete_failed",
+    )
+
+
+@pytest.mark.parametrize("action", ["excluded", "replaced", "edited", "reverted"])
+def test_unconfirmed_original_is_retained_with_warning_once(context, monkeypatch, action):
+    bot, _, _ = context
+    log = Mock()
+    monkeypatch.setattr(screenshots, "logger", log)
+    monkeypatch.setattr(screenshots, "recognize_screenshot", lambda _: {"hammers": 100, "shells": 200})
+    receive_screenshot(message(photo=True), bot)
+    with bot.retrieve_data(42) as data:
+        original = Path(data["screenshot_import"]["sources"]["hammers"])
+    if action == "excluded":
+        screenshots.drop_reading(review_callback(bot, "drop", "hammers"), bot)
+    elif action == "replaced":
+        monkeypatch.setattr(screenshots, "recognize_screenshot", lambda _: {"hammers": 100})
+        receive_screenshot(message(photo=True), bot)
+    else:
+        screenshots.edit_reading(review_callback(bot, "edit", "hammers"), bot)
+        screenshots.correct_reading(message("101"), bot)
+        if action == "reverted":
+            screenshots.edit_reading(review_callback(bot, "edit", "hammers"), bot)
+            screenshots.correct_reading(message("100"), bot)
+    warnings_before_save = log.warning.call_count
+    assert warnings_before_save == (2 if action == "reverted" else 1)
+    assert str(original) in log.warning.call_args.args
+    if action in {"excluded", "replaced"}:
+        assert log.warning.call_args.args[-1] == action
+    screenshots.save_readings(review_callback(bot, "save"), bot)
+    assert original.is_file()
+    assert list(screenshot_storage.SCREENSHOT_DIRECTORY.iterdir()) == [original]
+    assert log.warning.call_count == warnings_before_save
+
+
+@pytest.mark.parametrize("values", [{"hammers": 100}, {}])
+def test_cancel_deletes_completed_files_including_empty_results(context, monkeypatch, values):
+    from tg import navigation
+
+    bot, _, _ = context
+    monkeypatch.setattr(navigation, "home", lambda update, bot, **kwargs: bot.delete_state(42))
+    monkeypatch.setattr(screenshots, "recognize_screenshot", lambda _: values)
+    receive_screenshot(message(photo=True), bot)
+    with bot.retrieve_data(42) as data:
+        session = data["screenshot_import"]
+        paths = list(session["screenshot_readings"])
+        cancel = callback(f"screenshot/{session['session_id'][:12]}/cancel")
+    assert all(Path(path).is_file() for path in paths)
+    screenshots.cancel_screenshots(cancel, bot)
+    assert all(not Path(path).exists() for path in paths)
+
+
+def test_cancel_during_real_ocr_deletes_late_file(context, monkeypatch):
+    from tg import navigation
+
+    bot, users, _ = context
+    del bot._screenshot_worker
+    started, release, deleted = Event(), Event(), Event()
+    delete = screenshots.delete_screenshot
+
+    def recognize(_):
+        started.set()
+        assert release.wait(5)
+        return {"hammers": 100}
+
+    def remove(path):
+        delete(path)
+        deleted.set()
+
+    monkeypatch.setattr(navigation, "home", lambda update, bot, **kwargs: bot.delete_state(42))
+    monkeypatch.setattr(screenshots, "recognize_screenshot", recognize)
+    monkeypatch.setattr(screenshots, "delete_screenshot", remove)
+    try:
+        screenshots.receive_screenshot(message(photo=True), bot)
+        assert started.wait(5)
+        saved, = screenshot_storage.SCREENSHOT_DIRECTORY.iterdir()
+        with bot.retrieve_data(42) as data:
+            cancel = callback(f"screenshot/{data['screenshot_import']['session_id'][:12]}/cancel")
+        screenshots.cancel_screenshots(cancel, bot)
+        release.set()
+        assert deleted.wait(5)
+        assert not saved.exists()
+        assert users.get_assigned_user(42).hammers.value == 17
+        assert bot.get_state(42) is None
+    finally:
+        release.set()
+        screenshots.stop_screenshot_worker(bot)
+        bot.stop_bot()
+
+
 def test_multiple_screenshots_merge_and_excluded_values_are_not_saved(context, monkeypatch):
     bot, users, _ = context
     receive_screenshot(message(photo=True), bot)

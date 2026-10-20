@@ -1,6 +1,7 @@
 """Keep the latest uploaded screenshots in a bounded, persistent directory."""
 
 from pathlib import Path
+import re
 import threading
 from uuid import uuid4
 
@@ -24,3 +25,17 @@ def save_screenshot(image: bytes, filename: str) -> str:
         for expired in previous[:max(0, len(previous) + 1 - SCREENSHOT_LIMIT)]:
             expired.unlink()
         return str(path)
+
+
+def delete_screenshot(filename: str) -> bool:
+    with _LOCK:
+        path = Path(filename)
+        if path.is_symlink():
+            raise ValueError("Screenshot must not be a symlink")
+        path = path.resolve()
+        if (path.parent != SCREENSHOT_DIRECTORY.resolve()
+                or re.fullmatch(r"screenshot_[0-9]+_[a-f0-9]+\.(jpg|jpeg|png|webp|img)", path.name) is None):
+            raise ValueError("File is outside screenshot storage")
+        existed = path.is_file()
+        path.unlink(missing_ok=True)
+        return existed

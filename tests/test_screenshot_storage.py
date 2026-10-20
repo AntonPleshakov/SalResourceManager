@@ -1,7 +1,28 @@
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
+import pytest
+
 from resources import screenshot_storage
+
+
+def test_delete_stored_screenshot_is_idempotent(tmp_path, monkeypatch):
+    monkeypatch.setattr(screenshot_storage, "SCREENSHOT_DIRECTORY", tmp_path)
+    path = screenshot_storage.save_screenshot(b"image", "upload.jpg")
+    assert screenshot_storage.delete_screenshot(path)
+    assert not Path(path).exists()
+    assert not screenshot_storage.delete_screenshot(path)
+
+
+def test_delete_rejects_unrelated_files_and_other_directories(tmp_path, monkeypatch):
+    storage = tmp_path / "screenshots"
+    storage.mkdir()
+    monkeypatch.setattr(screenshot_storage, "SCREENSHOT_DIRECTORY", storage)
+    for path in (storage / "keep.txt", tmp_path / "screenshot_1_abc.jpg"):
+        path.write_bytes(b"keep")
+        with pytest.raises(ValueError):
+            screenshot_storage.delete_screenshot(str(path))
+        assert path.read_bytes() == b"keep"
 
 
 def test_buffer_keeps_latest_100_uploads_including_existing_files(tmp_path, monkeypatch):

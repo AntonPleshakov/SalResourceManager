@@ -15,9 +15,18 @@ class ScreenshotJob:
     session_id: str
     run: Callable
     complete: Callable
+    discard: Callable | None = None
 
 
 class ScreenshotWorker:
+    def _discard(self, job: ScreenshotJob, result, error) -> None:
+        if job.discard is not None:
+            try:
+                job.discard(result, error)
+            except Exception as failure:
+                logger.warning("Unable to discard screenshot result user_id=%s type=%s",
+                               job.user_id, type(failure).__name__)
+
     def _release(self, job: ScreenshotJob) -> bool:
         if job not in self._pending:
             return False
@@ -32,6 +41,8 @@ class ScreenshotWorker:
             accepted = self._release(job)
         if accepted:
             job.complete(result, error)
+        else:
+            self._discard(job, result, error)
 
     def _run(self) -> None:
         while True:
@@ -48,16 +59,19 @@ class ScreenshotWorker:
                 error = type(failure).__name__
                 logger.warning("Screenshot background job failed type=%s", error)
             with self._condition:
-                if job not in self._pending:
-                    continue
-                try:
-                    self._dispatch(partial(self._deliver, job, result, error))
-                except Exception as failure:
-                    self._release(job)
-                    logger.warning(
-                        "Unable to dispatch screenshot result type=%s",
-                        type(failure).__name__,
-                    )
+                accepted = job in self._pending
+                if accepted:
+                    try:
+                        self._dispatch(partial(self._deliver, job, result, error))
+                    except Exception as failure:
+                        self._release(job)
+                        accepted = False
+                        logger.warning(
+                            "Unable to dispatch screenshot result type=%s",
+                            type(failure).__name__,
+                        )
+            if not accepted:
+                self._discard(job, result, error)
 
     def __init__(self, dispatch: Callable, *, per_user=10, total=30):
         self._dispatch = dispatch

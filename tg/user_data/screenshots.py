@@ -2,6 +2,7 @@
 
 from functools import partial, wraps
 from html import escape
+from pathlib import Path
 import threading
 from uuid import uuid4
 
@@ -16,7 +17,7 @@ from resources.screenshot_input import (
     recognize_screenshot, validate_value,
 )
 from resources.user_data import EDITABLE_FIELDS, parse_editable_field_value
-from resources.screenshot_storage import save_screenshot
+from resources.screenshot_storage import delete_screenshot, save_screenshot
 import tg.user_data as user_data
 from tg.handlers import HandlerRegistry
 from tg.metrics import record_resource_update, record_screenshot_processed
@@ -298,19 +299,54 @@ def _account(update, bot, session):
     return current
 
 
+def _delete_stored_screenshot(user_id, path):
+    try:
+        delete_screenshot(path)
+    except (OSError, ValueError):
+        logger.warning("Screenshot retained user_id=%s screenshot_path=%s reason=%s",
+                       user_id, path, "delete_failed")
+
+
+def _discard_screenshot(user_id, result, error):
+    if result is not None and result[1] is not None:
+        _delete_stored_screenshot(user_id, result[1])
+
+
+def _log_retained_screenshot(session, path, reason):
+    readings = session.get("screenshot_readings", {}).get(path)
+    if (not readings or path in session.get("edited_screenshots", [])
+            or path in session.get("warned_screenshots", [])):
+        # OCR failures, empty results and corrections already include the file in WARNING.
+        return
+    if Path(path).is_file():
+        logger.warning("Screenshot retained user_id=%s screenshot_path=%s reason=%s",
+                       session["user_id"], path, reason)
+        session["warned_screenshots"] = [*session.get("warned_screenshots", []), path]
+
+
 def _complete_screenshot(message, bot, session_id, number, result, error):
     session = _load(message, bot)
     if session is None or session.get("session_id") != session_id:
         _cancel_upload(bot, session_id)
+        _discard_screenshot(message.from_user.id, result, error)
         return
     if _account(message, bot, session) is None:
         _cancel_upload(bot, session_id, keep_message=True)
+        _discard_screenshot(message.from_user.id, result, error)
         return
     if error is not None:
         result = ({}, None, "Ошибка обработки вложения. Попробуйте загрузить повторно.", False)
     values, screenshot_path, notice, recognized = result
+    if screenshot_path is not None:
+        session["screenshot_readings"] = {
+            **session.get("screenshot_readings", {}), screenshot_path: dict(values),
+        }
     session["pending"] -= 1
     session["processed"] += 1
+    for name in values:
+        previous_path = session["sources"].get(name)
+        if previous_path is not None:
+            _log_retained_screenshot(session, previous_path, "replaced")
     session["values"].update(values)
     session["sources"].update({name: screenshot_path for name in values})
     session["input_sources"].update({name: "screenshot" for name in values})
@@ -416,6 +452,7 @@ def receive_screenshot(message: Message, bot: TeleBot) -> None:
         get_ids(message)[0], session["session_id"],
         partial(_process_screenshot, message, bot),
         partial(_complete_screenshot, message, bot, session["session_id"], number),
+        partial(_discard_screenshot, get_ids(message)[0]),
     )
     if not _worker(bot).submit(job):
         _update_review(message, bot, session, "Очередь распознавания заполнена. Отправьте скриншот позже.")
@@ -449,6 +486,8 @@ def cancel_screenshots(update, bot):
         return
     if session is not None:
         _cancel_upload(bot, session["session_id"], keep_message=True)
+        for path in session.get("screenshot_readings", {}):
+            _delete_stored_screenshot(session["user_id"], path)
         _delete_screenshot_inputs(bot, session)
         home(update, bot, edit_message_id=session["prompt_message_id"])
     else:
@@ -490,6 +529,11 @@ def correct_reading(message: Message, bot: TeleBot) -> None:
         return
     if value != session["values"][name]:
         session["input_sources"][name] = "manual"
+        screenshot_path = session["sources"].get(name)
+        if screenshot_path is not None:
+            session["edited_screenshots"] = list(dict.fromkeys([
+                *session.get("edited_screenshots", []), screenshot_path,
+            ]))
         logger.warning(
             "Screenshot value corrected user_id=%s field=%s old_value=%s new_value=%s screenshot_path=%s",
             message.from_user.id, name, session["values"][name], value,
@@ -507,11 +551,41 @@ def drop_reading(update: CallbackQuery, bot: TeleBot) -> None:
     if _wait_for_screenshots(update, bot, session):
         return
     name = update.data.split("/")[-1]
+    screenshot_path = session["sources"].get(name)
+    if screenshot_path is not None:
+        _log_retained_screenshot(session, screenshot_path, "excluded")
     session["values"].pop(name, None)
     session["sources"].pop(name, None)
     session["input_sources"].pop(name, None)
     _show(update, bot, session, "Показатель исключён из сохранения.")
     _answer_callback(bot, update)
+
+
+def _log_retained_screenshots(session, reason):
+    for path in session.get("screenshot_readings", {}):
+        _log_retained_screenshot(session, path, reason)
+
+
+def _cleanup_saved_screenshots(session, saved_values):
+    for path, readings in session.get("screenshot_readings", {}).items():
+        if path in session.get("edited_screenshots", []):
+            reason = "edited"
+        elif not readings:
+            reason = "no_readings"
+        elif any(name not in saved_values for name in readings):
+            reason = "excluded"
+        elif any(session["sources"].get(name) != path for name in readings):
+            reason = "replaced"
+        elif any(saved_values[name] != original or session["input_sources"].get(name) == "manual"
+                 for name, original in readings.items()):
+            reason = "edited"
+        else:
+            try:
+                delete_screenshot(path)
+                continue
+            except (OSError, ValueError):
+                reason = "delete_failed"
+        _log_retained_screenshot(session, path, reason)
 
 
 @_serialized
@@ -532,8 +606,13 @@ def save_readings(update: CallbackQuery, bot: TeleBot) -> None:
             get_ids(update)[0], get_username(update), values, account_id=session["account_id"],
         )
     except ValueError:
+        _log_retained_screenshots(session, "save_failed")
         _update_review(update, bot, session, "Не удалось сохранить значения. Откройте раздел заново.")
         return
+    except Exception:
+        _log_retained_screenshots(session, "save_failed")
+        raise
+    _cleanup_saved_screenshots(session, values)
     bot.delete_state(get_ids(update)[0])
     for name in values:
         record_resource_update(

@@ -2,6 +2,8 @@ from queue import Queue
 from threading import Event, get_ident
 from unittest.mock import Mock
 
+import pytest
+
 from tg.user_data.screenshot_jobs import ScreenshotJob, ScreenshotWorker
 
 
@@ -121,3 +123,33 @@ def test_stop_discards_results_and_rejects_new_work():
     apply_result()
     completed.assert_not_called()
     assert not worker.submit(ScreenshotJob(42, "session", lambda: {}, completed))
+
+
+@pytest.mark.parametrize("after_dispatch", [False, True])
+def test_cancel_cleans_result_without_applying_it(after_dispatch):
+    dispatched = Queue()
+    started, release, cleaned = Event(), Event(), Event()
+    complete, discard = Mock(), Mock(side_effect=lambda *_: cleaned.set())
+
+    def recognize():
+        started.set()
+        assert release.wait(3)
+        return "stored image"
+
+    worker = ScreenshotWorker(dispatched.put)
+    try:
+        assert worker.submit(ScreenshotJob(42, "session", recognize, complete, discard))
+        assert started.wait(3)
+        if after_dispatch:
+            release.set()
+            apply = dispatched.get(timeout=3)
+        worker.cancel("session")
+        release.set()
+        if after_dispatch:
+            apply()
+        assert cleaned.wait(3)
+        discard.assert_called_once_with("stored image", None)
+        complete.assert_not_called()
+    finally:
+        release.set()
+        worker.stop()
