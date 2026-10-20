@@ -1,4 +1,6 @@
 import asyncio
+from types import SimpleNamespace
+from threading import Event
 from unittest.mock import Mock
 from urllib.request import urlopen
 
@@ -7,11 +9,14 @@ from prometheus_client import CollectorRegistry
 from starlette.requests import Request
 from starlette.responses import Response
 from telebot.types import CallbackQuery, Chat, Message, User
+from telebot import TeleBot
 
 from tg.metrics import (
     ApplicationMetrics,
     instrument_registered_handlers,
+    instrument_telegram_queue,
     observe_score_calculation,
+    observe_screenshot_stage,
     record_resource_update,
     record_screenshot_processed,
     register_player_account_metrics,
@@ -147,7 +152,7 @@ def test_middleware_records_successful_message() -> None:
     assert registry.get_sample_value(
         "srm_event_errors_total",
         {"event_type": "message"},
-    ) is None
+    ) == 0
     assert registry.get_sample_value(
         "srm_events_in_progress",
         {"event_type": "message"},
@@ -279,6 +284,9 @@ def test_failed_callback_handler_logs_result_and_exception(monkeypatch) -> None:
         )
 
     action = f"{__name__}.failed_callback"
+    labels = {"event_type": "callback_query", "handler": action}
+    assert registry.get_sample_value("srm_handler_calls_total", {**labels, "result": "failed"}) == 1
+    assert registry.get_sample_value("srm_handler_calls_total", {**labels, "result": "completed"}) == 0
     log_info.assert_not_called()
     log_warning.assert_called_once_with(
         "Telegram handler finished event_type=%s handler=%s "
@@ -296,6 +304,119 @@ def test_failed_callback_handler_logs_result_and_exception(monkeypatch) -> None:
         "'failed'",
         "tester",
     )
+
+
+def test_handler_counters_are_exposed_before_first_event_and_registration_is_idempotent():
+    registry = CollectorRegistry()
+    metrics = ApplicationMetrics(registry)
+
+    def handle(message):
+        pass
+
+    bot = Mock(message_handlers=[{"function": handle}], callback_query_handlers=[])
+    labels = {"event_type": "message", "handler": f"{__name__}.handle"}
+    instrument_registered_handlers(bot, metrics)
+    for result in ("completed", "failed"):
+        assert registry.get_sample_value("srm_handler_calls_total", {**labels, "result": result}) == 0
+    assert registry.get_sample_value("srm_handler_duration_seconds_count", labels) == 0
+    bot.message_handlers[0]["function"](make_message(), {}, bot)
+    instrument_registered_handlers(bot, metrics)
+    assert registry.get_sample_value("srm_handler_calls_total", {**labels, "result": "completed"}) == 1
+
+
+def test_telegram_counters_expose_zero_baselines_before_processing():
+    registry = CollectorRegistry()
+    ApplicationMetrics(registry)
+    for event in ("message", "callback_query"):
+        assert registry.get_sample_value("srm_events_total", {"event_type": event}) == 0
+        assert registry.get_sample_value("srm_event_errors_total", {"event_type": event}) == 0
+        for outcome in ("handled", "ignored", "failed"):
+            assert registry.get_sample_value("srm_event_outcomes_total", {
+                "event_type": event, "chat_type": "private", "outcome": outcome,
+            }) == 0
+
+
+@pytest.mark.parametrize("failed", [False, True])
+def test_screenshot_stage_records_time_even_when_stage_fails(failed):
+    registry = CollectorRegistry()
+    metrics = ApplicationMetrics(registry)
+    timestamps = iter((10.0, 12.5))
+
+    def recognize():
+        with observe_screenshot_stage("recognize", metrics, clock=lambda: next(timestamps)):
+            if failed:
+                raise RuntimeError("OCR failed")
+
+    if failed:
+        with pytest.raises(RuntimeError, match="OCR failed"):
+            recognize()
+    else:
+        recognize()
+    assert registry.get_sample_value("srm_screenshot_stage_duration_seconds_count", {"stage": "recognize"}) == 1
+    assert registry.get_sample_value("srm_screenshot_stage_duration_seconds_sum", {"stage": "recognize"}) == 2.5
+
+
+@pytest.mark.parametrize("event_type", ["message", "callback_query", "background"])
+def test_telegram_queue_measures_wait_without_changing_task_arguments(event_type):
+    registry = CollectorRegistry()
+    metrics = ApplicationMetrics(registry)
+    queued = []
+    timestamps = iter((10.0, 17.0))
+    bot = SimpleNamespace(threaded=True, worker_pool=SimpleNamespace(put=queued.append))
+    clock = lambda: next(timestamps)
+    instrument_telegram_queue(bot, metrics, clock)
+    instrument_telegram_queue(bot, metrics, clock)
+    task = Mock(return_value="result")
+    kwargs = {} if event_type == "background" else {"update_type": event_type}
+    bot.worker_pool.put(task, 123, **kwargs)
+    task.assert_not_called()
+    assert registry.get_sample_value("srm_telegram_queue_duration_seconds_count", {"event_type": event_type}) == 0
+    assert queued.pop()() == "result"
+    task.assert_called_once_with(123, **kwargs)
+    assert registry.get_sample_value("srm_telegram_queue_duration_seconds_sum", {"event_type": event_type}) == 7
+    assert registry.get_sample_value("srm_telegram_queue_duration_seconds_count", {"event_type": event_type}) == 1
+
+
+def test_queue_metrics_preserve_task_errors():
+    metrics = ApplicationMetrics(CollectorRegistry())
+    queued = []
+    bot = SimpleNamespace(threaded=True, worker_pool=SimpleNamespace(put=queued.append))
+    instrument_telegram_queue(bot, metrics)
+    bot.worker_pool.put(Mock(side_effect=ValueError("task failed")))
+    with pytest.raises(ValueError, match="task failed"):
+        queued.pop()()
+
+
+def test_real_telegram_worker_records_message_wait_before_middleware():
+    registry = CollectorRegistry()
+    metrics = ApplicationMetrics(registry)
+    bot = TeleBot("42:test", num_threads=1, use_class_middlewares=True)
+    started, release, handled = Event(), Event(), Event()
+    now = [0.0]
+
+    def block_worker():
+        started.set()
+        assert release.wait(3)
+
+    def handle(message):
+        handled.set()
+
+    bot.register_message_handler(handle, func=lambda _: True)
+    instrument_telegram_queue(bot, metrics, clock=lambda: now[0])
+    try:
+        bot.worker_pool.put(block_worker)
+        assert started.wait(3)
+        now[0] = 2.0
+        bot.process_new_messages([make_message()])
+        assert not handled.is_set()
+        now[0] = 9.0
+        release.set()
+        assert handled.wait(3)
+        assert registry.get_sample_value("srm_telegram_queue_duration_seconds_sum", {"event_type": "message"}) == 7
+        assert registry.get_sample_value("srm_telegram_queue_duration_seconds_count", {"event_type": "message"}) == 1
+    finally:
+        release.set()
+        bot.stop_bot()
 
 
 def test_ready_metric_can_follow_application_lifecycle() -> None:

@@ -132,6 +132,30 @@ def test_screenshot_and_input_source_widgets_use_selected_period() -> None:
             )
 
 
+def test_queue_and_ocr_panels_show_percentiles_and_queue_size():
+    dashboard = json.loads(DASHBOARD_FILE.read_text(encoding="utf-8"))
+    panels = {panel["title"]: panel for panel in dashboard["panels"]}
+    telegram = panels["Ожидание очереди Telegram p50/p95"]
+    ocr_p50 = panels["Этапы обработки скриншотов p50"]
+    ocr_p95 = panels["Этапы обработки скриншотов p95"]
+    for panel, metric, quantiles, group in (
+        (telegram, "srm_telegram_queue_duration_seconds", (0.5, 0.95), "event_type"),
+        (ocr_p50, "srm_screenshot_stage_duration_seconds", (0.5,), "stage"),
+        (ocr_p95, "srm_screenshot_stage_duration_seconds", (0.95,), "stage"),
+    ):
+        assert panel["fieldConfig"]["defaults"]["unit"] == "s"
+        for target, quantile in zip(panel["targets"], quantiles, strict=True):
+            assert f"histogram_quantile({quantile}," in target["expr"]
+            assert f"{metric}_bucket[$__range]" in target["expr"]
+            assert f"by (le, {group})" in target["expr"]
+            assert f"{metric}_count[$__range]" in target["expr"]
+            assert ">= 5" in target["expr"]
+            assert target["instant"] and not target["range"]
+    queue = panels["Скриншоты в очереди OCR"]
+    assert queue["type"] == "timeseries"
+    assert queue["targets"][0]["expr"] == "sum(srm_screenshot_queue_size)"
+
+
 def test_system_dashboard_uses_process_and_server_metrics() -> None:
     dashboard = json.loads(SYSTEM_DASHBOARD_FILE.read_text(encoding="utf-8"))
     queries = _queries(dashboard)

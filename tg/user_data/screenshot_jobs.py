@@ -1,12 +1,14 @@
 """Bounded screenshot work; completions run on the Telegram handler queue."""
 
 from collections import Counter, deque
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from functools import partial
 from threading import Condition, Thread
+from time import monotonic
 from typing import Callable
 
 from logger.app_logger import logger
+from tg.metrics import APPLICATION_METRICS, ApplicationMetrics
 
 
 @dataclass(eq=False)
@@ -16,6 +18,7 @@ class ScreenshotJob:
     run: Callable
     complete: Callable
     discard: Callable | None = None
+    queued_at: float = field(default=0.0, init=False)
 
 
 class ScreenshotWorker:
@@ -40,7 +43,12 @@ class ScreenshotWorker:
         with self._condition:
             accepted = self._release(job)
         if accepted:
-            job.complete(result, error)
+            try:
+                job.complete(result, error)
+            finally:
+                self._metrics.screenshot_stage_duration.labels(stage="total").observe(
+                    max(0.0, self._clock() - job.queued_at)
+                )
         else:
             self._discard(job, result, error)
 
@@ -51,6 +59,10 @@ class ScreenshotWorker:
                 if self._stopped:
                     return
                 job = self._queue.popleft()
+                self._metrics.screenshot_queue_size.set(len(self._queue))
+            self._metrics.screenshot_stage_duration.labels(stage="queue").observe(
+                max(0.0, self._clock() - job.queued_at)
+            )
             result, error = None, None
             try:
                 result = job.run()
@@ -73,12 +85,16 @@ class ScreenshotWorker:
             if not accepted:
                 self._discard(job, result, error)
 
-    def __init__(self, dispatch: Callable, *, per_user=10, total=30):
+    def __init__(self, dispatch: Callable, *, per_user=10, total=30,
+                 metrics: ApplicationMetrics = APPLICATION_METRICS, clock: Callable = monotonic):
         self._dispatch = dispatch
+        self._metrics = metrics
+        self._clock = clock
         self._per_user = per_user
         self._total = total
         self._condition = Condition()
         self._queue = deque()
+        self._metrics.screenshot_queue_size.set(0)
         self._pending: set[ScreenshotJob] = set()
         self._users = Counter()
         self._stopped = False
@@ -92,7 +108,9 @@ class ScreenshotWorker:
                 return False
             self._pending.add(job)
             self._users[job.user_id] += 1
+            job.queued_at = self._clock()
             self._queue.append(job)
+            self._metrics.screenshot_queue_size.set(len(self._queue))
             self._condition.notify()
             return True
 
@@ -102,6 +120,7 @@ class ScreenshotWorker:
                 if job.session_id == session_id:
                     self._release(job)
             self._queue = deque(job for job in self._queue if job in self._pending)
+            self._metrics.screenshot_queue_size.set(len(self._queue))
 
     def stop(self) -> None:
         with self._condition:
@@ -109,5 +128,6 @@ class ScreenshotWorker:
             self._pending.clear()
             self._users.clear()
             self._queue.clear()
+            self._metrics.screenshot_queue_size.set(0)
             self._condition.notify()
         self._thread.join(timeout=2)

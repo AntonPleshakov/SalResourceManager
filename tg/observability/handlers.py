@@ -49,11 +49,15 @@ def _instrument_handler(
 ) -> Callable:
     action = _handler_action(handler)
     parameters = inspect.signature(handler).parameters
+    labels = {"event_type": event_type, "handler": action}
+    for result in ("completed", "failed"):
+        metrics.handler_calls.labels(**labels, result=result)
+    metrics.handler_duration.labels(**labels)
+    metrics.handlers_in_progress.labels(**labels)
 
     def instrumented(update, data: dict, bot):
         data[HANDLER_ACTION_KEY] = action
         started_at = clock()
-        labels = {"event_type": event_type, "handler": action}
         metrics.handlers_in_progress.labels(**labels).inc()
         result = "failed"
         error_type = "none"
@@ -106,6 +110,33 @@ def _instrument_handler(
     instrumented.__module__ = getattr(handler, "__module__", __name__)
     setattr(instrumented, "_srm_instrumented", True)
     return instrumented
+
+
+def instrument_telegram_queue(
+    bot,
+    metrics: ApplicationMetrics = APPLICATION_METRICS,
+    clock: Callable[[], float] = monotonic,
+) -> None:
+    if not bot.threaded or getattr(bot.worker_pool, "_srm_queue_instrumented", False):
+        return
+    enqueue = bot.worker_pool.put
+
+    def put(task, *args, **kwargs):
+        queued_at = clock()
+        event_type = kwargs.get("update_type", "background")
+        if event_type not in {"message", "callback_query"}:
+            event_type = "background"
+
+        def run():
+            metrics.telegram_queue_duration.labels(event_type=event_type).observe(
+                max(0.0, clock() - queued_at)
+            )
+            return task(*args, **kwargs)
+
+        return enqueue(run)
+
+    bot.worker_pool.put = put
+    bot.worker_pool._srm_queue_instrumented = True
 
 
 def instrument_registered_handlers(

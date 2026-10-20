@@ -22,7 +22,7 @@ from db.user_data import UserDataDB
 from resources.screenshot_input import MAX_IMAGE_BYTES, ScreenshotError
 from resources import screenshot_storage
 from tg.user_data import screenshots
-from tg.metrics import ApplicationMetrics, record_resource_update, record_screenshot_processed
+from tg.metrics import ApplicationMetrics, observe_screenshot_stage, record_resource_update, record_screenshot_processed
 
 
 def message(text="", *, photo=False):
@@ -290,6 +290,37 @@ def test_cancel_during_real_ocr_deletes_late_file(context, monkeypatch):
         release.set()
         screenshots.stop_screenshot_worker(bot)
         bot.stop_bot()
+
+
+@pytest.mark.parametrize("failure", [None, "download", "recognize"])
+def test_stage_metrics_measure_failed_and_successful_attempts_separately(context, monkeypatch, failure):
+    bot, _, _ = context
+    registry = CollectorRegistry()
+    metrics = ApplicationMetrics(registry)
+    now = [0.0]
+
+    def download(_):
+        now[0] += 1
+        if failure == "download":
+            raise RuntimeError("download failed")
+        return b"image"
+
+    def recognize(_):
+        now[0] += 3
+        if failure == "recognize":
+            raise ScreenshotError("OCR failed")
+        return {"hammers": 100}
+
+    monkeypatch.setattr(screenshots, "observe_screenshot_stage", partial(
+        observe_screenshot_stage, metrics=metrics, clock=lambda: now[0],
+    ))
+    monkeypatch.setattr(screenshots, "recognize_screenshot", recognize)
+    bot.download_file.side_effect = download
+    receive_screenshot(message(photo=True), bot)
+    assert registry.get_sample_value("srm_screenshot_stage_duration_seconds_sum", {"stage": "download"}) == 1
+    assert registry.get_sample_value("srm_screenshot_stage_duration_seconds_count", {"stage": "download"}) == 1
+    assert registry.get_sample_value("srm_screenshot_stage_duration_seconds_sum", {"stage": "recognize"}) == (0 if failure == "download" else 3)
+    assert registry.get_sample_value("srm_screenshot_stage_duration_seconds_count", {"stage": "recognize"}) == (0 if failure == "download" else 1)
 
 
 def test_multiple_screenshots_merge_and_excluded_values_are_not_saved(context, monkeypatch):

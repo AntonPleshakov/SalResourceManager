@@ -22,6 +22,7 @@ HANDLER_DURATION_BUCKETS = (
     10,
     30,
 )
+SCREENSHOT_DURATION_BUCKETS = (*HANDLER_DURATION_BUCKETS, 60, 120, 300, 600)
 
 
 def _counter(
@@ -117,6 +118,15 @@ class ApplicationMetrics:
             ("event_type",),
             HTTP_DURATION_BUCKETS,
         )
+        self.telegram_queue_duration = _histogram(
+            registry,
+            "srm_telegram_queue_duration_seconds",
+            "Time between submitting a Telegram worker task and starting it.",
+            ("event_type",),
+            SCREENSHOT_DURATION_BUCKETS,
+        )
+        for event_type in ("message", "callback_query", "background"):
+            self.telegram_queue_duration.labels(event_type=event_type)
         self.events_in_progress = _gauge(
             registry,
             "srm_events_in_progress",
@@ -154,6 +164,16 @@ class ApplicationMetrics:
             "Bot access decisions.",
             ("result",),
         )
+        for event_type in ("message", "callback_query"):
+            self.events.labels(event_type=event_type)
+            self.event_errors.labels(event_type=event_type)
+            self.event_duration.labels(event_type=event_type)
+            self.events_in_progress.labels(event_type=event_type)
+            for chat_type in ("private", "group", "supergroup", "channel", "unknown"):
+                for outcome in ("handled", "ignored", "failed"):
+                    self.event_outcomes.labels(
+                        event_type=event_type, chat_type=chat_type, outcome=outcome,
+                    )
 
     def _create_domain_metrics(self, registry: CollectorRegistry) -> None:
         self.reminders = _counter(
@@ -210,6 +230,20 @@ class ApplicationMetrics:
         )
         for result in ("found", "empty", "failed"):
             self.screenshots_processed.labels(result=result)
+        self.screenshot_stage_duration = _histogram(
+            registry,
+            "srm_screenshot_stage_duration_seconds",
+            "Screenshot queue, download, recognition and total time until result application.",
+            ("stage",),
+            SCREENSHOT_DURATION_BUCKETS,
+        )
+        for stage in ("queue", "download", "recognize", "total"):
+            self.screenshot_stage_duration.labels(stage=stage)
+        self.screenshot_queue_size = _gauge(
+            registry,
+            "srm_screenshot_queue_size",
+            "Screenshots waiting for OCR, excluding running work and results awaiting application.",
+        )
         self.last_resource_update_timestamp = _gauge(
             registry,
             "srm_last_resource_update_timestamp_seconds",

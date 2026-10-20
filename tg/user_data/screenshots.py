@@ -20,7 +20,7 @@ from resources.user_data import EDITABLE_FIELDS, parse_editable_field_value
 from resources.screenshot_storage import delete_screenshot, save_screenshot
 import tg.user_data as user_data
 from tg.handlers import HandlerRegistry
-from tg.metrics import record_resource_update, record_screenshot_processed
+from tg.metrics import observe_screenshot_stage, record_resource_update, record_screenshot_processed
 from tg.message_updates import is_message_not_modified
 from tg.middleware import NoOpPostProcessMiddleware
 from tg.user_data.screenshot_jobs import ScreenshotJob, ScreenshotWorker
@@ -369,13 +369,15 @@ def _process_screenshot(message, bot):
     file = message.photo[-1] if message.content_type == "photo" else message.document
     screenshot_path = None
     try:
-        telegram_file = bot.get_file(file.file_id)
-        if telegram_file.file_size and telegram_file.file_size > MAX_IMAGE_BYTES:
-            raise ScreenshotError("Отправьте изображение размером до 10 МБ.")
-        image = bot.download_file(telegram_file.file_path)
+        with observe_screenshot_stage("download"):
+            telegram_file = bot.get_file(file.file_id)
+            if telegram_file.file_size and telegram_file.file_size > MAX_IMAGE_BYTES:
+                raise ScreenshotError("Отправьте изображение размером до 10 МБ.")
+            image = bot.download_file(telegram_file.file_path)
         screenshot_path = save_screenshot(image, telegram_file.file_path)
         _delete_input(message, bot)
-        values = recognize_screenshot(image)
+        with observe_screenshot_stage("recognize"):
+            values = recognize_screenshot(image)
     except ScreenshotError as error:
         if screenshot_path is not None:
             record_screenshot_processed("failed")

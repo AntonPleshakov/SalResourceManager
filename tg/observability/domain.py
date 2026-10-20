@@ -27,6 +27,21 @@ def record_screenshot_processed(
 
 
 @contextmanager
+def observe_screenshot_stage(
+    stage: str,
+    metrics: ApplicationMetrics = APPLICATION_METRICS,
+    clock: Callable[[], float] = monotonic,
+) -> Iterator[None]:
+    started_at = clock()
+    try:
+        yield
+    finally:
+        metrics.screenshot_stage_duration.labels(stage=stage).observe(
+            max(0.0, clock() - started_at)
+        )
+
+
+@contextmanager
 def observe_score_calculation(
     scope: str,
     metrics: ApplicationMetrics = APPLICATION_METRICS,
