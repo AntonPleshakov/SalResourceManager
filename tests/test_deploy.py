@@ -47,9 +47,26 @@ def deployment(tmp_path):
         'if [ -f "$DEPLOY_TEST_FAILURE" ]; then\n'
         '  case "$*" in\n'
         '    "compose pull bot") [ "$(cat "$DEPLOY_TEST_FAILURE")" != pull ] || exit 1 ;;\n'
+        '    *"120 bot") [ "$(cat "$DEPLOY_TEST_FAILURE")" != bot ] || exit 1 ;;\n'
         '    *grafana) [ "$(cat "$DEPLOY_TEST_FAILURE")" != grafana ] || exit 1 ;;\n'
+        '    "image rm "*) [ "$(cat "$DEPLOY_TEST_FAILURE")" != cleanup ] || exit 1 ;;\n'
         '  esac\n'
-        'fi\n',
+        'fi\n'
+        'case "$*" in\n'
+        '  "compose ps -aq bot") echo previous-container ;;\n'
+        '  "inspect --format {{.Image}} previous-container") echo "${DEPLOY_TEST_PREVIOUS:-previous-id}" ;;\n'
+        '  "image inspect --format {{.Id}} "*":rollback")\n'
+        '    if [ -f "$DEPLOY_TEST_ROLLBACK" ]; then cat "$DEPLOY_TEST_ROLLBACK"; else echo old-rollback-id; fi ;;\n'
+        '  "image inspect --format {{.Id}} "*) echo current-id ;;\n'
+        '  "image tag "*) printf "%s\\n" "$3" > "$DEPLOY_TEST_ROLLBACK" ;;\n'
+        '  "image ls "*)\n'
+        '    repo=ghcr.io/antonpleshakov/salresourcemanager\n'
+        '    printf "%s\\n" "$repo:current current-id" "$repo:previous previous-id" '
+        '"$repo:rollback $(cat "$DEPLOY_TEST_ROLLBACK" 2>/dev/null || echo old-rollback-id)" '
+        '"$repo:obsolete obsolete-id" "$repo:in-use in-use-id" ;;\n'
+        '  "ps -aq --filter ancestor=in-use-id") echo another-container ;;\n'
+        '  "image inspect --format {{json .RepoTags}} old-rollback-id") echo "[]" ;;\n'
+        'esac\n',
         encoding="utf-8", newline="\n",
     )
     docker.chmod(0o755)
@@ -67,12 +84,14 @@ def deployment(tmp_path):
     return bash, release, app, binaries, log, failure
 
 
-def run_deploy(deployment):
+def run_deploy(deployment, **overrides):
     bash, release, app, binaries, log, failure = deployment
     environment = {
         **os.environ,
         "DEPLOY_TEST_LOG": log.as_posix(),
         "DEPLOY_TEST_FAILURE": failure.as_posix(),
+        "DEPLOY_TEST_ROLLBACK": (app / "rollback-id").as_posix(),
+        **overrides,
     }
     return subprocess.run(
         [bash, "-c",
@@ -96,10 +115,10 @@ def test_changed_dashboards_recreate_grafana_and_pin_bot_image(deployment):
     result = run_deploy(deployment)
     assert result.returncode == 0, result.stderr
     calls = docker_calls(deployment)
-    assert [command for _, command in calls] == [
-        "compose pull bot", "compose up -d --force-recreate bot",
+    assert [command for _, command in calls if command.startswith("compose ")] == [
+        "compose ps -aq bot", "compose pull bot",
+        "compose up -d --force-recreate --wait --wait-timeout 120 bot",
         "compose up -d --no-deps --force-recreate --wait --wait-timeout 120 grafana",
-        "image prune -f",
     ]
     assert all(image == IMAGE for image, _ in calls)
     assert dashboard.read_bytes() == (release / "config/grafana" / dashboard.name).read_bytes()
@@ -137,6 +156,46 @@ def test_release_failure_keeps_installed_configuration(deployment, failure_kind)
     assert dashboard.read_text() == "installed dashboard"
     assert not (app / "config/grafana/.recreate-required").exists()
     assert all("up" not in command for _, command in docker_calls(deployment))
+
+
+def test_cleanup_keeps_current_previous_and_images_used_by_other_containers(deployment):
+    result = run_deploy(deployment)
+    assert result.returncode == 0, result.stderr
+    commands = [command for _, command in docker_calls(deployment)]
+    repo = "ghcr.io/antonpleshakov/salresourcemanager"
+    assert f"image tag previous-id {repo}:rollback" in commands
+    assert [command for command in commands if command.startswith("image rm ")] == [
+        f"image rm {repo}:obsolete", "image rm old-rollback-id",
+    ]
+    assert commands.index(f"image rm {repo}:obsolete") > commands.index(
+        "compose up -d --force-recreate --wait --wait-timeout 120 bot"
+    )
+
+
+def test_redeploying_current_image_preserves_existing_rollback(deployment):
+    result = run_deploy(deployment, DEPLOY_TEST_PREVIOUS="current-id")
+    assert result.returncode == 0, result.stderr
+    commands = [command for _, command in docker_calls(deployment)]
+    assert not any(command.startswith("image tag ") for command in commands)
+    assert "image rm old-rollback-id" not in commands
+    assert not any(command.endswith(":rollback") for command in commands if command.startswith("image rm "))
+
+
+@pytest.mark.parametrize("failure_kind", ["pull", "bot", "grafana"])
+def test_failed_deploy_does_not_clean_images_or_replace_rollback(deployment, failure_kind):
+    _, _, app, _, _, failure = deployment
+    (app / "config/grafana/datasources.yml").write_text("old datasource")
+    failure.write_text(failure_kind)
+    assert run_deploy(deployment).returncode != 0
+    commands = [command for _, command in docker_calls(deployment)]
+    assert not any(command.startswith(("image rm ", "image tag ")) for command in commands)
+
+
+def test_cleanup_failure_does_not_fail_successful_deploy(deployment):
+    deployment[5].write_text("cleanup")
+    result = run_deploy(deployment)
+    assert result.returncode == 0
+    assert "old application images could not be fully cleaned up" in result.stderr
 
 
 def test_workflow_uploads_release_configuration_with_matching_image_tag():
