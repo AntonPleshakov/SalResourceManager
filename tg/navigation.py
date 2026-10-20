@@ -14,6 +14,7 @@ from tg.rich import (
     callback_button,
     deliver_rich_message,
     details,
+    edit_rich_message,
     footer,
     heading,
     input_rich_message,
@@ -35,6 +36,8 @@ def show_home_menu(
     message: Union[Message, CallbackQuery],
     bot: TeleBot,
     notice: str = "",
+    *,
+    edit_message_id: int | None = None,
 ) -> None:
     user_id = get_ids(message)[0]
     database = get_user_data_db()
@@ -127,7 +130,10 @@ def show_home_menu(
             button_row((callback_button("🛠 Админ-панель", "admins"),))
         )
 
-    deliver_rich_message(message, bot, input_rich_message(parts))
+    if edit_message_id is None:
+        deliver_rich_message(message, bot, input_rich_message(parts))
+    else:
+        edit_rich_message(bot, get_ids(message)[1], edit_message_id, input_rich_message(parts))
 
 
 def start(message: Union[Message, CallbackQuery], bot: TeleBot) -> None:
@@ -140,12 +146,15 @@ def start(message: Union[Message, CallbackQuery], bot: TeleBot) -> None:
     show_home_menu(message, bot)
 
 
-def home(message: Union[Message, CallbackQuery], bot: TeleBot) -> None:
+def home(message: Union[Message, CallbackQuery], bot: TeleBot, *, edit_message_id: int | None = None) -> None:
     user_id = get_ids(message)[0]
     bot.delete_state(user_id)
     if _show_onboarding(message, bot):
         return
-    show_home_menu(message, bot)
+    if edit_message_id is None:
+        show_home_menu(message, bot)
+    else:
+        show_home_menu(message, bot, edit_message_id=edit_message_id)
 
 
 

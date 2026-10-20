@@ -34,6 +34,7 @@ from tg.utils import (
     get_username,
 )
 from tg.webhook import load_webhook_settings, serve_webhook
+from tg.user_data.screenshots import ScreenshotProgressMiddleware, stop_screenshot_worker
 
 
 bot_class = DebugTeleBot if is_debug_mode() else TeleBot
@@ -177,6 +178,7 @@ if __name__ == "__main__":
         )
     )
     bot.setup_middleware(TelegramMetricsMiddleware())
+    bot.setup_middleware(ScreenshotProgressMiddleware(bot))
     register_membership_handlers(
         bot,
         databases.access_group,
@@ -230,7 +232,10 @@ if __name__ == "__main__":
         try:
             admin_reconciliation_scheduler.stop()
             reminder_scheduler.stop()
-            bot.stop_bot()
+            try:
+                bot.stop_bot()
+            finally:
+                stop_screenshot_worker(bot)
         finally:
             metrics_server.stop()
         logger.info("Sal Resources Manager stopped")
