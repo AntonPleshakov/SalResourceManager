@@ -867,3 +867,23 @@ def test_cancel_deletes_only_current_session_screenshots_and_uses_batches_of_100
         (42, list(range(100, 200))), (42, list(range(200, 300))), (42, list(range(300, 305))),
     ]
     home.assert_called_once()
+
+
+@pytest.mark.parametrize("field,title,count", [("pets", "Питомцы и яйца", 96), ("unmerged_mounts", "Необъединённые маунты", 357)])
+@pytest.mark.parametrize("corrected", [False, True])
+def test_selection_count_is_reviewed_and_saved(context, input_metrics, monkeypatch, field, title, count, corrected):
+    bot, users, _ = context
+    monkeypatch.setattr(screenshots, "recognize_screenshot", lambda _: {field: count})
+    receive_screenshot(message(photo=True), bot)
+    html = bot.edit_message_text.call_args.kwargs["rich_message"].html
+    assert title in html and str(count) in html
+    assert f"/edit/{field}" in html and f"/drop/{field}" in html
+    assert getattr(users.get_assigned_user(42), field).value == 0
+    if corrected:
+        screenshots.edit_reading(review_callback(bot, "edit", field), bot)
+        screenshots.correct_reading(message(str(count + 1)), bot)
+    screenshots.save_readings(review_callback(bot, "save"), bot)
+    assert getattr(users.get_assigned_user(42), field).value == count + int(corrected)
+    assert input_metrics.get_sample_value("srm_resource_inputs_total", {
+        "category": "resources", "source": "manual" if corrected else "screenshot",
+    }) == 1

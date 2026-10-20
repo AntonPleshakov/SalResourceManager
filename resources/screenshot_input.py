@@ -17,6 +17,8 @@ MAX_IMAGE_BYTES = 10 * 1024 * 1024
 MAX_IMAGE_PIXELS = 16_000_000
 ICON_NAMES = ("mount_keys", "hammers", "skills", "shells", "flasks")
 SCREENSHOT_FIELDS = ICON_NAMES + (
+    "pets",
+    "unmerged_mounts",
     "forge_level", "free_equipment_chance", "skill_summon_cost",
     "extra_egg_chance", "mount_summon_cost", "extra_mount_chance",
 )
@@ -132,7 +134,7 @@ def _ocr(image, *, digits: bool = False, psm: int = 6) -> str:
     return result.stdout.decode("utf-8").strip()
 
 
-@lru_cache(maxsize=5)
+@lru_cache(maxsize=8)
 def _icon(name: str):
     import cv2
     import numpy as np
@@ -243,6 +245,109 @@ def _read_forge_level(image, position) -> int | None:
     return next((level for level, count in readings.items() if count >= 2), None)
 
 
+def _selection_panel(image):
+    import cv2
+
+    height, width = image.shape[:2]
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    contours, _ = cv2.findContours(
+        cv2.inRange(gray, 0, 70), cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE,
+    )
+    candidates = []
+    for contour in contours:
+        x, y, w, h = cv2.boundingRect(contour)
+        if not (w > width * .7 and height * .1 < h < height * .35
+                and y < height * .5 and 1.25 < w / h < 3.5):
+            continue
+        outline = cv2.approxPolyDP(contour, cv2.arcLength(contour, True) * .02, True)
+        if len(outline) != 4:
+            continue
+        interior = image[y + 5:y + h - 5, x + 5:x + w - 5]
+        neutral = (
+            (interior.max(axis=2).astype(int) - interior.min(axis=2).astype(int) < 15)
+            & (interior[:, :, 0] > 150) & (interior[:, :, 0] < 235)
+        )
+        coverage = float(neutral.mean())
+        if coverage >= .35:
+            candidates.append((coverage, (x, y, w, h)))
+    # The outer modal can also close above a dark category row; prefer gray fill.
+    return max(candidates, key=lambda candidate: candidate[0])[1] if candidates else None
+
+
+def _selection_field(image, panel):
+    import cv2
+
+    x, y, w, h = panel
+    row = image[y + h:y + h + int(h * .4), x:x + w]
+    gray = cv2.cvtColor(row, cv2.COLOR_BGR2GRAY)
+    scores = {}
+    for field, icon_names in (
+        ("pets", ("selection_pets", "selection_eggs")),
+        ("unmerged_mounts", ("selection_mounts",)),
+    ):
+        best = 0.0
+        for icon_name in icon_names:
+            template = cv2.cvtColor(_icon(icon_name), cv2.COLOR_BGR2GRAY)
+            for scale in (.85, .925, 1., 1.075, 1.15):
+                candidate = cv2.resize(template, None, fx=scale, fy=scale)
+                if candidate.shape[0] >= gray.shape[0] or candidate.shape[1] >= gray.shape[1]:
+                    continue
+                # Normalize the background and accept both dark and light glyphs.
+                matches = cv2.matchTemplate(gray, candidate, cv2.TM_CCOEFF_NORMED)
+                lowest, highest, _, _ = cv2.minMaxLoc(matches)
+                best = max(best, abs(lowest), abs(highest))
+        scores[field] = best
+    ranked = sorted(scores, key=scores.get, reverse=True)
+    if scores[ranked[0]] < .8 or scores[ranked[0]] - scores[ranked[1]] < .1:
+        return None
+    return ranked[0]
+
+
+def _read_selection_count(image, field, *, panel=None) -> int | None:
+    import cv2
+    import numpy as np
+
+    panel = panel if panel is not None else _selection_panel(image)
+    if panel is None:
+        return None
+    x, y, w, h = panel
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    crop = gray[y + int(h * .78):y + int(h * .93),
+                x + int(w * .03):x + int(w * .45)]
+    for psm in (7, 8):
+        readings: dict[int, int] = {}
+        for threshold in (80, 120, 160):
+            mask = cv2.threshold(crop, threshold, 255, cv2.THRESH_BINARY)[1]
+            rows, columns = np.where(mask == 0)
+            if not len(columns):
+                continue
+            occupied = np.unique(columns)
+            left, right = int(occupied[0]), int(occupied[-1]) + 1
+            text_height = int(rows.max() - rows.min() + 1)
+            # Read the leading number only; the following label can be any language.
+            for previous, current in zip(occupied, occupied[1:]):
+                if current - previous >= max(4, text_height * .3):
+                    right = int(previous) + 1
+                    break
+            number = mask[:, left:right]
+            if psm == 7:
+                number = number[max(0, int(rows.min()) - 2):int(rows.max()) + 3]
+            number = cv2.resize(number, None, fx=3, fy=3, interpolation=cv2.INTER_CUBIC)
+            number = cv2.copyMakeBorder(number, 12, 12, 12, 12, cv2.BORDER_CONSTANT, value=255)
+            text = _ocr(number, digits=True, psm=psm)
+            if not re.fullmatch(r"[0-9]+", text):
+                continue
+            try:
+                value = validate_value(field, int(text))
+            except ValueError:
+                continue
+            readings[value] = readings.get(value, 0) + 1
+        value = next((value for value, count in readings.items() if count >= 2), None)
+        if value is not None:
+            return value
+    return None
+
+
 def _recognize(image_bytes: bytes) -> dict[str, int]:
     import cv2
     import numpy as np
@@ -262,6 +367,13 @@ def _recognize(image_bytes: bytes) -> dict[str, int]:
     except (UnidentifiedImageError, OSError, Image.DecompressionBombError) as error:
         raise ScreenshotError("Не удалось открыть изображение.") from error
     image = cv2.resize(image, (591, round(image.shape[0] * 591 / image.shape[1])))
+    selection_panel = _selection_panel(image)
+    if selection_panel is not None:
+        field = _selection_field(image, selection_panel)
+        if field is not None:
+            count = _read_selection_count(image, field, panel=selection_panel)
+            if count is not None:
+                return {field: count}
     values = {}
     for name in ICON_NAMES:
         position = _find_icon(image, name)

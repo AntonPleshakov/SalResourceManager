@@ -223,3 +223,121 @@ def test_forge_level_omits_ambiguous_or_invalid_readings(monkeypatch, readings):
     assert recognition._read_forge_level(
         np.full((200, 400, 3), 255, dtype=np.uint8), (100, 150, 28, 24),
     ) is None
+
+
+@pytest.mark.parametrize("filename,field,count", [("pets_selected_96.jpg", "pets", 96), ("mounts_selected_357.jpg", "unmerged_mounts", 357), ("pets_selected_1658.jpg", "pets", 1658)])
+@pytest.mark.parametrize("width", [400, 591, 900])
+def test_selection_count_from_actual_telegram_screenshot(filename, field, count, width):
+    from PIL import Image
+
+    if not recognition.ocr_available():
+        pytest.skip("Tesseract unavailable")
+    with Image.open(FIXTURES / filename) as image:
+        resized = image.resize((width, round(image.height * width / image.width)))
+        stream = BytesIO()
+        resized.save(stream, format="JPEG", quality=80)
+    assert recognition.recognize_screenshot(stream.getvalue()) == {field: count}
+
+
+@pytest.mark.parametrize("filename,field,count,label_left", [("pets_selected_96.jpg", "pets", 96, 94), ("mounts_selected_357.jpg", "unmerged_mounts", 357, 104), ("pets_selected_1658.jpg", "pets", 1658, 114)])
+@pytest.mark.parametrize("label", ["", "selected", "ausgewaehlt", "choisis"])
+def test_selection_count_does_not_depend_on_localized_label(filename, field, count, label_left, label):
+    import cv2
+    import numpy as np
+
+    if not recognition.ocr_available():
+        pytest.skip("Tesseract unavailable")
+    image = cv2.imdecode(np.frombuffer((FIXTURES / filename).read_bytes(), np.uint8), 1)
+    # Preserve the real number and replace only its following label.
+    image[380:420, label_left:300] = (222, 222, 222)
+    cv2.putText(image, label, (label_left + 2, 405), cv2.FONT_HERSHEY_SIMPLEX,
+                .6, (0, 0, 0), 2, cv2.LINE_AA)
+    success, encoded = cv2.imencode(".png", image)
+    assert success
+    assert recognition.recognize_screenshot(encoded.tobytes()) == {field: count}
+
+
+@pytest.mark.parametrize("count", [0, 1, 12, 9999])
+def test_pet_count_reads_only_the_number_in_the_panel(count):
+    import cv2
+    import numpy as np
+
+    if not recognition.ocr_available():
+        pytest.skip("Tesseract unavailable")
+    image = cv2.imdecode(np.frombuffer((FIXTURES / "pets_selected_96.jpg").read_bytes(), np.uint8), 1)
+    image[380:420, 60:300] = (222, 222, 222)
+    cv2.putText(image, f"{count} selected", (64, 405), cv2.FONT_HERSHEY_SIMPLEX,
+                .65, (0, 0, 0), 2, cv2.LINE_AA)
+    assert recognition._read_selection_count(image, "pets") == count
+
+
+@pytest.mark.parametrize("readings", [["96", "97", ""], ["-1", "-1", "-1"], ["9.6", "9.6", "9.6"]])
+def test_pet_count_omits_ambiguous_and_invalid_ocr_readings(monkeypatch, readings):
+    import cv2
+    import numpy as np
+
+    results = iter(readings * 2)
+    monkeypatch.setattr(recognition, "_ocr", lambda *args, **kwargs: next(results))
+    image = cv2.imdecode(np.frombuffer((FIXTURES / "pets_selected_96.jpg").read_bytes(), np.uint8), 1)
+    assert recognition._read_selection_count(image, "pets") is None
+
+
+@pytest.mark.parametrize("mounts", [False, True])
+def test_selection_type_follows_category_icons_instead_of_number_or_label(mounts):
+    import cv2
+    import numpy as np
+
+    if not recognition.ocr_available():
+        pytest.skip("Tesseract unavailable")
+    pets = cv2.imdecode(np.frombuffer((FIXTURES / "pets_selected_96.jpg").read_bytes(), np.uint8), 1)
+    mount_image = cv2.imdecode(np.frombuffer((FIXTURES / "mounts_selected_357.jpg").read_bytes(), np.uint8), 1)
+    image, replacement = (pets, mount_image) if mounts else (mount_image, pets)
+    image[438:540] = replacement[438:540]
+    success, encoded = cv2.imencode(".png", image)
+    assert success
+    assert recognition.recognize_screenshot(encoded.tobytes()) == {
+        "unmerged_mounts" if mounts else "pets": 96 if mounts else 357,
+    }
+
+
+@pytest.mark.parametrize("ambiguous", [False, True])
+def test_unknown_or_conflicting_category_icons_do_not_select_a_resource(ambiguous):
+    import cv2
+    import numpy as np
+
+    image = cv2.imdecode(np.frombuffer((FIXTURES / "pets_selected_96.jpg").read_bytes(), np.uint8), 1)
+    if ambiguous:
+        mounts = cv2.imdecode(np.frombuffer((FIXTURES / "mounts_selected_357.jpg").read_bytes(), np.uint8), 1)
+        image[466:500, 400:436] = mounts[467:501, 114:150]
+    else:
+        image[438:540] = 255
+    assert recognition._selection_field(image, recognition._selection_panel(image)) is None
+
+
+@pytest.mark.parametrize("filename,field,count,box", [
+    ("pets_selected_96.jpg", "pets", 96, (245, 466, 34, 32)),
+    ("pets_selected_1658.jpg", "pets", 1658, (150, 465, 29, 32)),
+    ("mounts_selected_357.jpg", "unmerged_mounts", 357, (114, 467, 36, 34)),
+])
+@pytest.mark.parametrize("background", [
+    (255, 255, 255), (0, 0, 0), (255, 0, 0),
+    (0, 255, 0), (0, 0, 255), (60, 100, 180),
+])
+def test_selection_icons_are_recognized_on_different_backgrounds(filename, field, count, box, background):
+    import cv2
+    import numpy as np
+
+    if not recognition.ocr_available():
+        pytest.skip("Tesseract unavailable")
+    image = cv2.imdecode(np.frombuffer((FIXTURES / filename).read_bytes(), np.uint8), 1)
+    x, y, w, h = box
+    glyph = cv2.cvtColor(image[y:y + h, x:x + w], cv2.COLOR_BGR2GRAY)
+    _, foreground = cv2.threshold(glyph, 0, 255, cv2.THRESH_BINARY_INV | cv2.THRESH_OTSU)
+    # Remove all rarity cards and leave just one glyph on a new background.
+    image[438:540] = background
+    icon = image[465:465 + h, 230:230 + w]
+    shade = 60 if np.mean(background) > 120 else 220
+    icon[foreground != 0] = (shade, shade, shade)
+    success, encoded = cv2.imencode(".jpg", image, [cv2.IMWRITE_JPEG_QUALITY, 80])
+    assert success
+    assert recognition.recognize_screenshot(encoded.tobytes()) == {field: count}
