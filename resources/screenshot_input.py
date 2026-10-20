@@ -314,8 +314,8 @@ def _read_selection_count(image, field, *, panel=None) -> int | None:
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
     crop = gray[y + int(h * .78):y + int(h * .93),
                 x + int(w * .03):x + int(w * .45)]
+    readings: dict[int, int] = {}
     for psm in (7, 8):
-        readings: dict[int, int] = {}
         for threshold in (80, 120, 160):
             mask = cv2.threshold(crop, threshold, 255, cv2.THRESH_BINARY)[1]
             rows, columns = np.where(mask == 0)
@@ -342,10 +342,13 @@ def _read_selection_count(image, field, *, panel=None) -> int | None:
             except ValueError:
                 continue
             readings[value] = readings.get(value, 0) + 1
-        value = next((value for value, count in readings.items() if count >= 2), None)
-        if value is not None:
-            return value
-    return None
+    # Thresholds can repeat the same segmentation error within one OCR mode.
+    # Compare both line and word readings before accepting a unique winner.
+    ranked = sorted(readings, key=readings.get, reverse=True)
+    if (not ranked or readings[ranked[0]] < 2
+            or (len(ranked) > 1 and readings[ranked[0]] == readings[ranked[1]])):
+        return None
+    return ranked[0]
 
 
 def _recognize(image_bytes: bytes) -> dict[str, int]:

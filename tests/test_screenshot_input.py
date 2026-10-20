@@ -282,6 +282,24 @@ def test_pet_count_omits_ambiguous_and_invalid_ocr_readings(monkeypatch, reading
     assert recognition._read_selection_count(image, "pets") is None
 
 
+@pytest.mark.parametrize("line_readings,word_readings,expected", [
+    (["387", "357", "387"], ["357", "357", "357"], 357),
+    (["357", "357", "357"], ["387", "357", "387"], 357),
+    (["387", "387", "387"], ["357", "357", "357"], None),
+    (["", "", ""], ["0", "0", "0"], 0),
+])
+def test_selection_count_compares_both_ocr_modes_before_accepting_consensus(
+    monkeypatch, line_readings, word_readings, expected,
+):
+    import cv2
+    import numpy as np
+
+    results = {7: iter(line_readings), 8: iter(word_readings)}
+    monkeypatch.setattr(recognition, "_ocr", lambda *args, psm, **kwargs: next(results[psm]))
+    image = cv2.imdecode(np.frombuffer((FIXTURES / "mounts_selected_357.jpg").read_bytes(), np.uint8), 1)
+    assert recognition._read_selection_count(image, "unmerged_mounts") == expected
+
+
 @pytest.mark.parametrize("mounts", [False, True])
 def test_selection_type_follows_category_icons_instead_of_number_or_label(mounts):
     import cv2
