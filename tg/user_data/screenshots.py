@@ -155,7 +155,7 @@ def _add_screenshot_notice(session, reason):
     ]
 
 
-def _review_message(session, notice=""):
+def _review_message(session, current_account, notice=""):
     token = session["token"]
     parts = [heading("Проверка скриншотов"), account_context(session["tag"])]
     if notice:
@@ -172,7 +172,12 @@ def _review_message(session, notice=""):
         value = session["values"][name]
         suffix = "%" if name.endswith(("chance", "cost")) else ""
         displayed = f"{value:,}{suffix}".replace(",", " ")
-        parts.append(f"<p>{escape(title)}: <b>{displayed}</b></p>")
+        current = ""
+        if current_account is not None:
+            saved_value = getattr(current_account, name).value
+            saved_display = f"{saved_value:,}{suffix}".replace(",", " ")
+            current = f" (сейчас: {saved_display})"
+        parts.append(f"<p>{escape(title)}: <b>{displayed}</b>{current}</p>")
         parts.append(button_row((
             callback_button("✏️ Изменить", f"screenshot/{token}/edit/{name}"),
             callback_button("✖️ Исключить", f"screenshot/{token}/drop/{name}"),
@@ -227,7 +232,9 @@ def _progress(bot, session, notice=""):
             logger.warning("Unable to delete screenshot prompt user_id=%s type=%s",
                            session["user_id"], type(error).__name__)
     parts = [heading("Распознавание скриншотов"),
-             f"<p>Обработано {session['processed']} из {session['upload_total']}.</p>"]
+             f"<p>Обработано {session['processed']} из {session['upload_total']}.</p>",
+             "<p>⏳ Пожалуйста, подождите.</p>"
+             "<p>🕒 Обработка одного скриншота обычно занимает от 10 до 30 секунд.</p>"]
     if notice:
         parts.append(rich_notice(escape(notice)))
     parts.append(button_row((callback_button("✖️ Отмена", f"screenshot/{session_id[:12]}/cancel"),)))
@@ -252,7 +259,10 @@ def _update_review(update, bot, session, notice=""):
     if session.get("pending"):
         _progress(bot, session, notice)
         return
-    _edit_view(update, bot, session, _review_message(session, notice))
+    current_account = user_data.get_user_data_db().get_assigned_user(
+        session["user_id"], session["account_id"],
+    )
+    _edit_view(update, bot, session, _review_message(session, current_account, notice))
 
 
 def _show(update, bot, session, notice=""):
