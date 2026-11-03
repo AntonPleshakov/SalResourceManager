@@ -17,6 +17,7 @@ from common.datetime_utils import format_last_update_time
 from db.initializer import get_access_group_db, get_admins_db, get_user_data_db
 from logger.app_logger import logger
 from reports.game_data import GameDataReport
+from resources.technology_badges import max_technology_badges
 from resources.user_data import UserData
 from tg.admins.common import (
     AdminAccessError,
@@ -142,6 +143,10 @@ def build_game_data_message(
     ]
     report_rows = GameDataReport.build_rows(visible_users)
     headers, rows = report_rows[0], report_rows[1:]
+    for user, row in zip(visible_users, rows):
+        badges = max_technology_badges(user)
+        if badges:
+            row[1] = f"{row[1]} {badges}"
     column_groups = _table_column_groups(len(headers))
     non_row_blocks = 4 + len(column_groups)
     max_rows = max(
