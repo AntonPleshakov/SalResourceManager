@@ -156,7 +156,7 @@ def _war_points_text(clan_id: int, clan_title: str) -> str:
             f'<th align="right">{format_points(report.total)}'
             + (
                 f" <i>(+ {format_points(stale_report.total)}"
-                f" = {format_points(points + stale_report.total)})</i>"
+                f" = {format_points(report.total + stale_report.total)})</i>"
                 if stale_users
                 else ""
             )
