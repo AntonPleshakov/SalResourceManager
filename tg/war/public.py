@@ -10,6 +10,7 @@ from db.initializer import get_access_group_db
 from logger.app_logger import logger
 from resources.user_data import UserData
 from resources.clan_technologies import ClanTechnologies
+from resources.technology_badges import max_technology_badges
 from resources.war import WarPointsCalculator
 import tg.war as war
 from tg.handlers import HandlerRegistry
@@ -155,7 +156,7 @@ def _war_points_text(clan_id: int, clan_title: str) -> str:
             f'<th align="right">{format_points(report.total)}'
             + (
                 f" <i>(+ {format_points(stale_report.total)}"
-                f" = {format_points(report.total + stale_report.total)})</i>"
+                f" = {format_points(points + stale_report.total)})</i>"
                 if stale_users
                 else ""
             )
@@ -235,10 +236,13 @@ def clan_war_top(callback_query: CallbackQuery, bot: TeleBot) -> None:
     rows = []
     for rank, user, points in ranking[page * 20:(page + 1) * 20]:
         identity = str(user.tag.value or user.username.value or user.user_id.value)
+        badges = max_technology_badges(user)
         is_current = user.user_id.value == user_id
         username = str(user.username.value or "").lstrip("@")
         telegram = escape(f"@{username}") if username else "—"
         player = escape(identity)
+        if badges:
+            player = f"{player} {badges}"
         place = str(rank)
         if is_current:
             place = f"<b>{place}</b>"
