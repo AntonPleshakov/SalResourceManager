@@ -426,6 +426,31 @@ def test_clan_top_and_personal_position_share_ranking(monkeypatch):
     assert text.index("Место в рейтинге") < text.index("Итог за войну")
 
 
+def test_clan_top_shows_combined_badge_and_legend(monkeypatch):
+    from tg.war.public import clan_war_top
+
+    user = UserData(
+        user_id=42,
+        account_id=1,
+        tag="<Игрок>",
+        skill_summon_cost=25,
+        mount_summon_cost=25,
+        extra_mount_chance=50,
+        extra_egg_chance=50,
+    )
+    monkeypatch.setattr("tg.war.get_user_data_db", lambda: FakeUserDataDB(user))
+    bot = FakeBot()
+
+    clan_war_top(make_callback(data="war_top"), bot)
+
+    html = bot.edited[-1][0]
+    assert "<b>👉 &lt;Игрок&gt; 🏆 (вы)</b>" in html
+    assert "🎟️🐎🥚" not in html
+    assert "<summary>Обозначения технологий</summary>" in html
+    assert "все четыре перечисленные технологии" in html
+    assert "шанс дополнительного маунта: 50%" in html
+
+
 def test_clan_top_paginates_and_handles_empty_clan(monkeypatch):
     from tg.war.public import clan_war_top
 

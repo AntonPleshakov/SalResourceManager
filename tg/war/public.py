@@ -10,7 +10,7 @@ from db.initializer import get_access_group_db
 from logger.app_logger import logger
 from resources.user_data import UserData
 from resources.clan_technologies import ClanTechnologies
-from resources.technology_badges import max_technology_badges
+from resources.technology_badges import matches_technology_filter, max_technology_badges
 from resources.war import WarPointsCalculator
 import tg.war as war
 from tg.handlers import HandlerRegistry
@@ -27,9 +27,11 @@ from tg.rich import (
     notice,
 )
 from tg.user_data.common import prompt_for_account_clan
+from tg.technology_badges import technology_badges_legend
 from tg.utils import format_points, get_ids, get_username
 from tg.war.supplementary import flasks_summary
 from tg.war.ranking import clan_ranking
+from tg.war import top_actions
 
 
 def _war_week_started_on(reference: datetime) -> date:
@@ -230,8 +232,15 @@ def clan_war_top(callback_query: CallbackQuery, bot: TeleBot) -> None:
     if account.clan_id is None:
         prompt_for_account_clan(callback_query, bot, account.account_id)
         return
+    bot.delete_state(user_id)
     ranking = clan_ranking(account.clan_id, _clan_technologies(account.clan_id))
-    page = int(callback_query.data.split("/")[1]) if "/" in callback_query.data else 0
+    segments = callback_query.data.split("/")
+    technology = segments[1] if len(segments) == 3 else "any"
+    if technology not in top_actions.TECHNOLOGY_FILTERS:
+        bot.answer_callback_query(callback_query.id, "Неизвестный фильтр", show_alert=True)
+        return
+    page = int(segments[-1]) if len(segments) > 1 else 0
+    ranking = [item for item in ranking if matches_technology_filter(item[1], technology)]
     page = min(page, max(0, (len(ranking) - 1) // 20))
     rows = []
     for rank, user, points in ranking[page * 20:(page + 1) * 20]:
@@ -257,15 +266,28 @@ def clan_war_top(callback_query: CallbackQuery, bot: TeleBot) -> None:
         f"<footer>Клан: {escape(getattr(account, 'clan_title', '') or str(account.clan_id))}</footer>",
         "<p>Итог по очкам войны за сохраненные ресурсы и технологии клана. "
         "При равных очках место одинаковое.</p>",
+        f"<p>Фильтр: {escape(top_actions.TECHNOLOGY_FILTERS[technology])}. "
+        f"Аккаунтов: {len(ranking)}. Места указаны в общем топе клана.</p>",
         '<table bordered compact><tr><th>Место</th><th>Игрок</th><th>Telegram</th><th>Очки</th></tr>',
         *rows,
-        "</table>" if rows else "</table><p>Аккаунтов пока нет.</p>",
+        "</table>" if rows else (
+            "</table><p>Аккаунтов пока нет.</p>" if technology == "any"
+            else "</table><p>По этому фильтру игроков нет.</p>"
+        ),
+        technology_badges_legend(),
+        button_row((callback_button("🔎 Фильтр", f"war_top_filters/{technology}"),)),
     ]
+    if ranking and top_actions.can_manage_top(bot, user_id, account.clan_id):
+        parts.append(button_row((
+            callback_button("📋 Скопировать теги", f"war_top_copy/{account.clan_id}/{technology}"),
+            callback_button("✉️ Отправить сообщение", f"war_top_message/{account.clan_id}/{technology}"),
+        )))
     buttons = []
+    page_prefix = "war_top" if technology == "any" else f"war_top/{technology}"
     if page:
-        buttons.append(callback_button("⬅️ Назад", f"war_top/{page - 1}"))
+        buttons.append(callback_button("⬅️ Назад", f"{page_prefix}/{page - 1}"))
     if (page + 1) * 20 < len(ranking):
-        buttons.append(callback_button("Далее ➡️", f"war_top/{page + 1}"))
+        buttons.append(callback_button("Далее ➡️", f"{page_prefix}/{page + 1}"))
     if buttons:
         parts.append(button_row(tuple(buttons)))
     parts.append(back_button("⬅️ Очки войны", "war_menu"))
@@ -279,5 +301,6 @@ def register_handlers(bot: TeleBot) -> None:
     )
 
     HandlerRegistry(bot).private_callback(
-        clan_war_top, button=r"war_top(?:/[0-9]+)?",
+        clan_war_top, button=rf"war_top(?:/[0-9]+|/({top_actions.FILTER_PATTERN})/[0-9]+)?",
     )
+    top_actions.register_handlers(bot)
