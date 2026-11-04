@@ -27,6 +27,15 @@ def test_resource_input_accepts_copied_thousands_separators(field, separator):
     assert parse_editable_field_value(field, f"1{separator}200") == 1200
 
 
+@pytest.mark.parametrize("field", [field.name for field in RESOURCE_FIELDS])
+@pytest.mark.parametrize("value,expected", [
+    ("1.65", 1650), ("1,5", 1500), ("1.5к", 1500), ("1,5k", 1500),
+    ("1к", 1000), ("2K", 2000), ("120", 120), ("0.001", 1),
+])
+def test_all_resources_accept_thousand_notation(field, value, expected):
+    assert parse_editable_field_value(field, value) == expected
+
+
 def test_input_diagnostics_preserve_invisible_characters_without_log_line_injection():
     update = SimpleNamespace(text="1\u202f200\nWARNING forged", caption=None)
     diagnostic = input_description(update)
@@ -55,7 +64,7 @@ def test_repeated_invalid_input_stays_silent_and_valid_retry_saves(monkeypatch, 
     monkeypatch.setattr("tg.user_data.get_user_data_db", lambda: database)
     message = SimpleNamespace(
         from_user=SimpleNamespace(id=42, username="tester", first_name="Tester"),
-        chat=SimpleNamespace(id=42), id=99, text="1,2",
+        chat=SimpleNamespace(id=42), id=99, text="не число",
     )
 
     save(message, bot)
@@ -65,7 +74,7 @@ def test_repeated_invalid_input_stays_silent_and_valid_retry_saves(monkeypatch, 
     bot.delete_state.assert_not_called()
     bot.send_message.assert_not_called()
 
-    message.text = "1\u202f200"
+    message.text = "1,2k"
     save(message, bot)
 
     database.set_value.assert_called_once_with(

@@ -72,9 +72,7 @@ EDITABLE_FIELDS: Dict[str, ResourceField] = {
     field.name: field
     for field in RESOURCE_FIELDS + TECHNOLOGY_FIELDS + PET_SETTINGS_FIELDS
 }
-THOUSAND_INPUT_FIELDS = frozenset(
-    {"mount_keys", "skills", "shells", "flasks", "hammers"}
-)
+THOUSAND_INPUT_FIELDS = frozenset(field.name for field in RESOURCE_FIELDS)
 
 
 TECHNOLOGY_MAXIMUMS = {
