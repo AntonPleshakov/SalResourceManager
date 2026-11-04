@@ -211,6 +211,21 @@ def test_forge_level_does_not_require_localized_button_label(label):
     assert recognition.recognize_screenshot(encoded.tobytes()) == EXPECTED[1]
 
 
+@pytest.mark.parametrize("with_label", [True, False])
+def test_forge_level_preserves_leading_one_from_corrected_screenshot(with_label):
+    import cv2
+    import numpy as np
+
+    if not recognition.ocr_available():
+        pytest.skip("Tesseract unavailable")
+    crop = cv2.imread(str(FIXTURES / "forge_level_18.png"))
+    if not with_label:
+        crop[:, :76] = (230, 170, 0)
+    image = np.full((200, 400, 3), 255, dtype=np.uint8)
+    image[119:150, 234:345] = crop
+    assert recognition._read_forge_level(image, (100, 150, 28, 24)) == 18
+
+
 @pytest.mark.parametrize("readings", [
     ["8", "9", ""], ["0", "0", "0"], ["36", "36", "36"],
     ["8.0", "8.0", "8.0"], ["8 9", "8 9", "8 9"],

@@ -224,14 +224,16 @@ def _read_forge_level(image, position) -> int | None:
     readings: dict[int, int] = {}
     for threshold in (180, 200, 220):
         mask = cv2.threshold(gray, threshold, 255, cv2.THRESH_BINARY_INV)[1]
-        # Separate the trailing number from the translated label at the word gap.
+        # A word gap is wider than the spacing between digits, especially 1 and 8.
         occupied = (mask == 0).any(axis=0)
         columns = occupied.nonzero()[0]
         if not len(columns):
             continue
+        rows = (mask == 0).any(axis=1).nonzero()[0]
+        word_gap = max(5, (int(rows[-1]) - int(rows[0]) + 1) / 2)
         start = int(columns[0])
         for left, right in zip(columns, columns[1:]):
-            if right - left >= 5:
+            if right - left >= word_gap:
                 start = int(right)
         mask = mask[:, start:int(columns[-1]) + 1]
         mask = cv2.resize(mask, None, fx=3, fy=3, interpolation=cv2.INTER_CUBIC)
