@@ -30,6 +30,7 @@ from tg.handlers import (
     HandlerRegistry,
 )
 from tg.metrics import APPLICATION_METRICS
+from tg.technology_badges import technology_badges_legend
 from tg.utils import Button, get_ids, get_username
 
 
@@ -124,6 +125,7 @@ def _render_game_data_html(
             "В Google экспортируются все данные."
             "</footer>"
         )
+    parts.append(technology_badges_legend())
     parts.append(update_status)
     return "".join(parts)
 
@@ -148,7 +150,7 @@ def build_game_data_message(
         if badges:
             row[1] = f"{row[1]} {badges}"
     column_groups = _table_column_groups(len(headers))
-    non_row_blocks = 4 + len(column_groups)
+    non_row_blocks = 4 + len(column_groups) + 6
     max_rows = max(
         0,
         (_MAX_RICH_MESSAGE_BLOCKS - non_row_blocks) // len(column_groups) - 1,

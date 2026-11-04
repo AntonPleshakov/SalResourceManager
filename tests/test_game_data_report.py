@@ -642,6 +642,10 @@ def test_game_data_rich_message_contains_preview_and_last_update(monkeypatch):
         username="player<&",
         tag="Leader",
         pets=9,
+        skill_summon_cost=25,
+        mount_summon_cost=25,
+        extra_mount_chance=50,
+        extra_egg_chance=50,
     )
     monkeypatch.setattr(
         "common.datetime_utils.now",
@@ -657,6 +661,11 @@ def test_game_data_rich_message_contains_preview_and_last_update(monkeypatch):
     assert "<h2>Игровые данные</h2>" in message.html
     assert "Clan &lt;One&gt;" in message.html
     assert "player&lt;&amp;" in message.html
+    assert "<td>Leader 🏆</td>" in message.html
+    assert "Leader 🎟️🐎🥚" not in message.html
+    assert "<summary>Обозначения технологий</summary>" in message.html
+    assert "все четыре перечисленные технологии" in message.html
+    assert "шанс дополнительного маунта: 50%" in message.html
     assert "сегодня (05.10.2026), 18:42 МСК" in message.html
     assert message.html.index("<table") < message.html.index(
         "Последнее обновление Google Таблицы"
