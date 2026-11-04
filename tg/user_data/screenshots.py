@@ -40,6 +40,7 @@ class ScreenshotStates(StatesGroup):
 
 _LOCKS = tuple(threading.RLock() for _ in range(64))
 _KEY = "screenshot_import"
+_EXIT_SESSION_KEY = "screenshot_exit_session"
 _WAIT_MESSAGE = "Дождитесь окончания распознавания."
 
 
@@ -289,9 +290,25 @@ def _finish_message(session, notice):
     ))
 
 
+def _delete_stored_screenshot(user_id, path):
+    try:
+        delete_screenshot(path)
+    except (OSError, ValueError):
+        logger.warning("Screenshot retained user_id=%s screenshot_path=%s reason=%s",
+                       user_id, path, "delete_failed")
+
+
+def _discard_session(bot, session):
+    _cancel_upload(bot, session["session_id"], keep_message=True)
+    for path in session.get("screenshot_readings", {}):
+        _delete_stored_screenshot(session["user_id"], path)
+    _delete_screenshot_inputs(bot, session)
+
+
 def _account(update, bot, session):
     current = get_active_user_or_prompt(update, bot)
     if current is None:
+        _discard_session(bot, session)
         bot.delete_state(get_ids(update)[0])
         return None
     database = user_data.get_user_data_db()
@@ -303,18 +320,11 @@ def _account(update, bot, session):
                  for account in database.get_accounts(get_ids(update)[0])):
         error = "Клан аккаунта изменился. Начните загрузку заново."
     if error:
+        _discard_session(bot, session)
         bot.delete_state(get_ids(update)[0])
         _edit_view(update, bot, session, _finish_message(session, error))
         return None
     return current
-
-
-def _delete_stored_screenshot(user_id, path):
-    try:
-        delete_screenshot(path)
-    except (OSError, ValueError):
-        logger.warning("Screenshot retained user_id=%s screenshot_path=%s reason=%s",
-                       user_id, path, "delete_failed")
 
 
 def _discard_screenshot(user_id, result, error):
@@ -435,6 +445,9 @@ def start_screenshot(update: CallbackQuery, bot: TeleBot) -> None:
         return
     account = next(account for account in user_data.get_user_data_db().get_accounts(
         get_ids(update)[0]) if account.account_id == current.account_id.value)
+    previous = _load(update, bot, check_callback=False)
+    if previous is not None:
+        _discard_session(bot, previous)
     bot.delete_state(get_ids(update)[0])
     bot.set_state(get_ids(update)[0], ScreenshotStates.review)
     _show(update, bot, {"user_id": get_ids(update)[0], "account_id": current.account_id.value,
@@ -641,12 +654,25 @@ class ScreenshotProgressMiddleware(NoOpPostProcessMiddleware):
         self.update_types = ["message", "callback_query"]
         self._bot = bot
 
+    def post_process(self, update, data, exception):
+        session = data.pop(_EXIT_SESSION_KEY, None)
+        if session is None:
+            return
+        with _LOCKS[session["user_id"] % len(_LOCKS)]:
+            current = _load(update, self._bot, check_callback=False)
+            if current is None or current["session_id"] != session["session_id"]:
+                _discard_session(self._bot, session)
+
     def pre_process(self, update, data):
         message = update.message if isinstance(update, CallbackQuery) else update
         if message is None or message.chat.type != "private":
             return None
         session = _load(update, self._bot, check_callback=False)
-        if session is None or not session.get("pending"):
+        if session is None:
+            return None
+        if not session.get("pending"):
+            if not (isinstance(update, CallbackQuery) and update.data.startswith("screenshot/")):
+                data[_EXIT_SESSION_KEY] = session
             return None
         if isinstance(update, CallbackQuery):
             if update.data == f"screenshot/{session['session_id'][:12]}/cancel":

@@ -312,7 +312,7 @@ def test_victorialogs_is_bounded_and_available_in_grafana() -> None:
 
     assert "amir20/dozzle" not in compose
     assert "victoriametrics/victoria-logs:v1.52.0" in compose
-    assert "-retentionPeriod=7d" in compose
+    assert "-retentionPeriod=180d" in compose
     assert "-retention.maxDiskSpaceUsageBytes=1GiB" in compose
     assert "victoriametrics-logs-datasource@0.32.0" in compose
     assert "- /var/run/docker.sock:/var/run/docker.sock:ro" in compose

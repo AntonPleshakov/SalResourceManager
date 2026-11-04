@@ -180,7 +180,7 @@ services:
 
     command:
       - -storageDataPath=/victoria-logs-data
-      - -retentionPeriod=7d
+      - -retentionPeriod=180d
       - -retention.maxDiskSpaceUsageBytes=1GiB
 
     volumes:

@@ -713,6 +713,76 @@ def test_pending_screenshots_block_save_edit_and_drop(context, action):
     assert users.get_assigned_user(42).hammers.value == 17
 
 
+@pytest.mark.parametrize("values", [{"hammers": 194691}, {}])
+@pytest.mark.parametrize("target", ["home", "start"])
+def test_leaving_completed_review_deletes_its_files(context, monkeypatch, values, target):
+    from tg import navigation
+
+    bot, _, _ = context
+    monkeypatch.setattr(screenshots, "recognize_screenshot", lambda _: values)
+    monkeypatch.setattr(navigation, "_show_onboarding", lambda *_: False)
+    monkeypatch.setattr(navigation, "show_unseen_releases", lambda *_: False)
+    monkeypatch.setattr(navigation, "show_home_menu", Mock())
+    unrelated = Path(screenshot_storage.save_screenshot(b"other session", "other.jpg"))
+    receive_screenshot(message(photo=True), bot)
+    with bot.retrieve_data(42) as stored:
+        paths = list(stored["screenshot_import"]["screenshot_readings"])
+    update = callback("home") if target == "home" else message("/start")
+    middleware = screenshots.ScreenshotProgressMiddleware(bot)
+    bot.use_class_middlewares = True
+    if target == "home":
+        bot.register_callback_query_handler(navigation.home, func=lambda _: True, pass_bot=True)
+        handlers, update_type = bot.callback_query_handlers, "callback_query"
+    else:
+        bot.register_message_handler(navigation.start, commands=["start"], pass_bot=True)
+        handlers, update_type = bot.message_handlers, "message"
+    bot._run_middlewares_and_handler(update, handlers, [middleware], update_type)
+    navigation.show_home_menu.assert_called_once()
+    assert all(not Path(path).exists() for path in paths)
+    assert unrelated.exists()
+
+
+def test_failed_navigation_keeps_current_review_files(context):
+    bot, _, _ = context
+    receive_screenshot(message(photo=True), bot)
+    with bot.retrieve_data(42) as stored:
+        paths = list(stored["screenshot_import"]["screenshot_readings"])
+    update = callback("home")
+    middleware = screenshots.ScreenshotProgressMiddleware(bot)
+    data = {}
+    middleware.pre_process(update, data)
+    middleware.post_process(update, data, RuntimeError("navigation failed"))
+    assert all(Path(path).exists() for path in paths)
+
+
+def test_new_upload_discards_previous_review_only(context):
+    bot, _, _ = context
+    receive_screenshot(message(photo=True), bot)
+    with bot.retrieve_data(42) as stored:
+        paths = list(stored["screenshot_import"]["screenshot_readings"])
+    screenshots.start_screenshot(callback("screenshot/start"), bot)
+    assert all(not Path(path).exists() for path in paths)
+    receive_screenshot(message(photo=True), bot)
+    with bot.retrieve_data(42) as stored:
+        assert all(Path(path).exists() for path in stored["screenshot_import"]["screenshot_readings"])
+
+
+def test_middleware_preserves_corrected_file_after_save(context):
+    bot, _, _ = context
+    receive_screenshot(message(photo=True), bot)
+    screenshots.edit_reading(review_callback(bot, "edit", "hammers"), bot)
+    screenshots.correct_reading(message("195к"), bot)
+    with bot.retrieve_data(42) as stored:
+        paths = list(stored["screenshot_import"]["screenshot_readings"])
+    update = review_callback(bot, "save")
+    middleware = screenshots.ScreenshotProgressMiddleware(bot)
+    data = {}
+    middleware.pre_process(update, data)
+    screenshots.save_readings(update, bot)
+    middleware.post_process(update, data, None)
+    assert all(Path(path).exists() for path in paths)
+
+
 @pytest.mark.parametrize("target", ["home", "settings", "accounts/resources", "screenshot/start"])
 def test_middleware_blocks_navigation_while_recognizing(context, target):
     bot, _, _ = context
