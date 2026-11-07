@@ -1290,13 +1290,13 @@ def test_reminder_fill_saves_only_requested_fields(monkeypatch):
         ("technologies", "extra_mount_chance"),
     ]
     assert bot.deleted == [(42, 1), (42, 1)]
-    assert "Сохранено сейчас: <b>5% (T1)</b>" in bot.edited[0][0]
+    assert "Сохранено сейчас: <b>5% (T0)</b>" in bot.edited[0][0]
     assert bot.edited[0][0].startswith(
         "✅ Молотки: <b>1.50к</b> — сохранено."
     )
     assert "Заполнение завершено" in bot.edited[-1][0]
     assert bot.edited[-1][0].startswith(
-        "✅ Шанс на доп. маунта: <b>10% (T2)</b> — сохранено."
+        "✅ Шанс на доп. маунта: <b>10% (T1)</b> — сохранено."
     )
     assert bot.edited[-1][3].keyboard[0][0].callback_data == "home"
 
@@ -1355,7 +1355,7 @@ def test_fill_all_can_skip_values_without_changing_them(monkeypatch):
 
     assert current_user.hammers.value == 2_500
     assert current_user.extra_mount_chance.value == 5
-    assert "Сохранено сейчас: <b>5% (T1)</b>" in bot.edited[0][0]
+    assert "Сохранено сейчас: <b>5% (T0)</b>" in bot.edited[0][0]
     assert "Заполнение завершено" in bot.edited[-1][0]
     assert "Сохранено: <b>0</b>. Пропущено: <b>2</b>." in bot.edited[-1][0]
     assert bot.deleted_states == [42]
@@ -1368,7 +1368,7 @@ def test_format_points_rounds_and_adds_suffixes():
 
 
 @pytest.mark.parametrize("maximum_name,maximum", user_data_resources.TECHNOLOGY_MAXIMUMS.items())
-@pytest.mark.parametrize("step,tier", [(0, "T1"), (4, "T1"), (5, "T2"), (10, "T3"), (15, "T4"), (19, "T4"), (20, "T5"), (24, "T5"), (25, "Max")])
+@pytest.mark.parametrize("step,tier", [(0, "T0"), (4, "T0"), (5, "T1"), (10, "T2"), (15, "T3"), (19, "T3"), (20, "T4"), (24, "T4"), (25, "T5")])
 def test_technology_tiers_follow_each_maximum(maximum_name, maximum, step, tier):
     value = step * maximum // 25
     assert user_data_resources.format_technology_value(maximum_name, value) == f"{value}% ({tier})"
@@ -1378,7 +1378,7 @@ def test_maximum_technologies_have_no_stale_warning():
     user = UserData(**user_data_resources.TECHNOLOGY_MAXIMUMS, forge_level=35)
     user.mark_updated("forge_level", date.today())
     html = build_technologies_menu(user).rich_message.html
-    assert html.count("(Max)") == 5
+    assert html.count("(T5)") == 5
     assert "⚠️" not in html
 
 

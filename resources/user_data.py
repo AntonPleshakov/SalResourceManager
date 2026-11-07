@@ -93,12 +93,8 @@ def format_technology_value(field_name: str, value: int | str) -> str:
     maximum = TECHNOLOGY_MAXIMUMS.get(field_name)
     if maximum is None:
         return str(value)
-    numeric_value = int(value)
-    level = (
-        "Max" if is_max_technology(field_name, numeric_value)
-        else f"T{min(5, numeric_value * 5 // maximum + 1)}"
-    )
-    return f"{value}% ({level})"
+    tier = min(5, int(value) * 5 // maximum)
+    return f"{value}% (T{tier})"
 
 
 def validate_editable_field_value(field_name: str, value: int) -> int:
